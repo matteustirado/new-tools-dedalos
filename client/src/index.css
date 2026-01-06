@@ -1,0 +1,772 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bg-dark-secondary font-display text-text relative overflow-x-hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 77, 0, 0.6);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 77, 0, 0.8);
+    background-clip: content-box;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 77, 0, 0.6) rgba(255, 255, 255, 0.05);
+  }
+}
+
+:root {
+  --color-primary: #ff4d00;
+  --color-secondary: #ffcc00;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+  --color-text: #e0e0e0;
+  --color-text-muted: #e2e4e7;
+  --bg-dark-primary: #1a1a1a;
+  --bg-dark-secondary: #0a0a0f;
+  --bg-panel: rgba(17, 24, 39, 0.7);
+  --bg-card: rgba(31, 41, 55, 0.8);
+  --border-color: #4b5563;
+  --border-color-hover: #f97316;
+}
+
+.liquid-glass {
+  background: rgba(30, 30, 30, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.bg-gradient-warm::before,
+.bg-gradient-warm::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  width: 65vmax;
+  height: 65vmax;
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  filter: blur(130px);
+}
+
+.bg-gradient-warm::before {
+  top: 0;
+  left: 0;
+  transform: translate(-30%, -30%);
+  background-image: radial-gradient(circle at top left, rgba(255, 150, 0, 0.45) 0%, rgba(255, 110, 0, 0.3) 20%, rgba(255, 77, 0, 0.15) 40%, rgba(255, 77, 0, 0.08) 60%, transparent 80%);
+  animation: glowTopLeft 10s ease-in-out infinite alternate;
+}
+
+.bg-gradient-warm::after {
+  bottom: 0;
+  right: 0;
+  transform: translate(30%, 30%);
+  background-image: radial-gradient(circle at bottom right, rgba(255, 140, 0, 0.4) 0%, rgba(255, 90, 0, 0.25) 25%, rgba(249, 115, 22, 0.12) 45%, rgba(255, 77, 0, 0.06) 65%, transparent 85%);
+  animation: glowBottomRight 12s ease-in-out infinite alternate;
+}
+
+@keyframes glowTopLeft {
+  0%, 100% {
+    opacity: 0.45;
+    transform: translate(-30%, -30%) scale(1);
+    filter: blur(120px);
+  }
+  50% {
+    opacity: 0.75;
+    transform: translate(-34%, -34%) scale(1.08);
+    filter: blur(140px);
+  }
+}
+
+@keyframes glowBottomRight {
+  0%, 100% {
+    opacity: 0.4;
+    transform: translate(30%, 30%) scale(1);
+    filter: blur(120px);
+  }
+  50% {
+    opacity: 0.65;
+    transform: translate(34%, 34%) scale(1.08);
+    filter: blur(140px);
+  }
+}
+
+.calendar-container .react-calendar {
+  border: none !important;
+  font-family: inherit;
+  background-color: transparent !important;
+  width: 100%;
+}
+
+.calendar-container .react-calendar__navigation button {
+  color: #e2e4e7;
+  background: none;
+  font-size: 0.9em;
+  margin-top: 8px;
+  min-width: 40px;
+  padding: 4px 0;
+}
+
+.calendar-container .react-calendar__navigation button:enabled:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.calendar-container .react-calendar__navigation button[disabled] {
+  background-color: transparent;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.calendar-container .react-calendar__navigation__label {
+  flex-grow: 1 !important;
+  font-weight: bold;
+  font-size: 1em;
+}
+
+.calendar-container .react-calendar__month-view__weekdays__weekday {
+  text-align: center;
+  padding-bottom: 0.5rem;
+}
+
+.calendar-container .react-calendar__month-view__weekdays__weekday abbr {
+  text-decoration: none;
+  font-weight: 500;
+  color: #e2e4e7;
+  font-size: 0.75em;
+  text-transform: uppercase;
+}
+
+.calendar-container .react-calendar__tile {
+  border-radius: 4px;
+  padding: 8px 4px;
+  background: none;
+  color: #e0e0e0;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  position: relative;
+}
+
+.calendar-container .react-calendar__tile:enabled:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.calendar-container .react-calendar__tile--active {
+  background: #ff4d00 !important;
+  color: white !important;
+  border: 2px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 0 8px rgba(255, 77, 0, 0.7);
+}
+
+.calendar-container .react-calendar__tile--active:enabled:hover {
+  background: #e64400 !important;
+  border: 2px solid white !important;
+}
+
+.calendar-container .react-calendar__tile--now {
+  background: rgba(255, 77, 0, 0.15) !important;
+}
+
+.scheduled-day::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #ff4d00;
+  z-index: 0;
+}
+
+.react-calendar__tile--active.scheduled-day::after {
+  background-color: white;
+}
+
+.calendar-container {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+@keyframes scale-in-elastic {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.animate-scale-in-elastic {
+  animation: scale-in-elastic 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+.animate-progress-shrink {
+  animation: progress-shrink 3s linear forwards;
+}
+
+@keyframes draw-logo-final {
+  0% { stroke-dashoffset: 5000; }
+  50% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -5000; }
+}
+
+.animate-draw-logo {
+  stroke-dasharray: 5000;
+  stroke-dashoffset: 5000;
+  animation: draw-logo-final 4s ease-in-out infinite;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+}
+
+.animate-float-slow {
+  animation: float-slow 10s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-slow 15s ease-in-out infinite reverse;
+}
+
+.multi {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  overflow: hidden;
+  background-color: #1a1a1a;
+}
+
+.multichrome-background {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: radial-gradient(circle at center, #0a0a0f 0%, #1a1a1a 45%, #28241e 100%);
+}
+
+.multichrome-light {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150%;
+  height: 150%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at center, rgba(255, 77, 0, 0.15) 0%, rgba(255, 77, 0, 0) 60%);
+}
+
+.multichrome-ambient-1,
+.multichrome-ambient-2,
+.multichrome-ambient-3 {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.5;
+}
+
+.multichrome-ambient-1 {
+  width: 500px;
+  height: 500px;
+  background-color: rgba(255, 77, 0, 0.3);
+  top: -150px;
+  left: -150px;
+}
+
+.multichrome-ambient-2 {
+  width: 400px;
+  height: 400px;
+  background-color: rgba(255, 204, 0, 0.2);
+  bottom: -100px;
+  right: -100px;
+}
+
+.multichrome-ambient-3 {
+  width: 300px;
+  height: 300px;
+  background-color: rgba(255, 0, 34, 0.2);
+  top: 50%;
+  left: 50%;
+}
+
+.float-effect-1 {
+  animation: float 15s ease-in-out infinite alternate;
+}
+
+.float-effect-2 {
+  animation: float 20s ease-in-out infinite alternate-reverse;
+}
+
+.float-effect-3 {
+  animation: float 18s ease-in-out infinite alternate;
+}
+
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(100px, 50px) scale(1.2); }
+}
+
+.pricing-page-wrapper {
+  width: 100%;
+  min-height: 100vh;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: 'Poppins', sans-serif;
+  color: #e0e0e0;
+}
+
+.pricing-section {
+  width: 100%;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.section-title-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.pricing-page-title {
+  font-size: 3rem;
+  font-weight: 700;
+  text-align: center;
+  background: linear-gradient(135deg, #ff0022, #ff4d00, #ffcc00);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  text-transform: uppercase;
+}
+
+.pricing-content {
+  border-radius: 12px;
+  padding: 2rem 0 0 0;
+  backdrop-filter: blur(8px);
+  width: 100%;
+}
+
+.pricing-columns-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 1rem;
+  perspective: 1000px;
+}
+
+.price-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.price-column.active {
+  flex: 3;
+  opacity: 1;
+  filter: grayscale(0);
+  z-index: 10;
+  transform: scale(1);
+}
+
+.price-column:not(.active) {
+  flex: 1;
+  opacity: 0.6;
+  filter: grayscale(0.8);
+  transform: scale(0.85);
+}
+
+.column-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  text-align: center;
+  color: #e0e0e0;
+  background-color: rgba(10, 10, 15, 0.7);
+  border: 1px solid rgba(245, 166, 35, 0.1);
+  border-radius: 12px;
+  padding: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.price-column.active .column-title {
+  background: linear-gradient(to right, #ff0022, #ff4d00);
+  border: none;
+  color: white;
+}
+
+.column-time {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.price-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.price-card {
+  background-image: linear-gradient(145deg, rgba(26, 26, 26, 0.95), rgba(10, 10, 15, 0.95));
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(245, 166, 35, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.price-card.inactive {
+  padding: 1rem;
+}
+
+.price-card.inactive h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: white;
+  white-space: nowrap;
+}
+
+.price-card.inactive .price-value {
+  font-size: 1.2rem;
+  color: #ffc107;
+  font-weight: bold;
+}
+
+.price-card.inactive .price-details-new {
+  min-height: auto;
+  margin: 0;
+}
+
+.price-card.inactive .price-per-person-label,
+.price-card.inactive .price-total-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.price-card.inactive .price-per-person-value {
+  font-size: 1.2rem;
+  color: #ffc107;
+}
+
+.price-card.layout-active {
+  min-height: 200px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 2rem;
+  box-shadow: 0 0 25px rgba(255, 77, 0, 0.7);
+}
+
+.card-background-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+  z-index: 0;
+}
+
+.price-card-details {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.price-card-details.text-left {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.price-card-details.text-right {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.price-card.layout-active h3 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  margin-bottom: 0.5rem;
+}
+
+.price-value {
+  font-size: 2.5rem;
+  font-weight: 900;
+  background: linear-gradient(to right, #ffc107, #fbcb3b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 10px rgba(255, 193, 7, 0.3);
+  margin: 0.5rem 0;
+}
+
+.price-details-new {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.price-card-details.text-left .price-details-new {
+  align-items: flex-start;
+}
+
+.price-card-details.text-right .price-details-new {
+  align-items: flex-end;
+}
+
+.price-per-person-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.price-per-person-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  background: linear-gradient(to right, #ffc107, #fbcb3b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.price-total-label {
+  font-size: 0.9rem;
+  color: white;
+  font-weight: 500;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.price-features {
+  list-style: none;
+  margin-top: 0.5rem;
+  padding: 0;
+}
+
+.price-features li {
+  font-size: 0.9rem;
+  color: #ddd;
+  text-shadow: 0 1px 2px black;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.price-notes {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.price-notes p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  margin: 0.3rem 0;
+}
+
+.slider-container {
+  width: 100%;
+  max-width: 800px;
+  height: 300px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  margin-top: 2rem;
+}
+
+.slider img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+}
+
+.slider img.active {
+  opacity: 1;
+}
+
+.loading-screen {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #ff4d00;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.5rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+@media (max-width: 900px) {
+  .pricing-columns-container {
+    flex-direction: row;
+    gap: 0.25rem;
+    align-items: stretch;
+  }
+
+  .price-column.active {
+    flex: 0 0 45%;
+    max-width: 45%;
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .price-column:not(.active) {
+    flex: 0 0 27.5%;
+    max-width: 27.5%;
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+
+  .column-title {
+    font-size: 0.7rem;
+    padding: 0.5rem;
+  }
+
+  .column-time {
+    font-size: 0.5rem;
+  }
+
+  .price-card.layout-active {
+    flex-direction: column;
+    padding: 1rem 0.5rem;
+    min-height: 200px;
+    justify-content: center;
+  }
+
+  .price-card.layout-active.player .price-card-details {
+    align-items: flex-start !important;
+    text-align: left !important;
+    width: 100%;
+    padding-left: 0.5rem;
+  }
+
+  .price-card.layout-active.amiga .price-card-details {
+    align-items: flex-end !important;
+    text-align: right !important;
+    width: 100%;
+    padding-right: 0.5rem;
+  }
+
+  .price-card.layout-active.marmita .price-card-details {
+    align-items: flex-start !important;
+    text-align: left !important;
+    width: 100%;
+    padding-left: 0.5rem;
+  }
+
+  .price-card.layout-active h3 {
+    font-size: 1.2rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .price-value {
+    font-size: 1.8rem;
+    margin: 0.2rem 0;
+  }
+
+  .price-per-person-value {
+    font-size: 1.5rem;
+  }
+
+  .price-column:not(.active) .price-per-person-label {
+    display: block;
+    font-size: 0.5rem;
+    line-height: 1;
+    margin-bottom: 0;
+  }
+
+  .price-column:not(.active) .price-total-label {
+    display: block;
+    font-size: 0.5rem;
+    line-height: 1;
+    margin-top: 0;
+  }
+
+  .price-column:not(.active) .price-per-person-value {
+    font-size: 1rem;
+  }
+
+  .price-column:not(.active) .price-value {
+    font-size: 1rem;
+  }
+
+  .price-column:not(.active) h3 {
+    font-size: 0.7rem;
+    white-space: normal;
+    line-height: 1.1;
+  }
+
+  .price-column:not(.active) .price-features {
+    display: none;
+  }
+}
