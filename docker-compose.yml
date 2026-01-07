@@ -1,20 +1,24 @@
 version: "3.8"
 
+networks:
+  tools_net:
+    driver: bridge
+
 services:
   db:
     image: mysql:8.0
-    container_name: radio_dedalos_db
+    container_name: tools_dedalos_db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    ports:
-      - "${MYSQL_LOCAL_PORT}:3306"
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
+    networks:
+      - tools_net
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -22,25 +26,26 @@ services:
       retries: 5
       start_period: 30s
 
+  # --- BACKEND (API) ---
   backend:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: radio_dedalos_backend
+    container_name: tools_dedalos_backend
     restart: always
     environment:
       DB_HOST: db
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_DATABASE: ${DB_DATABASE}
-      PORT: ${PORT}
+      PORT: 4000
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
       VITE_API_URL_SP: ${VITE_API_URL_SP}
       VITE_API_TOKEN_SP: ${VITE_API_TOKEN_SP}
       VITE_API_URL_BH: ${VITE_API_URL_BH}
       VITE_API_TOKEN_BH: ${VITE_API_TOKEN_BH}
-    ports:
-      - "${BACKEND_PORT}:${PORT}"
+    networks:
+      - tools_net
     depends_on:
       db:
         condition: service_healthy
@@ -52,15 +57,64 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: radio_dedalos_frontend
+    container_name: tools_dedalos_frontend
     restart: always
-    ports:
-      - "${FRONTEND_PORT}:3000"
+    environment:
+      VITE_API_URL: "https://api.dedalosbar.com"
+    networks:
+      - tools_net
     depends_on:
       - backend
     volumes:
       - ./client:/app
       - /app/node_modules
 
+  npm:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: tools_proxy
+    restart: unless-stopped
+    ports:
+      - '80:80'   
+      - '443:443' 
+      - '81:81' 
+    volumes:
+      - ./npm_data:/data
+      - ./npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - tools_net
+
+  ddns-updater:
+    image: qmcgaw/ddns-updater
+    container_name: tools_ddns
+    restart: always
+    network_mode: bridge
+    environment:
+      CONFIG: |
+        {
+          "settings": [
+            {
+              "provider": "bunny",
+              "zone_name": "dedalosbar.com",
+              "record_type": "A",
+              "host": "tools",
+              "api_key": "${BUNNY_API_KEY}",
+              "ttl": 300
+            },
+            {
+              "provider": "bunny",
+              "zone_name": "dedalosbar.com",
+              "record_type": "A",
+              "host": "api",
+              "api_key": "${BUNNY_API_KEY}",
+              "ttl": 300
+            }
+          ]
+        }
+    volumes:
+      - ./ddns_data:/updater/data
+
 volumes:
   db_data:
+  npm_data:
+  npm_letsencrypt:
+  ddns_data:
