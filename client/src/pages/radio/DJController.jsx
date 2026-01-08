@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import axios from 'axios';
 import Sidebar from '../../components/Sidebar';
 
-const API_URL = 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const formatDuration = (totalSeconds) => {
   if (typeof totalSeconds !== 'number' || totalSeconds < 0) return '0:00';

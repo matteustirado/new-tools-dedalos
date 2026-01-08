@@ -9,11 +9,14 @@ services:
     image: mysql:8.0
     container_name: tools_dedalos_db
     restart: always
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
@@ -26,7 +29,6 @@ services:
       retries: 5
       start_period: 30s
 
-  # --- BACKEND (API) ---
   backend:
     build:
       context: ./server
@@ -44,6 +46,8 @@ services:
       VITE_API_TOKEN_SP: ${VITE_API_TOKEN_SP}
       VITE_API_URL_BH: ${VITE_API_URL_BH}
       VITE_API_TOKEN_BH: ${VITE_API_TOKEN_BH}
+    ports:
+      - "4000:4000" 
     networks:
       - tools_net
     depends_on:
@@ -52,6 +56,7 @@ services:
     volumes:
       - ./server:/app
       - /app/node_modules
+      - ./server/public/uploads:/app/public/uploads 
 
   frontend:
     build:
@@ -60,7 +65,9 @@ services:
     container_name: tools_dedalos_frontend
     restart: always
     environment:
-      VITE_API_URL: "https://api.dedalosbar.com"
+      VITE_API_URL: "https://api.dedalosbar.com" 
+    ports:
+      - "3000:3000"
     networks:
       - tools_net
     depends_on:
@@ -69,52 +76,15 @@ services:
       - ./client:/app
       - /app/node_modules
 
-  npm:
-    image: 'jc21/nginx-proxy-manager:latest'
-    container_name: tools_proxy
-    restart: unless-stopped
-    ports:
-      - '80:80'   
-      - '443:443' 
-      - '81:81' 
-    volumes:
-      - ./npm_data:/data
-      - ./npm_letsencrypt:/etc/letsencrypt
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: tools_tunnel
+    restart: always
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     networks:
       - tools_net
 
-  ddns-updater:
-    image: qmcgaw/ddns-updater
-    container_name: tools_ddns
-    restart: always
-    network_mode: bridge
-    environment:
-      CONFIG: |
-        {
-          "settings": [
-            {
-              "provider": "bunny",
-              "zone_name": "dedalosbar.com",
-              "record_type": "A",
-              "host": "tools",
-              "api_key": "${BUNNY_API_KEY}",
-              "ttl": 300
-            },
-            {
-              "provider": "bunny",
-              "zone_name": "dedalosbar.com",
-              "record_type": "A",
-              "host": "api",
-              "api_key": "${BUNNY_API_KEY}",
-              "ttl": 300
-            }
-          ]
-        }
-    volumes:
-      - ./ddns_data:/updater/data
-
 volumes:
   db_data:
-  npm_data:
-  npm_letsencrypt:
-  ddns_data:

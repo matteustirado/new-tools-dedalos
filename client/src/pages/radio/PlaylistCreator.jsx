@@ -4,7 +4,7 @@ import axios from 'axios'
 import { toast } from 'react-toastify'
 import Sidebar from '../../components/Sidebar'
 
-const API_URL = 'http://localhost:4000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 const ALL_DAYS_CODE = -1
 const DURATION_WARNING_SECONDS = 24 * 3600

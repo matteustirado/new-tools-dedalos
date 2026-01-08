@@ -128,7 +128,7 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
   );
 };
 
-const API_URL = 'http://localhost:4000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const formatTotalDuration = (totalSeconds) => {
   if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '0s';
