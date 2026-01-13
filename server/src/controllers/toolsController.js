@@ -18,10 +18,10 @@ export const salvarHistorico = async (req, res) => {
         `;
 
         await pool.query(query, [
-            tipo, 
-            unidade, 
-            total_sorteados || 0, 
-            total_resgatados || 0, 
+            tipo,
+            unidade,
+            total_sorteados || 0,
+            total_resgatados || 0,
             detalhesString
         ]);
 
@@ -59,7 +59,7 @@ export const listarHistorico = async (req, res) => {
 
 export const buscarClientePorPulseira = async (req, res) => {
     const { pulseira } = req.params;
-    
+
     const TOKEN = process.env.DEDALOS_API_TOKEN || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
     const BASE_URL = "https://dedalosadm2-3dab78314381.herokuapp.com/";
 
@@ -77,11 +77,70 @@ export const buscarClientePorPulseira = async (req, res) => {
         return res.status(200).json(response.data);
     } catch (error) {
         console.error("Erro na API Externa:", error.message);
-        
+
         if (error.response) {
             return res.status(error.response.status).json(error.response.data);
         }
-        
+
         return res.status(500).json({ message: "Erro interno ao conectar com API Dedalos." });
+    }
+};
+
+export const saveGoldenWinner = async (req, res) => {
+    const { unidade, type, data } = req.body;
+
+    try {
+        const query = `
+            INSERT INTO historico_promocoes (tipo, unidade, detalhes, data_hora) 
+            VALUES (?, ?, ?, NOW())
+        `;
+
+        const dbType = 'QUINTA_PREMIADA_WINNER';
+
+        await pool.query(query, [dbType, unidade, JSON.stringify(data)]);
+
+        const io = req.app.get('io');
+
+        if (io) {
+            io.emit('golden:winner_update', {
+                unidade: unidade,
+                winner: data
+            });
+            console.log(`[SOCKET] Novo ganhador Quinta Premiada emitido para: ${unidade}`);
+        } else {
+            console.warn("[SOCKET] Instância IO não encontrada no request.");
+        }
+
+        res.json({ success: true, message: "Ganhador salvo e transmitido!" });
+
+    } catch (error) {
+        console.error("❌ Erro saveGoldenWinner:", error);
+        res.status(500).json({ error: "Erro ao processar sorteio." });
+    }
+};
+
+export const getLastGoldenWinner = async (req, res) => {
+    const { unidade } = req.params;
+    try {
+        const query = `
+            SELECT detalhes FROM historico_promocoes 
+            WHERE unidade = ? AND tipo = 'QUINTA_PREMIADA_WINNER' 
+            ORDER BY id DESC LIMIT 1
+        `;
+
+        const [rows] = await pool.query(query, [unidade]);
+
+        if (rows.length > 0) {
+            const winnerData = typeof rows[0].detalhes === 'string'
+                ? JSON.parse(rows[0].detalhes)
+                : rows[0].detalhes;
+
+            res.json(winnerData);
+        } else {
+            res.json(null);
+        }
+    } catch (error) {
+        console.error("❌ Erro getLastGoldenWinner:", error);
+        res.status(500).json({ error: "Erro ao buscar último ganhador." });
     }
 };

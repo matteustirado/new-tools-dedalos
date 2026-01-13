@@ -47,7 +47,7 @@ services:
       VITE_API_URL_BH: ${VITE_API_URL_BH}
       VITE_API_TOKEN_BH: ${VITE_API_TOKEN_BH}
     ports:
-      - "4000:4000" 
+      - "4000:4000"
     networks:
       - tools_net
     depends_on:
@@ -56,25 +56,24 @@ services:
     volumes:
       - ./server:/app
       - /app/node_modules
-      - ./server/public/uploads:/app/public/uploads 
+      - ./server/public/uploads:/app/public/uploads
 
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=https://api.dedalosbar.com
     container_name: tools_dedalos_frontend
     restart: always
     environment:
-      VITE_API_URL: "https://api.dedalosbar.com" 
+      VITE_API_URL: "https://api.dedalosbar.com"
     ports:
       - "3000:3000"
     networks:
       - tools_net
     depends_on:
       - backend
-    volumes:
-      - ./client:/app
-      - /app/node_modules
 
   tunnel:
     image: cloudflare/cloudflared:latest
