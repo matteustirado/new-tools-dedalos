@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+import ConnectionGuardian from './components/ConnectionGuardian';
 import Home from './pages/Home';
 import DJController from './pages/radio/DJController';
 import MusicCollection from './pages/radio/MusicCollection';
@@ -11,7 +12,6 @@ import Library from './pages/radio/Library';
 import Schedule from './pages/radio/Schedule';
 import WatchVideo from './pages/radio/WatchVideo';
 import Jukebox from './pages/radio/Jukebox';
-import RequestHistory from './pages/radio/RequestHistory';
 import GoldenThursday from './pages/tools/GoldenThursday';
 import ScoreboardEdit from './pages/tools/ScoreboardEdit';
 import ScoreboardGame from './pages/tools/ScoreboardGame';
@@ -20,8 +20,17 @@ import PricesEdit from './pages/tools/PricesEdit';
 import PricesDisplay from './pages/tools/PricesDisplay';
 
 function App() {
+  const [appVersion, setAppVersion] = useState(0);
+
+  const handleSystemReset = useCallback(() => {
+    console.log("🔄 Realizando Soft Reload do Sistema...");
+    setAppVersion(prev => prev + 1);
+  }, []);
+
   return (
     <BrowserRouter>
+      <ConnectionGuardian onConnectionRestored={handleSystemReset} />
+
       <ToastContainer 
         position="top-right" 
         autoClose={3000} 
@@ -35,7 +44,7 @@ function App() {
         theme="dark" 
       />
       
-      <Routes>
+      <Routes key={appVersion}>
         <Route path="/" element={<Home unit="sp" />} />
         <Route path="/bh" element={<Home unit="bh" />} />
 

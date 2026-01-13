@@ -4,6 +4,7 @@ import Sidebar from '../../components/Sidebar';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 import GiftList from '../../components/GiftList';
+import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -47,17 +48,36 @@ export default function GoldenThursday() {
     const [showFinalizeModal, setShowFinalizeModal] = useState(false);
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [showRedeemedModal, setShowRedeemedModal] = useState(false);
+    const [currentDraw, setCurrentDraw] = useState(null);
+    const [isMonitoring, setIsMonitoring] = useState(false);
 
-    const [currentDraw, setCurrentDraw] = useState(() => {
-        try {
-            const saved = localStorage.getItem(`dedalos_thursday_draw_${currentUnit}`);
-            return saved ? JSON.parse(saved) : null;
-        } catch (e) { return null; }
-    });
+    useEffect(() => {
+        const socket = io(API_URL);
+        
+        socket.on('golden:winner_update', (data) => {
+            if (data.unidade.toLowerCase() === currentUnit) {
+                console.log("Recebido novo sorteio via socket:", data.winner);
+                setCurrentDraw(data.winner);
+                setIsMonitoring(true);
+            }
+        });
 
-    const [isMonitoring, setIsMonitoring] = useState(() => {
-        return localStorage.getItem(`dedalos_thursday_monitoring_${currentUnit}`) === 'true';
-    });
+        const fetchLastWinner = async () => {
+            try {
+                const res = await axios.get(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
+                if (res.data) {
+                    setCurrentDraw(res.data);
+                    setIsMonitoring(true);
+                }
+            } catch (error) {
+                console.error("Erro ao buscar sorteio ativo:", error);
+            }
+        };
+        fetchLastWinner();
+        loadHistory();
+
+        return () => socket.disconnect();
+    }, [currentUnit]);
 
     const loadHistory = async () => {
         try {
@@ -67,19 +87,6 @@ export default function GoldenThursday() {
             console.error("Erro ao carregar histórico:", error);
         }
     };
-
-    useEffect(() => {
-        loadHistory();
-    }, [currentUnit]);
-
-    useEffect(() => {
-        if (currentDraw) localStorage.setItem(`dedalos_thursday_draw_${currentUnit}`, JSON.stringify(currentDraw));
-        else localStorage.removeItem(`dedalos_thursday_draw_${currentUnit}`);
-    }, [currentDraw, currentUnit]);
-
-    useEffect(() => {
-        localStorage.setItem(`dedalos_thursday_monitoring_${currentUnit}`, isMonitoring);
-    }, [isMonitoring, currentUnit]);
 
     useEffect(() => {
         let interval;
@@ -94,6 +101,8 @@ export default function GoldenThursday() {
                     setOccupiedLockers(currentOccupied);
 
                     setCurrentDraw(prevDraw => {
+                        if (!prevDraw) return null;
+                        
                         return prevDraw.map(item => {
                             if (item.status === 'redeemed') return item;
 
@@ -119,7 +128,7 @@ export default function GoldenThursday() {
             interval = setInterval(check, 5000);
         }
         return () => clearInterval(interval);
-    }, [isMonitoring, config.apiUrl, config.token]);
+    }, [isMonitoring, config.apiUrl, config.token, currentDraw]);
 
     const getLockerSize = (num) => {
         if (config.broken.includes(num)) return 'BROKEN';
@@ -131,7 +140,10 @@ export default function GoldenThursday() {
     };
 
     const handleNewDraw = async () => {
-        if (currentDraw && !window.confirm("Existe um sorteio ativo. Deseja realmente cancelar e iniciar um novo?")) return;
+        if (currentDraw) {
+            toast.warn("Existe um sorteio em andamento! Você precisa FINALIZAR o sorteio atual antes de iniciar um novo.");
+            return;
+        }
 
         setIsMonitoring(false);
         const toastId = toast.loading("Consultando sistema de armários...");
@@ -182,12 +194,16 @@ export default function GoldenThursday() {
             }
 
             drawResult.sort((a, b) => a.locker - b.locker);
-            setCurrentDraw(drawResult);
-            setIsMonitoring(true);
 
+            await axios.post(`${API_URL}/api/tools/golden/winner`, {
+                unidade: currentUnit,
+                type: 'QUINTA_PREMIADA',
+                data: drawResult
+            });
+            
         } catch (error) {
             console.error(error);
-            toast.update(toastId, { render: "Erro ao conectar com API de armários.", type: "error", isLoading: false, autoClose: 5000 });
+            toast.update(toastId, { render: "Erro ao realizar sorteio.", type: "error", isLoading: false, autoClose: 5000 });
         }
     };
 
@@ -211,12 +227,12 @@ export default function GoldenThursday() {
         try {
             await axios.post(`${API_URL}/api/tools/history`, payload);
             toast.success("Promoção finalizada e salva no histórico!");
+            setCurrentDraw(null);
+            setIsMonitoring(false);
         } catch (error) {
             console.error("Erro ao salvar:", error);
             toast.warning("Finalizado localmente. Falha ao salvar no histórico do servidor.");
         } finally {
-            setCurrentDraw(null);
-            setIsMonitoring(false);
             setShowFinalizeModal(false);
             setIsFinalizing(false);
             loadHistory();
@@ -235,22 +251,35 @@ export default function GoldenThursday() {
         }
     };
 
-    const handleGiftConfirm = (prizeName, detailsString) => {
+    const handleGiftConfirm = async (prizeName, detailsString) => {
         if (!selectedLockerForPrize) return;
-        setCurrentDraw(prev => prev.map(item => {
+        
+        const updatedDraw = currentDraw.map(item => {
             if (item.locker === selectedLockerForPrize.locker) {
                 return { ...item, status: 'redeemed', prize: prizeName, details: detailsString };
             }
             return item;
-        }));
-        setSelectedLockerForPrize(null);
-        toast.success("Resgate salvo com sucesso!");
+        });
+
+        try {
+            await axios.post(`${API_URL}/api/tools/golden/winner`, {
+                unidade: currentUnit,
+                type: 'QUINTA_PREMIADA',
+                data: updatedDraw
+            });
+            
+            setSelectedLockerForPrize(null);
+            toast.success("Resgate salvo com sucesso!");
+        } catch (error) {
+            console.error("Erro ao salvar resgate:", error);
+            toast.error("Erro ao salvar resgate no servidor.");
+        }
     };
 
-    const handlePrint = () => {
-        if (!currentDraw) return;
+    const generatePrintReport = (drawData, dateLabel) => {
+        if (!drawData || !Array.isArray(drawData)) return;
 
-        const redeemedItems = currentDraw.filter(i => i.status === 'redeemed');
+        const redeemedItems = drawData.filter(i => i.status === 'redeemed');
 
         const printWindow = window.open('', '', 'height=800,width=900');
         printWindow.document.write('<html><head><title>Relatório de Resgates - Quinta Premiada</title>');
@@ -273,7 +302,7 @@ export default function GoldenThursday() {
         printWindow.document.write(`<h2>RELATÓRIO DE PREMIAÇÕES</h2>`);
 
         printWindow.document.write(`<div class="summary">`);
-        printWindow.document.write(`DATA: ${new Date().toLocaleString()}<br/>`);
+        printWindow.document.write(`DATA: ${dateLabel}<br/>`);
         printWindow.document.write(`TOTAL RESGATADO: ${redeemedItems.length}`);
         printWindow.document.write(`</div>`);
 
@@ -299,6 +328,12 @@ export default function GoldenThursday() {
         printWindow.print();
     };
 
+    const handlePrintCurrent = () => {
+        if (currentDraw) {
+            generatePrintReport(currentDraw, new Date().toLocaleString());
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-warm flex">
             <Sidebar activePage="thursday" headerTitle="Quinta Premiada" headerIcon="stars" group="maintenance" unit={currentUnit} />
@@ -316,7 +351,7 @@ export default function GoldenThursday() {
                     </div>
                     <div className="flex gap-4">
                         <button
-                            onClick={handlePrint}
+                            onClick={handlePrintCurrent}
                             disabled={!currentDraw}
                             className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
@@ -346,12 +381,27 @@ export default function GoldenThursday() {
                         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
                             {history.length === 0 && <p className="text-white/30 text-sm text-center mt-10">Nenhum histórico recente.</p>}
                             {history.map(h => (
-                                <div key={h.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
-                                    <div className="flex justify-between items-start mb-2">
+                                <div key={h.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:bg-white/10 transition-colors group flex flex-col gap-2">
+                                    <div className="flex justify-between items-start">
                                         <p className="text-white font-bold text-sm">{new Date(h.data_hora).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
                                         <span className="text-xs text-white/50 bg-black/20 px-2 py-0.5 rounded">{h.total_sorteados} cupons</span>
                                     </div>
-                                    <div className="flex items-center gap-2"><span className="material-symbols-outlined text-green-400 text-base">check_circle</span><p className="text-sm text-green-100">{h.total_resgatados} resgatados</p></div>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-green-400 text-base">check_circle</span>
+                                            <p className="text-sm text-green-100">{h.total_resgatados} resgatados</p>
+                                        </div>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                generatePrintReport(h.detalhes, new Date(h.data_hora).toLocaleString());
+                                            }}
+                                            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center shadow-sm"
+                                            title="Imprimir Relatório Antigo"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">print</span>
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
