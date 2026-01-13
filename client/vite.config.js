@@ -7,10 +7,6 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      devOptions: {
-        enabled: true,
-        type: 'module',
-      },
       includeAssets: ['favicon.png', 'robots.txt'],
       manifest: {
         name: 'Dedalos Tools',
@@ -32,16 +28,9 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         cleanupOutdatedCaches: true,
-        
-        // 1. O Paraquedas: Se tudo der errado, entrega o index.html
         navigateFallback: '/index.html',
-        
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        
         runtimeCaching: [
-          // 2. A REGRA QUE FALTA NO SEU ARQUIVO ATUAL:
-          // Essa regra diz: "Se for navegação (HTML), TENTE a rede."
-          // "SE a rede der erro ou mandar código 502, RECUSE e use o Cache."
           {
             urlPattern: ({ request }) => request.mode === 'navigate',
             handler: 'NetworkFirst',
@@ -49,13 +38,10 @@ export default defineConfig({
               cacheName: 'pages-cache',
               networkTimeoutSeconds: 3,
               cacheableResponse: {
-                // O SEGREDO: Só aceita status 0 (Opaque) ou 200 (OK).
-                // Rejeita 502, 503, 504.
                 statuses: [0, 200]
               }
             }
           },
-          // Regra da API (mantida como estava)
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api'),
             handler: 'NetworkOnly',
