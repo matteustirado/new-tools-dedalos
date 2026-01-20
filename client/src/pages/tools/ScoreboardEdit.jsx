@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import Sidebar from '../../components/Sidebar';
 import { toast } from 'react-toastify';
 import axios from 'axios';
-import { EMOJI_DATA, COLOR_PALETTE } from '../../assets/emojis/keyboardEmojis';
+import { EMOJI_DATA, COLOR_PALETTE } from '../../assets/emojis/KeyboardEmojis';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 

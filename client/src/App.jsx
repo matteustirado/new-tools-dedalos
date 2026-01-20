@@ -5,6 +5,8 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import ConnectionGuardian from './components/ConnectionGuardian';
 import Home from './pages/Home';
+
+// RÁDIO
 import DJController from './pages/radio/DJController';
 import MusicCollection from './pages/radio/MusicCollection';
 import PlaylistCreator from './pages/radio/PlaylistCreator';
@@ -12,12 +14,18 @@ import Library from './pages/radio/Library';
 import Schedule from './pages/radio/Schedule';
 import WatchVideo from './pages/radio/WatchVideo';
 import Jukebox from './pages/radio/Jukebox';
+
+// FERRAMENTAS (Manutenção)
 import GoldenThursday from './pages/tools/GoldenThursday';
 import ScoreboardEdit from './pages/tools/ScoreboardEdit';
 import ScoreboardGame from './pages/tools/ScoreboardGame';
 import ScoreboardDisplay from './pages/tools/ScoreboardDisplay';
 import PricesEdit from './pages/tools/PricesEdit';
 import PricesDisplay from './pages/tools/PricesDisplay';
+
+// GESTÃO DE PESSOAS (RH)
+import NameTagGenerator from './pages/people/NameTagGenerator';
+import BenefitsCheck from './pages/people/BenefitsCheck';
 
 function App() {
   const [appVersion, setAppVersion] = useState(0);
@@ -45,9 +53,11 @@ function App() {
       />
       
       <Routes key={appVersion}>
+        {/* HOME */}
         <Route path="/" element={<Home unit="sp" />} />
         <Route path="/bh" element={<Home unit="bh" />} />
 
+        {/* RÁDIO */}
         <Route path="/radio/dj" element={<DJController />} />
         <Route path="/radio/collection" element={<MusicCollection />} />
         <Route path="/radio/playlist-creator" element={<PlaylistCreator />} />
@@ -58,6 +68,7 @@ function App() {
         <Route path="/radio/jukebox" element={<Jukebox />} />
         <Route path="/radio/jukebox/:unidade" element={<Jukebox />} />
 
+        {/* FERRAMENTAS */}
         <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
         <Route path="/tools/thursday" element={<GoldenThursday />} />
 
@@ -67,6 +78,11 @@ function App() {
 
         <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
         <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
+
+        {/* GESTÃO DE PESSOAS [NOVO] */}
+        <Route path="/people/nametag" element={<NameTagGenerator />} />
+        <Route path="/people/benefits" element={<BenefitsCheck />} />
+
       </Routes>
     </BrowserRouter>
   );

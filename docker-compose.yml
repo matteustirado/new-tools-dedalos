@@ -5,6 +5,7 @@ networks:
     driver: bridge
 
 services:
+  # Banco de Dados
   db:
     image: mysql:8.0
     container_name: tools_dedalos_db
@@ -16,7 +17,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3306:3306"
+      - "3307:3306" # Porta 3307 externa para evitar conflito com seu MySQL local
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
       - db_data:/var/lib/mysql
@@ -29,6 +30,7 @@ services:
       retries: 5
       start_period: 30s
 
+  # Backend
   backend:
     build:
       context: ./server
@@ -58,32 +60,39 @@ services:
       - /app/node_modules
       - ./server/public/uploads:/app/public/uploads
 
+  # Frontend
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=https://api.dedalosbar.com
     container_name: tools_dedalos_frontend
     restart: always
     environment:
-      VITE_API_URL: "https://api.dedalosbar.com"
+      # Backend Local
+      VITE_API_URL: "http://localhost:4000" 
     ports:
       - "3000:3000"
     networks:
       - tools_net
     depends_on:
       - backend
+    # [CORREÇÃO] Comentei os volumes do frontend.
+    # Isso obriga o container a usar a versão 'dist' que ele acabou de construir,
+    # em vez de usar os arquivos do seu computador (que não estão buildados).
+    # volumes:
+    #   - ./client:/app
+    #   - /app/node_modules
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: tools_tunnel
-    restart: always
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-    networks:
-      - tools_net
+  # Tunnel (Desativado para testes locais)
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: tools_tunnel
+  #   restart: always
+  #   command: tunnel run
+  #   environment:
+  #     - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+  #   networks:
+  #     - tools_net
 
 volumes:
   db_data:

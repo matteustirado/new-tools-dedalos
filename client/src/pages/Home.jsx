@@ -11,6 +11,7 @@ export default function Home({ unit = 'sp' }) {
   const [expandedSections, setExpandedSections] = useState({ 
     radio: false, 
     maintenance: false, 
+    people: false, // [NOVO] Estado para seção de pessoas
     cx: false 
   })
 
@@ -28,6 +29,12 @@ export default function Home({ unit = 'sp' }) {
     { id: 'quinta-premiada', name: 'Quinta Premiada', icon: 'stars', path: `/tools/thursday/${unit}` },
     { id: 'tabela-precos', name: 'Tabela de Preços', icon: 'price_change', path: `/tools/prices/maintenance/${unit}` },
     { id: 'placar-dedalos', name: 'Placar Dedalos', icon: 'scoreboard', path: `/tools/scoreboard/maintenance/${unit}` }
+  ]
+
+  // [NOVO] Ferramentas de Gestão de Pessoas
+  const peopleTools = [
+    { id: 'cracha', name: 'Gerador de Crachá', icon: 'badge', path: '/people/nametag' },
+    { id: 'beneficios', name: 'Benefícios', icon: 'savings', path: '/people/benefits' }
   ]
 
   const cxTools = [
@@ -76,6 +83,8 @@ export default function Home({ unit = 'sp' }) {
         </div>
 
         <div className="max-w-7xl mx-auto space-y-6">
+          
+          {/* SEÇÃO RÁDIO */}
           <div className="liquid-glass rounded-xl p-6">
             <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection('radio')}>
               <div className="flex items-center gap-4">
@@ -108,6 +117,7 @@ export default function Home({ unit = 'sp' }) {
             )}
           </div>
 
+          {/* SEÇÃO MANUTENÇÃO */}
           <div className="liquid-glass rounded-xl p-6">
             <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection('maintenance')}>
               <div className="flex items-center gap-4">
@@ -142,6 +152,40 @@ export default function Home({ unit = 'sp' }) {
             )}
           </div>
 
+          {/* [NOVO] SEÇÃO GESTÃO DE PESSOAS */}
+          <div className="liquid-glass rounded-xl p-6">
+            <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection('people')}>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-emerald-600 to-green-500 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-3xl text-white">groups</span>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Gestão de Pessoas</h2>
+                  <p className="text-text-muted text-sm">Crachás e Benefícios</p>
+                </div>
+              </div>
+              <span className={`material-symbols-outlined text-white text-3xl transition-transform ${expandedSections.people ? 'rotate-180' : ''}`}>expand_more</span>
+            </div>
+            
+            {expandedSections.people && (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6 pt-6 border-t border-white/10 animate-fade-in-down">
+                {peopleTools.map((tool) => (
+                  <div 
+                    key={tool.id} 
+                    onClick={() => handleToolClick(tool.path)} 
+                    className={`liquid-glass rounded-xl p-4 transform transition-all duration-300 hover:shadow-2xl cursor-pointer hover:scale-105 group flex flex-col items-center`}
+                  >
+                    <div className={`w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-600 to-green-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                      <span className="material-symbols-outlined text-2xl text-white">{tool.icon}</span>
+                    </div>
+                    <h3 className="text-sm font-bold text-white text-center leading-tight">{tool.name}</h3>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* SEÇÃO CX */}
           <div className="liquid-glass rounded-xl p-6">
             <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection('cx')}>
               <div className="flex items-center gap-4">

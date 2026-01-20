@@ -161,3 +161,18 @@ INSERT INTO prices_active (unidade, tipo, titulo_tabela, categorias) VALUES
 ('BH', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
 ('BH', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
 ('BH', 'feriado', 'Tabela Feriados', '[]');
+
+CREATE TABLE IF NOT EXISTS employees (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cpf VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(100),
+    registration_code VARCHAR(50),
+    admission_date DATE,
+    photo_url TEXT,
+    unit VARCHAR(10),
+    status ENUM('active', 'archived') DEFAULT 'active',
+    is_new BOOLEAN DEFAULT TRUE,
+    last_seen_at DATETIME,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

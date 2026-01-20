@@ -41,6 +41,12 @@ export default function Sidebar({
       { id: 'scoreboard-display', label: 'Placar', icon: 'scoreboard', path: `/tools/scoreboard/display/${activeUnit}` },
       { id: 'scoreboard-game', label: 'Game', icon: 'sports_esports', path: `/tools/scoreboard/game/${activeUnit}` },
     ],
+    people: [ // [NOVO] Grupo Gestão de Pessoas
+      { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
+      { type: 'label', label: 'FERRAMENTAS RH' },
+      { id: 'nametag', label: 'Gerador de Crachá', icon: 'badge', path: '/people/nametag' },
+      { id: 'benefits', label: 'Benefícios', icon: 'savings', path: '/people/benefits' },
+    ],
     cx: [
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
       { id: 'pesquisa-satisfacao', label: 'Pesquisa', icon: 'thumb_up', path: '/cx/pesquisa' },
@@ -64,6 +70,13 @@ export default function Sidebar({
       activeBg: 'bg-blue-500/20',
       activeText: 'text-cyan-400',
       activeBorder: 'border-blue-500/50',
+    },
+    people: { // [NOVO] Tema Verde/Esmeralda para RH
+      gradient: 'from-emerald-600 to-green-500',
+      text: 'text-emerald-400',
+      activeBg: 'bg-emerald-500/20',
+      activeText: 'text-emerald-400',
+      activeBorder: 'border-emerald-500/50',
     },
     cx: {
       gradient: 'from-purple-600 to-pink-500',
@@ -89,7 +102,9 @@ export default function Sidebar({
           <div className="flex flex-col">
             <h1 className="text-white text-lg font-bold leading-tight">{headerTitle}</h1>
             <p className="text-text-muted text-xs uppercase tracking-wider">
-              {group === 'maintenance' ? `Unidade ${activeUnit.toUpperCase()}` : 'Rádio Dedalos'}
+              {group === 'maintenance' ? `Unidade ${activeUnit.toUpperCase()}` : 
+               group === 'people' ? 'Gestão de Pessoas' : 
+               'Rádio Dedalos'}
             </p>
           </div>
         </div>
