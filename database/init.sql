@@ -162,6 +162,7 @@ INSERT INTO prices_active (unidade, tipo, titulo_tabela, categorias) VALUES
 ('BH', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
 ('BH', 'feriado', 'Tabela Feriados', '[]');
 
+-- Tabela para Gestão de Pessoas (Crachás)
 CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cpf VARCHAR(20) UNIQUE NOT NULL,
