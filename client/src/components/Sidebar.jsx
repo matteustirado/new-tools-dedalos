@@ -41,11 +41,13 @@ export default function Sidebar({
       { id: 'scoreboard-display', label: 'Placar', icon: 'scoreboard', path: `/tools/scoreboard/display/${activeUnit}` },
       { id: 'scoreboard-game', label: 'Game', icon: 'sports_esports', path: `/tools/scoreboard/game/${activeUnit}` },
     ],
-    people: [ // [NOVO] Grupo Gestão de Pessoas
+    identification: [ 
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
-      { type: 'label', label: 'FERRAMENTAS RH' },
-      { id: 'nametag', label: 'Gerador de Crachá', icon: 'badge', path: '/people/nametag' },
-      { id: 'benefits', label: 'Benefícios', icon: 'savings', path: '/people/benefits' },
+      { type: 'label', label: 'IDENTIFICAÇÃO (CRACHÁS)' },
+      { id: 'generator', label: 'Gerador', icon: 'badge', path: '/people/nametag' },
+      { id: 'models', label: 'Modelos', icon: 'style', path: '/people/models' },
+      { type: 'label', label: 'BENEFÍCIOS' },
+      { id: 'conference', label: 'Conferência', icon: 'assignment_turned_in', path: '/people/benefits' },
     ],
     cx: [
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
@@ -54,11 +56,11 @@ export default function Sidebar({
     ],
   }
 
-  const currentMenu = menus[group] || menus.radio
+  const currentMenu = menus[group] || menus[group === 'people' ? 'identification' : 'radio'] || menus.radio
 
   const themeColors = {
     radio: {
-      gradient: 'from-primary to-red-600',
+      gradient: 'from-primary to-red-600', 
       text: 'text-primary',
       activeBg: 'bg-primary/20',
       activeText: 'text-primary',
@@ -71,7 +73,14 @@ export default function Sidebar({
       activeText: 'text-cyan-400',
       activeBorder: 'border-blue-500/50',
     },
-    people: { // [NOVO] Tema Verde/Esmeralda para RH
+    identification: { 
+      gradient: 'from-emerald-600 to-green-500', 
+      text: 'text-emerald-400',
+      activeBg: 'bg-emerald-500/20',
+      activeText: 'text-emerald-400',
+      activeBorder: 'border-emerald-500/50',
+    },
+    people: { 
       gradient: 'from-emerald-600 to-green-500',
       text: 'text-emerald-400',
       activeBg: 'bg-emerald-500/20',
@@ -89,22 +98,30 @@ export default function Sidebar({
 
   const theme = themeColors[group] || themeColors.radio
 
+  const getGroupSubtitle = () => {
+    switch(group) {
+        case 'maintenance': return `Unidade ${activeUnit.toUpperCase()}`;
+        case 'identification': 
+        case 'people': return 'Gestão de Pessoas';
+        case 'cx': return 'Experiência do Cliente';
+        default: return 'Rádio Dedalos';
+    }
+  }
+
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-bg-dark-primary/50 backdrop-blur-sm border-r border-white/10 p-4 flex flex-col justify-between z-10">
+    <aside className="fixed left-0 top-0 h-screen w-64 bg-bg-dark-primary/50 backdrop-blur-sm border-r border-white/10 p-4 flex flex-col justify-between z-10 shadow-2xl">
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${theme.gradient} flex items-center justify-center`}>
+            <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${theme.gradient} flex items-center justify-center shadow-lg`}>
               <span className="material-symbols-outlined text-white text-2xl">{headerIcon}</span>
             </div>
             {headerExtra}
           </div>
           <div className="flex flex-col">
             <h1 className="text-white text-lg font-bold leading-tight">{headerTitle}</h1>
-            <p className="text-text-muted text-xs uppercase tracking-wider">
-              {group === 'maintenance' ? `Unidade ${activeUnit.toUpperCase()}` : 
-               group === 'people' ? 'Gestão de Pessoas' : 
-               'Rádio Dedalos'}
+            <p className="text-text-muted text-xs uppercase tracking-wider font-semibold opacity-70">
+              {getGroupSubtitle()}
             </p>
           </div>
         </div>
@@ -113,18 +130,18 @@ export default function Sidebar({
           {currentMenu.map((item, idx) => {
             if (item.type === 'label') {
               return (
-                <div key={`label-${idx}`} className="mt-4 mb-2 px-2">
-                  <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">{item.label}</p>
+                <div key={`label-${idx}`} className="mt-4 mb-2 px-2 border-b border-white/5 pb-1">
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${theme.text} opacity-80`}>{item.label}</p>
                 </div>
               )
             }
 
             if (item.id === 'playlist-creator' && isEditMode) {
               return (
-                <div key={item.id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/20 border border-primary/50 relative">
+                <div key={item.id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/20 border border-primary/50 relative mb-1">
                   <button
                     onClick={() => navigate('/radio/playlist-creator')}
-                    className="p-2 rounded-md hover:bg-white/10 text-primary"
+                    className="p-2 rounded-md hover:bg-white/10 text-primary transition-colors"
                     title="Voltar para Criação"
                   >
                     <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
@@ -142,12 +159,14 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => navigate(item.path)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors border border-transparent ${
-                  isActive ? `${theme.activeBg} ${theme.activeText} ${theme.activeBorder}` : 'hover:bg-white/10 text-white'
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 border border-transparent group ${
+                  isActive 
+                    ? `${theme.activeBg} ${theme.activeText} ${theme.activeBorder} shadow-md` 
+                    : 'hover:bg-white/10 text-white/80 hover:text-white'
                 }`}
               >
-                <span className="material-symbols-outlined">{item.icon}</span>
-                <p className={`text-base ${isActive ? 'font-semibold' : 'font-medium'}`}>{item.label}</p>
+                <span className={`material-symbols-outlined transition-transform group-hover:scale-110 ${isActive ? '' : 'opacity-70'}`}>{item.icon}</span>
+                <p className={`text-base ${isActive ? 'font-bold' : 'font-medium'}`}>{item.label}</p>
               </button>
             )
           })}
@@ -158,13 +177,13 @@ export default function Sidebar({
         {group === 'radio' && (
           <button
             onClick={handleOpenPlayer}
-            className="flex w-full items-center justify-center gap-2 rounded-lg h-12 px-4 text-white text-base font-bold bg-red-600 hover:bg-red-700 transition-colors shadow-lg hover:shadow-red-900/20"
+            className="flex w-full items-center justify-center gap-2 rounded-lg h-12 px-4 text-white text-base font-bold bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 transition-all shadow-lg hover:shadow-red-900/40 transform hover:-translate-y-0.5"
           >
-            <span className="material-symbols-outlined">sensors</span>
+            <span className="material-symbols-outlined animate-pulse">sensors</span>
             <span className="truncate">Ao Vivo</span>
           </button>
         )}
-        <div className="text-center text-xs text-text-muted pb-2">
+        <div className="text-center text-xs text-text-muted pb-2 pt-4 border-t border-white/5">
           <p>
             © Developed by: <span className={`${theme.text} font-semibold`}>Matteus Tirado</span>
           </p>

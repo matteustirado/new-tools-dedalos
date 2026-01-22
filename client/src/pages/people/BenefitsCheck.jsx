@@ -6,10 +6,9 @@ export default function BenefitsCheck() {
     const [search, setSearch] = useState('');
     const [employee, setEmployee] = useState(null);
 
-    // Mock para teste (Depois ligaremos no backend)
     const handleSearch = (e) => {
         e.preventDefault();
-        // Simulação
+
         if (search === '123') {
             setEmployee({
                 id: 1,
@@ -37,7 +36,6 @@ export default function BenefitsCheck() {
                 </header>
 
                 <div className="max-w-2xl mx-auto">
-                    {/* BARRA DE BUSCA */}
                     <form onSubmit={handleSearch} className="relative mb-10">
                         <input 
                             type="text" 
@@ -51,7 +49,6 @@ export default function BenefitsCheck() {
                         </button>
                     </form>
 
-                    {/* RESULTADO */}
                     {employee && (
                         <div className="liquid-glass rounded-3xl p-8 animate-fade-in">
                             <div className="flex items-center gap-6 mb-8 border-b border-white/10 pb-6">
@@ -68,7 +65,6 @@ export default function BenefitsCheck() {
                             </div>
 
                             <div className="grid gap-4">
-                                {/* CARD BENEFÍCIO CONSUMO */}
                                 <div className="bg-white/5 p-5 rounded-xl border border-white/5 flex justify-between items-center">
                                     <div className="flex items-center gap-4">
                                         <div className="p-3 bg-yellow-500/20 rounded-lg text-yellow-400">
@@ -85,7 +81,6 @@ export default function BenefitsCheck() {
                                     </div>
                                 </div>
 
-                                {/* CARD BENEFÍCIO ENTRADA */}
                                 <div className={`p-5 rounded-xl border flex justify-between items-center ${employee.benefits.entrada.status === 'used' ? 'bg-red-500/10 border-red-500/30' : 'bg-green-500/10 border-green-500/30'}`}>
                                     <div className="flex items-center gap-4">
                                         <div className={`p-3 rounded-lg ${employee.benefits.entrada.status === 'used' ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>

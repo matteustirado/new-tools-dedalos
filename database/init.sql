@@ -14,6 +14,9 @@ DROP TABLE IF EXISTS agendamentos;
 DROP TABLE IF EXISTS radio_config;
 DROP TABLE IF EXISTS playlists;
 DROP TABLE IF EXISTS tracks;
+-- [NOVO] Limpa tabelas de crachá e pessoas se existirem para recriar
+DROP TABLE IF EXISTS badge_templates;
+DROP TABLE IF EXISTS employees;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -177,3 +180,16 @@ CREATE TABLE IF NOT EXISTS employees (
     last_seen_at DATETIME,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- Tabela de Modelos de Crachá
+CREATE TABLE IF NOT EXISTS badge_templates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    role_name VARCHAR(100) UNIQUE NOT NULL, -- Ex: 'PADRAO', 'BARTENDER', 'GERENTE'
+    config JSON NOT NULL, -- Guarda altura, fontes, texturas, etc.
+    is_default BOOLEAN DEFAULT FALSE,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Inserir o template inicial PADRAO com todas as configurações visuais
+INSERT IGNORE INTO badge_templates (role_name, config, is_default) 
+VALUES ('PADRAO', '{"headerHeight": 30, "photoShape": "circle", "nameSize": 24, "roleSize": 14, "texture": "geometric", "logoUrl": null, "logoSize": 80, "contentY": 0, "photoY": 0}', TRUE);

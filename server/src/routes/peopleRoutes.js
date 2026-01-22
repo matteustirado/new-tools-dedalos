@@ -3,7 +3,6 @@ import { syncEmployees, updateEmployee, uploadEmployeePhoto } from '../controlle
 import multer from 'multer';
 import path from 'path';
 
-// Configuração do Multer para Upload de Fotos
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'public/uploads/');
@@ -13,8 +12,8 @@ const storage = multer.diskStorage({
         cb(null, 'employee-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
 
+const upload = multer({ storage: storage });
 const router = express.Router();
 
 router.get('/sync', syncEmployees);
