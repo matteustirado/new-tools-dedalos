@@ -13,19 +13,23 @@ export default function NameTagGenerator() {
     const [search, setSearch] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [syncing, setSyncing] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [isWildcard, setIsWildcard] = useState(false);
     const [templates, setTemplates] = useState([]);
     const [currentConfig, setCurrentConfig] = useState({});
+
     const fileInputRef = useRef(null);
 
     const fetchData = async () => {
         setLoading(true);
         try {
+            const activeUnit = localStorage.getItem('dedalos_active_unit') || 'sp';
             const [empRes, templRes] = await Promise.all([
-                axios.get(`${API_URL}/api/people/sync`),
+                axios.get(`${API_URL}/api/people/list?unit=${activeUnit}`),
                 axios.get(`${API_URL}/api/badges/templates`)
             ]);
+            
             setEmployees(Array.isArray(empRes.data) ? empRes.data : []);
             setTemplates(Array.isArray(templRes.data) ? templRes.data : []);
         } catch (error) {
@@ -34,6 +38,26 @@ export default function NameTagGenerator() {
             setEmployees([]); 
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSync = async () => {
+        setSyncing(true);
+        const toastId = toast.loading("Sincronizando com o RH...");
+        
+        try {
+            const activeUnit = localStorage.getItem('dedalos_active_unit') || 'sp';
+            const res = await axios.get(`${API_URL}/api/people/sync?unit=${activeUnit}`);
+            
+            if (Array.isArray(res.data)) {
+                setEmployees(res.data);
+                toast.update(toastId, { render: "Sincronização concluída!", type: "success", isLoading: false, autoClose: 3000 });
+            }
+        } catch (error) {
+            console.error(error);
+            toast.update(toastId, { render: "Erro na sincronização.", type: "error", isLoading: false, autoClose: 3000 });
+        } finally {
+            setSyncing(false);
         }
     };
 
@@ -54,11 +78,6 @@ export default function NameTagGenerator() {
         }
     }, [selectedEmployee?.role, templates]);
 
-    const fixDateForInput = (dateString) => {
-        if (!dateString) return '';
-        return new Date(dateString).toISOString().split('T')[0];
-    };
-
     const fixDateForDisplay = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
@@ -67,7 +86,7 @@ export default function NameTagGenerator() {
     };
 
     const isComplete = (emp) => {
-        return emp.role && emp.photo_url && emp.admission_date && emp.registration_code;
+        return emp.role && emp.photo_url && emp.admission_date && emp.cpf;
     };
 
     const filteredEmployees = employees.filter(emp => {
@@ -92,7 +111,7 @@ export default function NameTagGenerator() {
 
         try {
             const canvas = await html2canvas(element, {
-                scale: 4,
+                scale: 4, 
                 useCORS: true, 
                 backgroundColor: null,
                 logging: false
@@ -115,20 +134,31 @@ export default function NameTagGenerator() {
         if (emp.admission_date) {
              admissionDate = new Date(emp.admission_date).toISOString().split('T')[0];
         }
-        setSelectedEmployee({ ...emp, admission_date: admissionDate });
+        
+        setSelectedEmployee({ 
+            ...emp, 
+            admission_date: admissionDate,
+            photo_scale: emp.photo_scale || 1,
+            photo_x: emp.photo_x || 0,
+            photo_y: emp.photo_y || 0
+        });
         setIsWildcard(false);
     };
 
     const handleWildcardClick = () => {
+        const activeUnit = localStorage.getItem('dedalos_active_unit') || 'sp';
+        
         setSelectedEmployee({
             name: "NOME SOBRENOME",
             role: "CARGO / FUNÇÃO",
             cpf: "000.000.000-00",
             admission_date: new Date().toISOString().split('T')[0],
-            registration_code: "0000",
             photo_url: null,
-            unit: "SP",
-            status: 'active'
+            unit: activeUnit,
+            status: 'active',
+            photo_scale: 1,
+            photo_x: 0,
+            photo_y: 0
         });
         setIsWildcard(true);
     };
@@ -164,7 +194,10 @@ export default function NameTagGenerator() {
         }
         try {
             const statusToSave = selectedEmployee.status || 'active';
-            await axios.post(`${API_URL}/api/people/update/${selectedEmployee.id}`, { ...selectedEmployee, status: statusToSave });
+            await axios.post(`${API_URL}/api/people/update/${selectedEmployee.id}`, { 
+                ...selectedEmployee, 
+                status: statusToSave 
+            });
             toast.success("Dados salvos!");
             fetchData();
         } catch (error) {
@@ -179,10 +212,14 @@ export default function NameTagGenerator() {
         
         try {
             await axios.post(`${API_URL}/api/people/update/${emp.id}`, { ...emp, status: newStatus });
+            
             toast.info(
-                <div><span className="font-bold">{emp.name}</span> foi {newStatus === 'archived' ? 'arquivado' : 'ativado'}.</div>,
+                <div>
+                    <span className="font-bold">{emp.name}</span> foi {newStatus === 'archived' ? 'arquivado' : 'ativado'}.
+                </div>,
                 { icon: newStatus === 'archived' ? '📁' : '✅', autoClose: 2000 }
             );
+            
             setEmployees(prev => prev.map(p => p.id === emp.id ? { ...p, status: newStatus } : p));
         } catch (error) {
             toast.error("Erro ao alterar status.");
@@ -198,7 +235,7 @@ export default function NameTagGenerator() {
     const handleEdit = (e, emp) => {
         e.stopPropagation();
         handleCardClick(emp);
-    };
+    }
 
     const handleModalPrint = () => {
         const name = selectedEmployee.name ? selectedEmployee.name.replace(/\s+/g, '_').toUpperCase() : 'CRACHA';
@@ -211,10 +248,22 @@ export default function NameTagGenerator() {
 
             <main className="ml-64 flex-1 p-8">
                 <div className="flex justify-between items-center mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold text-white mb-1">Gerador de Crachá</h1>
-                        <p className="text-white/50">Modelo Oficial Dédalos Bar</p>
+                    <div className="flex items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-bold text-white mb-1">Gerador de Crachá</h1>
+                            <p className="text-white/50">Modelo Oficial Dédalos Bar</p>
+                        </div>
+                        
+                        <button 
+                            onClick={handleSync}
+                            disabled={syncing}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all ${syncing ? 'bg-blue-600/50 cursor-wait' : 'bg-blue-600 hover:bg-blue-500'} text-white shadow-lg`}
+                        >
+                            <span className={`material-symbols-outlined ${syncing ? 'animate-spin' : ''}`}>sync</span>
+                            {syncing ? 'Sincronizando...' : 'Sincronizar RH'}
+                        </button>
                     </div>
+
                     <button 
                         onClick={() => setShowArchived(!showArchived)}
                         className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${showArchived ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
@@ -298,30 +347,9 @@ export default function NameTagGenerator() {
                                 
                                 <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 z-50 backdrop-blur-sm"
                                      onClick={() => handleCardClick(emp)}>
-                                    
-                                    <button 
-                                        onClick={(e) => handleEdit(e, emp)}
-                                        className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-                                        title="Editar Dados"
-                                    >
-                                        <span className="material-symbols-outlined text-lg">edit</span>
-                                    </button>
-                                    
-                                    <button 
-                                        onClick={(e) => handleQuickPrint(e, emp)}
-                                        className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-                                        title="Baixar PDF"
-                                    >
-                                        <span className="material-symbols-outlined text-lg">download</span>
-                                    </button>
-                                    
-                                    <button 
-                                        onClick={(e) => handleArchive(e, emp)}
-                                        className={`w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform ${showArchived ? 'bg-green-600 hover:bg-green-500' : 'bg-orange-600 hover:bg-orange-500'}`}
-                                        title={showArchived ? "Ativar" : "Arquivar"}
-                                    >
-                                        <span className="material-symbols-outlined text-lg">{showArchived ? 'unarchive' : 'archive'}</span>
-                                    </button>
+                                    <button onClick={(e) => handleEdit(e, emp)} className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform" title="Editar Dados"><span className="material-symbols-outlined text-lg">edit</span></button>
+                                    <button onClick={(e) => handleQuickPrint(e, emp)} className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform" title="Baixar PDF"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={(e) => handleArchive(e, emp)} className={`w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform ${showArchived ? 'bg-green-600 hover:bg-green-500' : 'bg-orange-600 hover:bg-orange-500'}`} title={showArchived ? "Ativar" : "Arquivar"}><span className="material-symbols-outlined text-lg">{showArchived ? 'unarchive' : 'archive'}</span></button>
                                 </div>
                             </div>
                         );
@@ -330,55 +358,29 @@ export default function NameTagGenerator() {
 
                 {selectedEmployee && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-                        <button 
-                            onClick={() => setSelectedEmployee(null)}
-                            className="absolute top-4 right-4 text-white/50 hover:text-white z-50"
-                        >
-                            <span className="material-symbols-outlined text-4xl">close</span>
-                        </button>
+                        <button onClick={() => setSelectedEmployee(null)} className="absolute top-4 right-4 text-white/50 hover:text-white z-50"><span className="material-symbols-outlined text-4xl">close</span></button>
 
                         <div className="flex flex-col md:flex-row gap-8 max-w-7xl w-full h-[90vh]">
                             <div className="w-1/3 bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 overflow-y-auto custom-scrollbar">
                                 <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-[#FF6600]">edit_square</span>
-                                    Editar Dados
+                                    <span className="material-symbols-outlined text-[#FF6600]">edit_square</span> Editar Dados
                                 </h2>
                                 
                                 <div className="space-y-4">
                                     <div>
                                         <label className="text-xs text-white/50 uppercase font-bold ml-1">Nome Completo</label>
-                                        <input 
-                                            type="text" 
-                                            value={selectedEmployee.name}
-                                            onChange={e => setSelectedEmployee({...selectedEmployee, name: e.target.value.toUpperCase()})}
-                                            className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none uppercase font-bold"
-                                        />
+                                        <input type="text" value={selectedEmployee.name} onChange={e => setSelectedEmployee({...selectedEmployee, name: e.target.value.toUpperCase()})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none uppercase font-bold" />
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs text-white/50 uppercase font-bold ml-1">Cargo</label>
-                                            <input 
-                                                type="text" 
-                                                list="roles-list"
-                                                value={selectedEmployee.role || ''}
-                                                onChange={e => setSelectedEmployee({...selectedEmployee, role: e.target.value.toUpperCase()})}
-                                                className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none uppercase"
-                                            />
-                                            <datalist id="roles-list">
-                                                {templates.filter(t => t.role_name !== 'PADRAO').map(t => (
-                                                    <option key={t.id} value={t.role_name} />
-                                                ))}
-                                            </datalist>
+                                            <input type="text" list="roles-list" value={selectedEmployee.role || ''} onChange={e => setSelectedEmployee({...selectedEmployee, role: e.target.value.toUpperCase()})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none uppercase" />
+                                            <datalist id="roles-list">{templates.filter(t => t.role_name !== 'PADRAO').map(t => (<option key={t.id} value={t.role_name} />))}</datalist>
                                         </div>
                                         <div>
                                             <label className="text-xs text-white/50 uppercase font-bold ml-1">Admissão</label>
-                                            <input 
-                                                type="date" 
-                                                value={selectedEmployee.admission_date}
-                                                onChange={e => setSelectedEmployee({...selectedEmployee, admission_date: e.target.value})}
-                                                className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none"
-                                            />
+                                            <input type="date" value={selectedEmployee.admission_date} onChange={e => setSelectedEmployee({...selectedEmployee, admission_date: e.target.value})} className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none" />
                                         </div>
                                     </div>
 
@@ -387,42 +389,46 @@ export default function NameTagGenerator() {
                                         <input 
                                             type="text" 
                                             value={selectedEmployee.cpf} 
-                                            disabled={!isWildcard}
+                                            disabled={!isWildcard} 
                                             onChange={isWildcard ? (e) => setSelectedEmployee({...selectedEmployee, cpf: e.target.value}) : undefined}
                                             className={`w-full border border-white/10 rounded-lg p-3 text-white focus:border-[#FF6600] outline-none font-mono ${!isWildcard ? 'bg-white/5 text-white/50 cursor-not-allowed' : 'bg-black/30'}`} 
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="text-xs text-white/50 uppercase font-bold ml-1">Foto do Colaborador</label>
-                                        <div className="flex gap-3 items-center">
-                                            <div className="w-16 h-16 bg-black/50 rounded-lg overflow-hidden border border-white/10 flex-shrink-0">
+                                    <div className="bg-white/5 p-4 rounded-xl border border-white/5 mt-4">
+                                        <label className="text-xs text-orange-400 uppercase font-bold mb-3 block flex items-center gap-1"><span className="material-symbols-outlined text-sm">tune</span> Ajustar Foto</label>
+                                        
+                                        <div className="flex gap-3 items-center mb-4">
+                                            <div className="w-12 h-12 bg-black/50 rounded-lg overflow-hidden border border-white/10 flex-shrink-0">
                                                 {selectedEmployee.photo_url ? (
                                                     <img src={selectedEmployee.photo_url.startsWith('http') || selectedEmployee.photo_url.startsWith('data:') ? selectedEmployee.photo_url : `${API_URL}${selectedEmployee.photo_url}`} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-white/20"><span className="material-symbols-outlined">person</span></div>
-                                                )}
+                                                ) : <div className="w-full h-full flex items-center justify-center text-white/20"><span className="material-symbols-outlined">person</span></div>}
                                             </div>
-                                            <button 
-                                                onClick={() => fileInputRef.current.click()}
-                                                className="flex-1 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 rounded-lg p-4 text-white/70 transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <span className="material-symbols-outlined">cloud_upload</span>
-                                                Trocar Foto
-                                            </button>
+                                            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-white/5 hover:bg-white/10 border border-dashed border-white/20 rounded-lg p-2 text-xs text-white transition-colors">Trocar Imagem</button>
                                             <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} className="hidden" accept="image/*" />
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <div>
+                                                <div className="flex justify-between mb-1"><label className="text-[10px] text-white/50">Zoom</label><span className="text-[10px] text-white">{selectedEmployee.photo_scale || 1}x</span></div>
+                                                <input type="range" min="1" max="3" step="0.1" value={selectedEmployee.photo_scale || 1} onChange={e => setSelectedEmployee({...selectedEmployee, photo_scale: parseFloat(e.target.value)})} className="w-full accent-orange-500 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" />
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <div className="flex-1">
+                                                    <label className="text-[10px] text-white/50 block mb-1">Posição X</label>
+                                                    <input type="range" min="-100" max="100" value={selectedEmployee.photo_x || 0} onChange={e => setSelectedEmployee({...selectedEmployee, photo_x: parseInt(e.target.value)})} className="w-full accent-blue-500 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <label className="text-[10px] text-white/50 block mb-1">Posição Y</label>
+                                                    <input type="range" min="-100" max="100" value={selectedEmployee.photo_y || 0} onChange={e => setSelectedEmployee({...selectedEmployee, photo_y: parseInt(e.target.value)})} className="w-full accent-blue-500 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div className="flex gap-3 mt-6 pt-6 border-t border-white/10">
-                                        {!isWildcard && (
-                                            <button onClick={handleSave} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:scale-[1.02]">
-                                                SALVAR DADOS
-                                            </button>
-                                        )}
-                                        <button onClick={handleModalPrint} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]">
-                                            <span className="material-symbols-outlined">download</span> BAIXAR PDF
-                                        </button>
+                                        {!isWildcard && <button onClick={handleSave} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg transition-transform hover:scale-[1.02]">SALVAR DADOS</button>}
+                                        <button onClick={handleModalPrint} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]"><span className="material-symbols-outlined">download</span> BAIXAR PDF</button>
                                     </div>
                                 </div>
                             </div>
@@ -430,10 +436,7 @@ export default function NameTagGenerator() {
                             <div className="flex-1 flex flex-col items-center justify-center bg-black/20 rounded-3xl border-2 border-dashed border-white/10 relative p-8">
                                 <h3 className="absolute top-6 left-0 w-full text-center text-white/20 font-bold uppercase tracking-[0.3em]">Preview Final</h3>
                                 <div id="badge-modal-preview" className="transform scale-125 origin-center shadow-2xl">
-                                    <BadgeTemplate 
-                                        data={{...selectedEmployee, admission_date: fixDateForDisplay(selectedEmployee.admission_date)}} 
-                                        config={currentConfig} 
-                                    />
+                                    <BadgeTemplate data={{...selectedEmployee, admission_date: fixDateForDisplay(selectedEmployee.admission_date)}} config={currentConfig} />
                                 </div>
                             </div>
                         </div>

@@ -70,11 +70,11 @@ function App() {
         <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
         <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
 
-        <Route path="/identification/models" element={<BadgeModelEditor />} />
-        <Route path="/benefits/conference" element={<BenefitsCheck />} />
-
+        <Route path="/people/models" element={<BadgeModelEditor />} />
         <Route path="/people/nametag" element={<NameTagGenerator />} />
         <Route path="/people/benefits" element={<BenefitsCheck />} />
+        
+        <Route path="/benefits/conference" element={<BenefitsCheck />} />
 
         <Route path="/cx/pesquisa" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Pesquisa de Satisfação (Em Breve)</div>} />
         <Route path="/cx/avaliacoes" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Avaliações (Em Breve)</div>} />

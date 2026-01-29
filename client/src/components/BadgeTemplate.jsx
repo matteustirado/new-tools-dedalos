@@ -1,18 +1,18 @@
-import React, { useMemo, useEffect, useRef } from 'react';
-import JsBarcode from 'jsbarcode';
+import React, { useEffect, useRef } from 'react';
+import JsBarcode from 'jsbarcode'; 
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const Barcode = ({ value }) => {
-    const canvasRef = useRef(null);
+    const svgRef = useRef(null);
 
     useEffect(() => {
-        if (canvasRef.current && value) {
+        if (svgRef.current && value) {
             try {
                 const cleanValue = value.replace(/\D/g, '');
                 
                 if (cleanValue) {
-                    JsBarcode(canvasRef.current, cleanValue, {
+                    JsBarcode(svgRef.current, cleanValue, {
                         format: "CODE128",
                         displayValue: false,
                         height: 25,
@@ -35,8 +35,8 @@ const Barcode = ({ value }) => {
     }
 
     return (
-        <div className="bg-white px-2 py-1 inline-block rounded-sm mt-1">
-            <canvas ref={canvasRef} />
+        <div className="bg-white px-2 py-1 inline-block rounded-sm mt-1 flex items-center justify-center">
+            <svg ref={svgRef} style={{ display: 'block' }} />
         </div>
     );
 };
@@ -84,6 +84,12 @@ export default function BadgeTemplate({ data = {}, config = {} }) {
         photoY = 0
     } = config;
 
+    const { 
+        photo_scale = 1, 
+        photo_x = 0, 
+        photo_y: photoY_adjustment = 0 
+    } = data;
+
     const admissionDate = data.admission_date 
         ? new Date(data.admission_date).toLocaleDateString('pt-BR') 
         : 'DD/MM/AAAA';
@@ -94,20 +100,17 @@ export default function BadgeTemplate({ data = {}, config = {} }) {
 
     return (
         <div id="badge-print-area" className="w-[480px] h-[270px] bg-[#FF4500] relative overflow-hidden shadow-xl print:shadow-none border border-white/10">
-            
             <div className="absolute inset-0 z-0 bg-gradient-to-br from-[#FF6600] to-[#FF4500] overflow-hidden">
                 {textures.includes('marca_dagua') && (
                     <div className="absolute inset-0 pointer-events-none mix-blend-overlay" style={{ opacity: 0.8 }}>
                         <img src={getTexturePath('marca_dagua')} alt="" className="w-full h-full object-cover" />
                     </div>
                 )}
-
                 {textures.includes('pontilhado') && (
                     <div className="absolute inset-0 pointer-events-none" style={{ opacity: 0.6 }}>
                         <img src={getTexturePath('pontilhado')} alt="" className="w-full h-full object-cover" />
                     </div>
                 )}
-
                 {textures.includes('direcionais') && (
                     <div className="absolute inset-0 pointer-events-none mix-blend-screen" style={{ opacity: 0.5 }}>
                         <img src={getTexturePath('direcionais')} alt="" className="w-full h-full object-cover" />
@@ -159,14 +162,17 @@ export default function BadgeTemplate({ data = {}, config = {} }) {
                     style={{ top: `calc(35% + ${photoY}px)`, transform: 'translateY(-50%)' }}
                 >
                     <div 
-                        className="w-28 h-28 border-[3px] border-[#FFCC00] bg-gray-800 overflow-hidden shadow-2xl" 
+                        className="w-28 h-28 border-[3px] border-[#FFCC00] bg-gray-800 overflow-hidden shadow-2xl relative" 
                         style={{ borderRadius: photoShape === 'circle' ? '50%' : photoShape === 'rounded' ? '1rem' : '0' }}
                     >
                         {data.photo_url ? (
                             <img 
                                 src={data.photo_url.startsWith('http') || data.photo_url.startsWith('data:') ? data.photo_url : `${API_URL}${data.photo_url}`} 
                                 alt="Foto" 
-                                className="w-full h-full object-cover" 
+                                className="w-full h-full object-cover transition-transform duration-100 ease-out" 
+                                style={{
+                                    transform: `scale(${photo_scale}) translate(${photo_x}px, ${photoY_adjustment}px)`
+                                }}
                             />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center bg-gray-900">
