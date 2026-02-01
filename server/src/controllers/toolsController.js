@@ -60,8 +60,10 @@ export const listarHistorico = async (req, res) => {
 export const buscarClientePorPulseira = async (req, res) => {
     const { pulseira } = req.params;
 
-    const TOKEN = process.env.DEDALOS_API_TOKEN || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
-    const BASE_URL = "https://dedalosadm2-3dab78314381.herokuapp.com/";
+    // Tenta pegar o token do env ou usa o fallback (não recomendado em prod, mas mantido conforme seu código original)
+    const TOKEN = process.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
+    // Nota: Idealmente a URL deveria ser dinâmica baseada na unidade, mas mantendo a lógica existente:
+    const BASE_URL = process.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/";
 
     try {
         const endpoint = `${BASE_URL}api/entradasOne/${pulseira}/`;
@@ -142,5 +144,35 @@ export const getLastGoldenWinner = async (req, res) => {
     } catch (error) {
         console.error("❌ Erro getLastGoldenWinner:", error);
         res.status(500).json({ error: "Erro ao buscar último ganhador." });
+    }
+};
+
+// [NOVO] Salvar configuração dos cartões da Quinta Premiada
+export const saveGoldenConfig = async (req, res) => {
+    const { unidade, config_text } = req.body;
+    try {
+        // Usa INSERT ON DUPLICATE KEY UPDATE para criar ou atualizar a config da unidade
+        await pool.query(
+            `INSERT INTO golden_presets (unidade, config_text) 
+             VALUES (?, ?) 
+             ON DUPLICATE KEY UPDATE config_text = VALUES(config_text)`,
+            [unidade, config_text]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Erro ao salvar config:", error);
+        res.status(500).json({ error: "Erro ao salvar configuração." });
+    }
+};
+
+// [NOVO] Carregar configuração dos cartões
+export const getGoldenConfig = async (req, res) => {
+    const { unidade } = req.params;
+    try {
+        const [rows] = await pool.query('SELECT config_text FROM golden_presets WHERE unidade = ?', [unidade]);
+        res.json({ config_text: rows.length > 0 ? rows[0].config_text : '' });
+    } catch (error) {
+        console.error("Erro ao carregar config:", error);
+        res.status(500).json({ error: "Erro ao carregar configuração." });
     }
 };

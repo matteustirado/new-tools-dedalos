@@ -193,3 +193,20 @@ CREATE TABLE IF NOT EXISTS badge_templates (
 -- Inserir o template inicial PADRAO com todas as configurações visuais
 INSERT IGNORE INTO badge_templates (role_name, config, is_default) 
 VALUES ('PADRAO', '{"headerHeight": 30, "photoShape": "circle", "nameSize": 24, "roleSize": 14, "texture": "geometric", "logoUrl": null, "logoSize": 80, "contentY": 0, "photoY": 0}', TRUE);
+
+-- Adicione isso ao seu init.sql ou rode no banco
+CREATE TABLE IF NOT EXISTS golden_presets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    unidade VARCHAR(10) NOT NULL,
+    config_text TEXT, -- Armazena a lista "101;Gin\n102;VIP"
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE(unidade)
+);
+
+CREATE TABLE IF NOT EXISTS golden_presets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    unidade VARCHAR(10) NOT NULL,
+    config_text TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE(unidade)
+);
