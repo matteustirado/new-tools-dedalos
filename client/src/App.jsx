@@ -26,14 +26,20 @@ import BenefitsCheck from './pages/people/BenefitsCheck';
 import BadgeModelEditor from './pages/people/BadgeModelEditor';
 
 function App() {
-  const [appVersion, setAppVersion] = useState(0);
+  // REMOVIDO: O estado appVersion que causava o re-render forçado
+  // const [appVersion, setAppVersion] = useState(0);
 
   const handleSystemReset = useCallback(() => {
-    setAppVersion(prev => prev + 1);
+    // ALTERADO: Apenas loga que a conexão voltou, sem destruir a árvore de componentes
+    console.log("Conexão restaurada. Sistema operante.");
+    
+    // Se precisar forçar atualização de algo específico no futuro, faça via Context ou Evento,
+    // mas nunca resetando o App inteiro dessa forma.
   }, []);
 
   return (
     <BrowserRouter>
+      {/* O Guardião monitora a rede, mas onConnectionRestored agora é passivo */}
       <ConnectionGuardian onConnectionRestored={handleSystemReset} />
 
       <ToastContainer 
@@ -49,7 +55,8 @@ function App() {
         theme="dark" 
       />
       
-      <Routes key={appVersion}>
+      {/* ALTERADO: Removida a prop key={appVersion} que destruía as rotas */}
+      <Routes>
         <Route path="/" element={<Home unit="sp" />} />
         <Route path="/bh" element={<Home unit="bh" />} />
 

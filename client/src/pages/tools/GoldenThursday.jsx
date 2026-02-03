@@ -8,9 +8,21 @@ import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+// CONFIGURAÇÃO LIMPA: Apenas dados de identidade.
+// A lógica de quais armários existem ou estão quebrados agora é do Backend.
 const CONFIG = {
-    sp: { name: 'São Paulo', totalLockers: 210, couponsToDraw: 50, apiUrl: import.meta.env.VITE_API_URL_SP, token: import.meta.env.VITE_API_TOKEN_SP, broken: [209], ranges: { M: [1, 2, 3, 4, 5, 6, 21, 22, 23, 24, 25, 26, 41, 42, 43, 44, 45, 46, 61, 62, 63, 64, 65, 66, 81, 82, 83, 84, 85, 86, 191, 192, 193, 194, 195, 196], G: [19, 20, 39, 40, 59, 60, 79, 80, 99, 100, 210], PP: { start: 101, end: 160 } } },
-    bh: { name: 'Belo Horizonte', totalLockers: 160, couponsToDraw: 15, apiUrl: import.meta.env.VITE_API_URL_BH, token: import.meta.env.VITE_API_TOKEN_BH, broken: [17, 30, 36, 61], ranges: { M: [1, 2, 3, 4, 5, 6, 21, 22, 23, 24, 25, 26], G: [19, 20, 39, 40], PP: { start: 131, end: 160 } } }
+    sp: { 
+        name: 'São Paulo', 
+        couponsToDraw: 50, // Meta de sorteios
+        apiUrl: import.meta.env.VITE_API_URL_SP, 
+        token: import.meta.env.VITE_API_TOKEN_SP
+    },
+    bh: { 
+        name: 'Belo Horizonte', 
+        couponsToDraw: 15, // Meta de sorteios
+        apiUrl: import.meta.env.VITE_API_URL_BH, 
+        token: import.meta.env.VITE_API_TOKEN_BH
+    }
 };
 
 export default function GoldenThursday() {
@@ -27,12 +39,14 @@ export default function GoldenThursday() {
     const [currentDraw, setCurrentDraw] = useState(null);
     const [isMonitoring, setIsMonitoring] = useState(false);
     
-    // Configuração de Cartões
+    // Configuração de Cartões (Prêmios)
     const [cardsConfig, setCardsConfig] = useState([]);
 
+    // Carrega configuração de cartões
     useEffect(() => {
         const fetchConfig = async () => {
             try {
+                // Estado inicial padrão
                 const initialCards = Array.from({ length: config.couponsToDraw }, (_, i) => ({
                     cardNumber: i + 1,
                     category: 'sem_premio'
@@ -55,6 +69,7 @@ export default function GoldenThursday() {
                 }
             } catch (error) {
                 console.error("Erro config prêmios:", error);
+                // Fallback
                 setCardsConfig(Array.from({ length: config.couponsToDraw }, (_, i) => ({ cardNumber: i + 1, category: 'sem_premio' })));
             }
         };
@@ -80,22 +95,31 @@ export default function GoldenThursday() {
         setCardsConfig(newConfig);
     };
 
+    // Socket e Carga Inicial
     useEffect(() => {
         const socket = io(API_URL);
+        
+        // Ouve atualizações de sorteio vindas do servidor
         socket.on('golden:winner_update', (data) => {
             if (data.unidade.toLowerCase() === currentUnit) {
                 setCurrentDraw(data.winner);
                 setIsMonitoring(true);
             }
         });
+
         const fetchLastWinner = async () => {
             try {
                 const res = await axios.get(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
-                if (res.data) { setCurrentDraw(res.data); setIsMonitoring(true); }
+                if (res.data) { 
+                    setCurrentDraw(res.data); 
+                    setIsMonitoring(true); 
+                }
             } catch (e) { console.error(e); }
         };
+
         fetchLastWinner();
         loadHistory();
+
         return () => socket.disconnect();
     }, [currentUnit]);
 
@@ -106,6 +130,7 @@ export default function GoldenThursday() {
         } catch (e) { console.error(e); }
     };
 
+    // Monitoramento de Ocupação em Tempo Real (Apenas Visualização)
     useEffect(() => {
         let interval;
         if (isMonitoring && currentDraw) {
@@ -119,7 +144,6 @@ export default function GoldenThursday() {
                     data.forEach(c => {
                         const num = parseInt(c.armario);
                         if (!isNaN(num)) {
-                            // Captura ID Locker como pulseira
                             const nomeCliente = c.nome || c.cliente || c.name || "";
                             const pulseiraCliente = c.id_locker || ""; 
                             occupancyMap[num] = { pulseira: pulseiraCliente, nome: nomeCliente };
@@ -131,6 +155,8 @@ export default function GoldenThursday() {
                         return prevDraw.map(item => {
                             if (item.status === 'redeemed') return item;
                             const activeData = occupancyMap[item.locker];
+                            
+                            // Se tem gente no armário sorteado
                             if (activeData) {
                                 if (item.status !== 'occupied' || (activeData.pulseira && item.currentWristband != activeData.pulseira)) {
                                     return { 
@@ -142,6 +168,7 @@ export default function GoldenThursday() {
                                 }
                                 return item;
                             }
+                            // Se estava ocupado mas a pessoa saiu (e não resgatou)
                             if (item.status === 'occupied' && !activeData) {
                                 return { ...item, status: 'lost', currentWristband: null, currentClientName: null };
                             }
@@ -156,88 +183,44 @@ export default function GoldenThursday() {
         return () => clearInterval(interval);
     }, [isMonitoring, config.apiUrl, config.token, currentDraw]);
 
-    const getLockerSize = (num) => {
-        if (config.broken.includes(num)) return 'BROKEN';
-        if (num >= config.ranges.PP.start && num <= config.ranges.PP.end) return 'PP';
-        if (config.ranges.M.includes(num)) return 'M';
-        if (config.ranges.G.includes(num)) return 'G';
-        if (num > 0 && num <= config.totalLockers) return 'P';
-        return 'UNKNOWN';
-    };
 
-    // [CORRIGIDO] SORTEIO INTELIGENTE
+    // [REFORMULADO] SORTEIO SERVER-SIDE
+    // Agora o Frontend apenas pede o sorteio, o Backend faz a mágica (verifica armários, tamanhos, filtra e sorteia)
     const handleNewDraw = async () => {
         if (currentDraw) return toast.warn("Finalize o sorteio atual antes.");
         
         setIsMonitoring(false);
-        const toastId = toast.loading("Realizando sorteio...");
+        const toastId = toast.loading("Consultando sistema e sorteando prêmios...");
 
         try {
-            const endpoint = config.apiUrl.includes('api/entradasCheckout') ? config.apiUrl : `${config.apiUrl}api/entradasCheckout/`;
-            const response = await fetch(endpoint, { headers: { "Authorization": `Token ${config.token}` } });
-            if (response.status !== 200) throw new Error("Falha na API");
-            const data = await response.json();
-            const realOccupied = data.map(c => parseInt(c.armario)).filter(n => !isNaN(n));
-
-            const available = { M: [], P: [], G: [] };
-            for (let i = 1; i <= config.totalLockers; i++) {
-                if (!realOccupied.includes(i)) {
-                    const size = getLockerSize(i);
-                    if (['M', 'P', 'G'].includes(size)) available[size].push(i);
-                }
-            }
-
-            const totalAvailableCount = available.M.length + available.P.length + available.G.length;
-            
-            // [CORREÇÃO AQUI] Não bloqueia se tiver poucos armários. Ajusta o alvo.
-            const targetTotal = Math.min(config.couponsToDraw, totalAvailableCount);
-
-            if (targetTotal === 0) {
-                toast.update(toastId, { render: "Não há armários livres disponíveis!", type: "error", isLoading: false, autoClose: 3000 });
-                return;
-            }
-
-            if (totalAvailableCount < config.couponsToDraw) {
-                toast.warn(`Atenção: Apenas ${totalAvailableCount} armários livres. Sorteando ${targetTotal} prêmios.`);
-            }
-
-            // Seleciona Armários (Embaralha e pega a quantidade possível)
-            const allFree = [...available.M, ...available.P, ...available.G];
-            const shuffledLockers = allFree.sort(() => 0.5 - Math.random()).slice(0, targetTotal);
-
-            // Seleciona Cartões (Embaralha e pega a mesma quantidade dos armários)
-            const shuffledCards = [...cardsConfig].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
-
-            // Casa Armário + Cartão
-            const finalDraw = shuffledLockers.map((lockerNum, index) => {
-                const assignedCard = shuffledCards[index];
-                const categoryLabel = PRIZE_CATEGORIES.find(c => c.id === assignedCard.category)?.label || assignedCard.category;
-
-                return {
-                    locker: lockerNum,
-                    size: getLockerSize(lockerNum),
-                    status: 'pending',
-                    cardNumber: assignedCard.cardNumber,
-                    prizeCategory: assignedCard.category,
-                    preAssignedPrize: categoryLabel,
-                    prize: null, details: null, currentWristband: null, currentClientName: null
-                };
-            }).sort((a, b) => a.locker - b.locker);
-
-            await axios.post(`${API_URL}/api/tools/golden/winner`, {
+            // Envia a unidade e a configuração dos cartões desejados
+            const response = await axios.post(`${API_URL}/api/tools/golden/draw`, {
                 unidade: currentUnit,
-                type: 'QUINTA_PREMIADA',
-                data: finalDraw
+                prizeConfig: cardsConfig // O "baralho" de prêmios
             });
+
+            const newDrawData = response.data.data; // Dados do sorteio retornados pelo servidor
+            const msg = response.data.message || "Sorteio realizado!";
+
+            setCurrentDraw(newDrawData);
             
-            toast.update(toastId, { render: `Sorteio realizado! (${targetTotal} prêmios)`, type: "success", isLoading: false, autoClose: 3000 });
+            toast.update(toastId, { 
+                render: `${msg} (${newDrawData.length} prêmios)`, 
+                type: "success", 
+                isLoading: false, 
+                autoClose: 3000 
+            });
+
         } catch (error) {
-            console.error(error);
-            toast.update(toastId, { render: "Erro ao sortear.", type: "error", isLoading: false, autoClose: 3000 });
+            console.error("Erro no sorteio:", error);
+            const errorMsg = error.response?.data?.error || "Erro ao realizar sorteio.";
+            toast.update(toastId, { render: errorMsg, type: "error", isLoading: false, autoClose: 4000 });
+            setIsMonitoring(true); // Retoma monitoramento se falhou
         }
     };
 
     const handleRequestFinalize = () => { if (currentDraw) setShowFinalizeModal(true); };
+    
     const confirmFinalize = async () => {
         setIsFinalizing(true);
         const redeemedCount = currentDraw.filter(i => i.status === 'redeemed').length;
@@ -307,6 +290,8 @@ export default function GoldenThursday() {
                         <button onClick={() => setShowConfigModal(true)} className="bg-white/10 text-white px-4 py-3 rounded-xl font-bold hover:bg-white/20 flex items-center gap-2" title="Configurar Cartões"><span className="material-symbols-outlined">settings</span></button>
                         <button onClick={() => currentDraw && generatePrintReport(currentDraw, new Date().toLocaleString())} disabled={!currentDraw} className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 disabled:opacity-50 flex items-center gap-2"><span className="material-symbols-outlined">print</span> IMPRIMIR</button>
                         <button onClick={() => setShowRedeemedModal(true)} disabled={!currentDraw} className="bg-purple-600/80 text-white px-6 py-3 rounded-xl font-bold hover:bg-purple-600 disabled:opacity-50 flex items-center gap-2"><span className="material-symbols-outlined">emoji_events</span> RESGATADOS</button>
+                        
+                        {/* Botão agora aciona o Backend */}
                         <button onClick={handleNewDraw} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-500 shadow-lg flex items-center gap-2"><span className="material-symbols-outlined">casino</span> NOVO SORTEIO</button>
                     </div>
                 </div>
@@ -338,6 +323,8 @@ export default function GoldenThursday() {
                                         return (
                                             <div key={item.locker} onClick={() => handleLockerClick(item)} className={`aspect-square rounded-xl border flex flex-col items-center justify-center cursor-pointer transition-all relative ${cardClass} p-1`}>
                                                 <span className="text-xl font-bold">{item.locker}</span>
+                                                {/* Mostra o tamanho retornado pelo servidor se quiser: */}
+                                                <span className="text-[8px] absolute top-1 left-1 opacity-50">{item.size}</span>
                                                 <span className="text-[9px] font-bold uppercase opacity-80">{item.cardNumber ? `#${item.cardNumber}` : ''}</span>
                                                 {icon && <span className="material-symbols-outlined absolute top-1 right-1 text-xs">{icon}</span>}
                                             </div>
@@ -353,6 +340,7 @@ export default function GoldenThursday() {
                 </div>
             </main>
 
+            {/* Modais de Config, GiftList, Redeemed, Finalize permanecem iguais, apenas a lógica interna da config mudou nos hooks */}
             {showConfigModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
                     <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-4xl w-full shadow-2xl flex flex-col max-h-[90vh]">

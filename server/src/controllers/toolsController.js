@@ -1,6 +1,22 @@
 import pool from '../config/db.js';
 import axios from 'axios';
 
+// Helper para pegar credenciais da unidade
+const getUnitCredentials = (unidade) => {
+    const unitLower = unidade ? unidade.toLowerCase() : 'sp';
+    if (unitLower === 'bh') {
+        return {
+            url: process.env.API_URL_BH || process.env.VITE_API_URL_BH,
+            token: process.env.API_TOKEN_BH || process.env.VITE_API_TOKEN_BH
+        };
+    }
+    // Default SP
+    return {
+        url: process.env.API_URL_SP || process.env.VITE_API_URL_SP,
+        token: process.env.API_TOKEN_SP || process.env.VITE_API_TOKEN_SP
+    };
+};
+
 export const salvarHistorico = async (req, res) => {
     try {
         const { tipo, unidade, total_sorteados, total_resgatados, detalhes } = req.body;
@@ -59,19 +75,15 @@ export const listarHistorico = async (req, res) => {
 
 export const buscarClientePorPulseira = async (req, res) => {
     const { pulseira } = req.params;
-
-    // Tenta pegar o token do env ou usa o fallback (não recomendado em prod, mas mantido conforme seu código original)
-    const TOKEN = process.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
-    // Nota: Idealmente a URL deveria ser dinâmica baseada na unidade, mas mantendo a lógica existente:
-    const BASE_URL = process.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/";
+    const { url, token } = getUnitCredentials('sp'); 
 
     try {
-        const endpoint = `${BASE_URL}api/entradasOne/${pulseira}/`;
+        const endpoint = `${url}api/entradasOne/${pulseira}/`;
         console.log(`[BACKEND] Proxy consultando pulseira ${pulseira}`);
 
         const response = await axios.get(endpoint, {
             headers: {
-                "Authorization": `Token ${TOKEN}`,
+                "Authorization": `Token ${token}`,
                 "Content-Type": "application/json"
             }
         });
@@ -79,11 +91,9 @@ export const buscarClientePorPulseira = async (req, res) => {
         return res.status(200).json(response.data);
     } catch (error) {
         console.error("Erro na API Externa:", error.message);
-
         if (error.response) {
             return res.status(error.response.status).json(error.response.data);
         }
-
         return res.status(500).json({ message: "Erro interno ao conectar com API Dedalos." });
     }
 };
@@ -147,11 +157,9 @@ export const getLastGoldenWinner = async (req, res) => {
     }
 };
 
-// [NOVO] Salvar configuração dos cartões da Quinta Premiada
 export const saveGoldenConfig = async (req, res) => {
     const { unidade, config_text } = req.body;
     try {
-        // Usa INSERT ON DUPLICATE KEY UPDATE para criar ou atualizar a config da unidade
         await pool.query(
             `INSERT INTO golden_presets (unidade, config_text) 
              VALUES (?, ?) 
@@ -165,7 +173,6 @@ export const saveGoldenConfig = async (req, res) => {
     }
 };
 
-// [NOVO] Carregar configuração dos cartões
 export const getGoldenConfig = async (req, res) => {
     const { unidade } = req.params;
     try {
@@ -174,5 +181,114 @@ export const getGoldenConfig = async (req, res) => {
     } catch (error) {
         console.error("Erro ao carregar config:", error);
         res.status(500).json({ error: "Erro ao carregar configuração." });
+    }
+};
+
+// [NOVO] LÓGICA DE SORTEIO NO SERVIDOR (Com Mapeamento Real)
+export const performDraw = async (req, res) => {
+    const { unidade, prizeConfig } = req.body;
+    const { url, token } = getUnitCredentials(unidade);
+
+    try {
+        console.log(`[DRAW] Iniciando sorteio para ${unidade}...`);
+
+        // ROTA CONFIRMADA: api/entradas/ (O Node consegue acessar, o navegador não)
+        const endpoint = `${url}api/entradas/`; 
+        
+        const externalResponse = await axios.get(endpoint, {
+            headers: { "Authorization": `Token ${token}` }
+        });
+
+        // O sistema antigo pode retornar array direto ou dentro de .dados
+        const allLockers = externalResponse.data.dados || externalResponse.data;
+
+        if (!Array.isArray(allLockers)) {
+            console.error("Resposta da API:", externalResponse.data);
+            throw new Error("Resposta inválida do sistema externo: não é um array.");
+        }
+
+        // 2. Filtra Armários Elegíveis (Mapeamento baseado no seu console.log)
+        // Item exemplo: { type_door: 'MÉDIA', name_door: 'PORTA 01', sit_door: 'DISPONÍVEL' }
+        const availableLockers = allLockers.filter(locker => {
+            const status = locker.sit_door ? locker.sit_door.toUpperCase() : '';
+            const type = locker.type_door ? locker.type_door.toUpperCase() : '';
+
+            // Regras:
+            // 1. Deve estar DISPONÍVEL
+            // 2. Não pode ser PP
+            // 3. Não pode estar INDISPONÍVEL ou em MANUTENÇÃO
+            const isFree = status === 'DISPONÍVEL'; 
+            const isNotPP = type !== 'PP';
+            
+            return isFree && isNotPP;
+        });
+
+        console.log(`[DRAW] Total: ${allLockers.length} | Elegíveis: ${availableLockers.length}`);
+
+        if (availableLockers.length === 0) {
+            return res.status(400).json({ error: "Nenhum armário disponível para sorteio no momento." });
+        }
+
+        // 3. Preparar Sorteio
+        const couponsToDraw = prizeConfig.length;
+        const targetTotal = Math.min(couponsToDraw, availableLockers.length);
+
+        // 4. Embaralhar
+        const shuffledLockers = availableLockers.sort(() => 0.5 - Math.random()).slice(0, targetTotal);
+        const shuffledCards = [...prizeConfig].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
+
+        // 5. Montar Resultado (Traduzindo para o formato do nosso Front)
+        const finalDraw = shuffledLockers.map((locker, index) => {
+            const assignedCard = shuffledCards[index];
+            
+            // Extrai apenas o número do nome (Ex: "PORTA 01" -> 1)
+            let lockerNum = locker.name_door;
+            try {
+                const match = locker.name_door.match(/\d+/);
+                if (match) lockerNum = parseInt(match[0], 10);
+            } catch (e) {
+                lockerNum = locker.name_door; // Fallback
+            }
+
+            // Mapeia Tamanho para P, M, G (Opcional, mas bom para UI)
+            let sizeShort = locker.type_door;
+            if (locker.type_door === 'MÉDIA') sizeShort = 'M';
+            if (locker.type_door === 'PEQUENA') sizeShort = 'P';
+            if (locker.type_door === 'GRANDE') sizeShort = 'G';
+
+            return {
+                locker: lockerNum,
+                size: sizeShort,
+                status: 'pending', // No nosso sistema é 'pending' até alguém entrar
+                cardNumber: assignedCard.cardNumber,
+                prizeCategory: assignedCard.category,
+                preAssignedPrize: assignedCard.category,
+                prize: null, 
+                details: null, 
+                currentWristband: null, 
+                currentClientName: null
+            };
+        }).sort((a, b) => a.locker - b.locker);
+
+        // 6. Salvar e Emitir
+        const dbType = 'QUINTA_PREMIADA_WINNER';
+        await pool.query(
+            `INSERT INTO historico_promocoes (tipo, unidade, detalhes, data_hora) VALUES (?, ?, ?, NOW())`, 
+            [dbType, unidade, JSON.stringify(finalDraw)]
+        );
+
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('golden:winner_update', { unidade, winner: finalDraw });
+        }
+
+        res.json({ success: true, message: "Sorteio realizado com sucesso!", data: finalDraw });
+
+    } catch (error) {
+        console.error("❌ Erro performDraw:", error.message);
+        res.status(500).json({ 
+            error: "Erro na comunicação com sistema externo.", 
+            details: error.response?.data || error.message 
+        });
     }
 };

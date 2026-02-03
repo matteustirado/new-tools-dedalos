@@ -5,8 +5,9 @@ import {
     buscarClientePorPulseira,
     saveGoldenWinner,
     getLastGoldenWinner,
-    saveGoldenConfig, // [NOVO] Importado
-    getGoldenConfig   // [NOVO] Importado
+    saveGoldenConfig,
+    getGoldenConfig,
+    performDraw // [NOVO] Importado
 } from '../controllers/toolsController.js';
 
 const router = express.Router();
@@ -25,5 +26,8 @@ router.get('/golden/winner/:unidade', getLastGoldenWinner);
 // [NOVO] Rotas de Configuração de Prêmios (Cartões)
 router.post('/golden/config', saveGoldenConfig);
 router.get('/golden/config/:unidade', getGoldenConfig);
+
+// [NOVO] Rota para Realizar o Sorteio (Server-Side)
+router.post('/golden/draw', performDraw);
 
 export default router;
