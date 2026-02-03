@@ -2,10 +2,6 @@ USE radio_dedalos;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ==========================================================
--- 1. LIMPEZA (DROPS)
--- Remove tabelas antigas para evitar conflitos na recriação
--- ==========================================================
 DROP TABLE IF EXISTS price_promotions;
 DROP TABLE IF EXISTS holidays;
 DROP TABLE IF EXISTS prices_active;
@@ -18,15 +14,11 @@ DROP TABLE IF EXISTS agendamentos;
 DROP TABLE IF EXISTS radio_config;
 DROP TABLE IF EXISTS playlists;
 DROP TABLE IF EXISTS tracks;
+-- [NOVO] Limpa tabelas de crachá e pessoas se existirem para recriar
 DROP TABLE IF EXISTS badge_templates;
 DROP TABLE IF EXISTS employees;
-DROP TABLE IF EXISTS golden_presets; -- Garante que a tabela antiga seja removida
 
 SET FOREIGN_KEY_CHECKS = 1;
-
--- ==========================================================
--- 2. CRIAÇÃO DAS TABELAS (ESTRUTURA)
--- ==========================================================
 
 CREATE TABLE tracks (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -158,6 +150,21 @@ CREATE TABLE scoreboard_votes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+INSERT INTO radio_config (config_key, config_value) VALUES ('commercial_track_ids', '[]');
+INSERT INTO radio_config (config_key, config_value) VALUES ('fallback_playlist_ids', '{"DOMINGO": 1, "SEGUNDA": 1, "TERCA": 1, "QUARTA": 1, "QUINTA": 1, "SEXTA": 1, "SABADO": 1}');
+
+INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status) VALUES 
+('SP', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO'),
+('BH', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO');
+
+INSERT INTO prices_active (unidade, tipo, titulo_tabela, categorias) VALUES 
+('SP', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
+('SP', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
+('SP', 'feriado', 'Tabela Feriados', '[]'),
+('BH', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
+('BH', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
+('BH', 'feriado', 'Tabela Feriados', '[]');
+
 -- Tabela para Gestão de Pessoas (Crachás)
 CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -177,40 +184,12 @@ CREATE TABLE IF NOT EXISTS employees (
 -- Tabela de Modelos de Crachá
 CREATE TABLE IF NOT EXISTS badge_templates (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    role_name VARCHAR(100) UNIQUE NOT NULL,
-    config JSON NOT NULL,
+    role_name VARCHAR(100) UNIQUE NOT NULL, -- Ex: 'PADRAO', 'BARTENDER', 'GERENTE'
+    config JSON NOT NULL, -- Guarda altura, fontes, texturas, etc.
     is_default BOOLEAN DEFAULT FALSE,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Tabela para Configuração da Quinta Premiada (Definição ÚNICA e CORRETA)
-CREATE TABLE IF NOT EXISTS golden_presets (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    unidade VARCHAR(10) NOT NULL,
-    config_text TEXT, 
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE(unidade)
-);
-
--- ==========================================================
--- 3. DADOS INICIAIS (SEEDS)
--- ==========================================================
-
-INSERT INTO radio_config (config_key, config_value) VALUES ('commercial_track_ids', '[]');
-INSERT INTO radio_config (config_key, config_value) VALUES ('fallback_playlist_ids', '{"DOMINGO": 1, "SEGUNDA": 1, "TERCA": 1, "QUARTA": 1, "QUINTA": 1, "SEXTA": 1, "SABADO": 1}');
-
-INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status) VALUES 
-('SP', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO'),
-('BH', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO');
-
-INSERT INTO prices_active (unidade, tipo, titulo_tabela, categorias) VALUES 
-('SP', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
-('SP', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
-('SP', 'feriado', 'Tabela Feriados', '[]'),
-('BH', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
-('BH', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
-('BH', 'feriado', 'Tabela Feriados', '[]');
-
--- Inserção do template padrão de crachá (usando IGNORE para não duplicar se já existir)
+-- Inserir o template inicial PADRAO com todas as configurações visuais
 INSERT IGNORE INTO badge_templates (role_name, config, is_default) 
 VALUES ('PADRAO', '{"headerHeight": 30, "photoShape": "circle", "nameSize": 24, "roleSize": 14, "texture": "geometric", "logoUrl": null, "logoSize": 80, "contentY": 0, "photoY": 0}', TRUE);

@@ -60,7 +60,7 @@ services:
       - /app/node_modules
       - ./server/public/uploads:/app/public/uploads
 
-# Frontend
+  # Frontend
   frontend:
     build:
       context: ./client
@@ -68,8 +68,7 @@ services:
     container_name: tools_dedalos_frontend
     restart: always
     environment:
-      # Se você roda tudo na mesma máquina, localhost funciona para o navegador.
-      # Se acessa de outro PC/Celular, troque localhost pelo IP da sua máquina (ex: 192.168.x.x)
+      # Backend Local
       VITE_API_URL: "http://localhost:4000" 
     ports:
       - "3000:3000"
@@ -77,9 +76,23 @@ services:
       - tools_net
     depends_on:
       - backend
-    volumes:
-      - ./client:/app
-      - /app/node_modules # Isso impede que o node_modules local sobrescreva o do container
+    # [CORREÇÃO] Comentei os volumes do frontend.
+    # Isso obriga o container a usar a versão 'dist' que ele acabou de construir,
+    # em vez de usar os arquivos do seu computador (que não estão buildados).
+    # volumes:
+    #   - ./client:/app
+    #   - /app/node_modules
+
+  # Tunnel (Desativado para testes locais)
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: tools_tunnel
+  #   restart: always
+  #   command: tunnel run
+  #   environment:
+  #     - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+  #   networks:
+  #     - tools_net
 
 volumes:
   db_data:

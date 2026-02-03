@@ -26,20 +26,14 @@ import BenefitsCheck from './pages/people/BenefitsCheck';
 import BadgeModelEditor from './pages/people/BadgeModelEditor';
 
 function App() {
-  // REMOVIDO: O estado appVersion que causava o re-render forçado
-  // const [appVersion, setAppVersion] = useState(0);
+  const [appVersion, setAppVersion] = useState(0);
 
   const handleSystemReset = useCallback(() => {
-    // ALTERADO: Apenas loga que a conexão voltou, sem destruir a árvore de componentes
-    console.log("Conexão restaurada. Sistema operante.");
-    
-    // Se precisar forçar atualização de algo específico no futuro, faça via Context ou Evento,
-    // mas nunca resetando o App inteiro dessa forma.
+    setAppVersion(prev => prev + 1);
   }, []);
 
   return (
     <BrowserRouter>
-      {/* O Guardião monitora a rede, mas onConnectionRestored agora é passivo */}
       <ConnectionGuardian onConnectionRestored={handleSystemReset} />
 
       <ToastContainer 
@@ -55,8 +49,7 @@ function App() {
         theme="dark" 
       />
       
-      {/* ALTERADO: Removida a prop key={appVersion} que destruía as rotas */}
-      <Routes>
+      <Routes key={appVersion}>
         <Route path="/" element={<Home unit="sp" />} />
         <Route path="/bh" element={<Home unit="bh" />} />
 
@@ -77,11 +70,11 @@ function App() {
         <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
         <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
 
-        <Route path="/people/models" element={<BadgeModelEditor />} />
+        <Route path="/identification/models" element={<BadgeModelEditor />} />
+        <Route path="/benefits/conference" element={<BenefitsCheck />} />
+
         <Route path="/people/nametag" element={<NameTagGenerator />} />
         <Route path="/people/benefits" element={<BenefitsCheck />} />
-        
-        <Route path="/benefits/conference" element={<BenefitsCheck />} />
 
         <Route path="/cx/pesquisa" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Pesquisa de Satisfação (Em Breve)</div>} />
         <Route path="/cx/avaliacoes" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Avaliações (Em Breve)</div>} />

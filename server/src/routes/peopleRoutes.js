@@ -1,5 +1,5 @@
 import express from 'express';
-import { syncEmployees, listEmployees, updateEmployee, uploadEmployeePhoto } from '../controllers/peopleController.js';
+import { syncEmployees, updateEmployee, uploadEmployeePhoto } from '../controllers/peopleController.js';
 import multer from 'multer';
 import path from 'path';
 
@@ -17,7 +17,6 @@ const upload = multer({ storage: storage });
 const router = express.Router();
 
 router.get('/sync', syncEmployees);
-router.get('/list', listEmployees);
 router.post('/update/:id', updateEmployee);
 router.post('/upload', upload.single('photo'), uploadEmployeePhoto);
 

@@ -142,6 +142,7 @@ export default function Sidebar({
                   <button
                     onClick={() => navigate('/radio/playlist-creator')}
                     className="p-2 rounded-md hover:bg-white/10 text-primary transition-colors"
+                    title="Voltar para Criação"
                   >
                     <span className="material-symbols-outlined text-lg">arrow_back_ios_new</span>
                   </button>

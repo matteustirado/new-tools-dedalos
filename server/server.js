@@ -123,19 +123,12 @@ app.post('/api/badges/upload-logo', upload.single('logo'), (req, res) => {
     res.json({ message: 'Logo atualizado!', url: fileUrl })
 })
 
-// [MODIFICADO] Rota de Health Check otimizada para o ConnectionGuardian
 app.get('/', async (req, res) => {
     try {
-        // Tenta buscar o tempo do banco, mas se falhar, o servidor ainda responde
-        const [rows] = await pool.query('SELECT NOW() AS now').catch(() => [[{ now: 'DB_OFFLINE' }]])
-        res.json({ 
-            status: 'online', 
-            db: rows[0].now !== 'DB_OFFLINE',
-            time: rows[0].now 
-        })
+        const [rows] = await pool.query('SELECT NOW() AS now')
+        res.json({ message: 'Backend funcionando!', time: rows[0].now })
     } catch (err) {
-        // Fallback: Se nem o objeto de resposta conseguir processar, manda um status simples
-        res.json({ status: 'online', db: false })
+        res.status(500).json({ error: err.message })
     }
 })
 
