@@ -17,8 +17,6 @@ DROP TABLE IF EXISTS tracks;
 -- [NOVO] Limpa tabelas de crachá e pessoas se existirem para recriar
 DROP TABLE IF EXISTS badge_templates;
 DROP TABLE IF EXISTS employees;
--- [NOVO] Limpa tabela de configuração da Quinta Premiada
-DROP TABLE IF EXISTS golden_card_config;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -92,13 +90,6 @@ CREATE TABLE historico_promocoes (
     total_resgatados INT,
     detalhes JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- [NOVO] Tabela para salvar a configuração dos 50 Cards da Quinta Premiada
-CREATE TABLE golden_card_config (
-    unidade VARCHAR(10) NOT NULL PRIMARY KEY,
-    cards_data JSON NOT NULL, -- Array com a configuração dos 50 cards
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE holidays (

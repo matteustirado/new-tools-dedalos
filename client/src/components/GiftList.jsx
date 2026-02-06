@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import axios from 'axios';
 import LogoDedalos from '../assets/SVG/logoDedalos';
@@ -18,9 +18,9 @@ const API_CONFIG = {
     }
 };
 
-export const PRIZE_CATEGORIES = [
+const PRIZE_CATEGORIES = [
     { id: 'rodada_dupla', label: 'Rodada Dupla', icon: 'local_bar' },
-    { id: 'uma_vida', label: 'Uma Vida (VIP)', icon: 'confirmation_number' },
+    { id: 'uma_vida', label: 'Uma Vida', icon: 'confirmation_number' },
     { id: 'drink_especial', label: 'Drink Especial', icon: 'wine_bar' },
     { id: 'premio_surpresa', label: 'Prêmio Surpresa', icon: 'redeem' },
     { id: 'consumo', label: 'R$ Consumo', icon: 'attach_money' },
@@ -29,7 +29,7 @@ export const PRIZE_CATEGORIES = [
 const SURPRISE_OPTIONS = ['Halls', 'RedBull', 'Salgadinho', 'Caipinossa', 'Double Tequila'];
 const SORTEADOR_QUINTA_PREMIADA = 11;
 
-export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp', preSelectedCategory = null, customerData = null }) {
+export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp' }) {
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [umaVidaTab, setUmaVidaTab] = useState('sem_cadastro');
     const [loadingName, setLoadingName] = useState(false);
@@ -48,32 +48,12 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
     });
 
     const currentConfig = API_CONFIG[unit.toLowerCase()] || API_CONFIG.sp;
-    
-    // Verifica se os dados vieram do sistema (polling) para travar os campos
-    const isSystemData = !!(customerData && customerData.pulseira);
-
-    useEffect(() => {
-        if (preSelectedCategory) {
-            setSelectedCategory(preSelectedCategory);
-            if (preSelectedCategory === 'uma_vida') {
-                setUmaVidaTab('com_cadastro');
-            }
-        }
-        
-        if (customerData) {
-            setFormData(prev => ({
-                ...prev,
-                pulseira: customerData.pulseira || '',
-                nomeCliente: customerData.nome || ''
-            }));
-        }
-    }, [preSelectedCategory, customerData]);
 
     const fetchNomeCliente = async (pulseira) => {
         if (!pulseira) return;
 
         setLoadingName(true);
-        if (!formData.nomeCliente) setFormData(prev => ({ ...prev, nomeCliente: "Buscando..." }));
+        setFormData(prev => ({ ...prev, nomeCliente: "Buscando..." }));
 
         try {
             const baseUrl = currentConfig.baseUrl.endsWith('/') ? currentConfig.baseUrl : `${currentConfig.baseUrl}/`;
@@ -96,9 +76,7 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
                 setFormData(prev => ({ ...prev, nomeCliente: "Não encontrado" }));
                 toast.warning("Pulseira não encontrada.");
             } else {
-                if (formData.nomeCliente === "Buscando...") {
-                    setFormData(prev => ({ ...prev, nomeCliente: "Erro na busca" }));
-                }
+                setFormData(prev => ({ ...prev, nomeCliente: "Erro na busca" }));
             }
         } finally {
             setLoadingName(false);
@@ -167,9 +145,7 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
 
     const handleSave = () => {
         if (!selectedCategory) return;
-        
-        let selectedCatObj = PRIZE_CATEGORIES.find(c => c.id === selectedCategory);
-        let prizeLabel = selectedCatObj ? selectedCatObj.label : selectedCategory;
+        let prizeLabel = PRIZE_CATEGORIES.find(c => c.id === selectedCategory).label;
         let detailsString = '';
 
         switch (selectedCategory) {
@@ -216,16 +192,10 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
     };
 
     const resetForm = () => {
-        if (preSelectedCategory) {
-            setFormData({ pulseira: formData.pulseira, nomeCliente: formData.nomeCliente, bebida: '', recusado: false, diaPreferencia: '', email: '', surpresaEscolhida: '', cupomGeradoLink: '' });
-        } else {
-            setSelectedCategory(null);
-            setGeneratedCouponData(null);
-            setFormData({ pulseira: '', nomeCliente: '', bebida: '', recusado: false, diaPreferencia: '', email: '', surpresaEscolhida: '', cupomGeradoLink: '' });
-        }
+        setSelectedCategory(null);
+        setGeneratedCouponData(null);
+        setFormData({ pulseira: '', nomeCliente: '', bebida: '', recusado: false, diaPreferencia: '', email: '', surpresaEscolhida: '', cupomGeradoLink: '' });
     };
-
-    const disabledClass = "w-full bg-black/50 border border-white/10 rounded-lg p-3 text-white/70 cursor-not-allowed font-mono";
 
     return (
         <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col max-h-[90vh] animate-fade-in">
@@ -235,11 +205,9 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
                         <span className="bg-green-600 text-white text-sm px-3 py-1 rounded-full">Ocupado</span>
                         Armário {lockerNumber}
                     </h2>
-                    <p className="text-text-muted text-sm mt-1">
-                        {preSelectedCategory ? "Prêmio definido. Confirme os dados." : "Selecione o prêmio para resgate."}
-                    </p>
+                    <p className="text-text-muted text-sm mt-1">Selecione o prêmio para liberar o resgate.</p>
                 </div>
-                {selectedCategory && !preSelectedCategory && (
+                {selectedCategory && (
                     <button onClick={resetForm} className="text-sm text-blue-400 hover:text-blue-300 font-bold">
                         ALTERAR CATEGORIA
                     </button>
@@ -257,44 +225,24 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
                 </div>
             ) : (
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    {preSelectedCategory && (
-                         <div className="mb-6 bg-white/5 border border-white/10 p-4 rounded-xl flex items-center gap-3">
-                             <div className="p-3 bg-yellow-500/20 rounded-lg text-yellow-400">
-                                <span className="material-symbols-outlined">redeem</span>
-                             </div>
-                             <div>
-                                 <p className="text-xs text-text-muted uppercase font-bold">Prêmio Sorteado</p>
-                                 <p className="text-xl font-bold text-white">
-                                     {PRIZE_CATEGORIES.find(c => c.id === selectedCategory)?.label || selectedCategory}
-                                 </p>
-                             </div>
-                         </div>
-                    )}
-
                     {(selectedCategory === 'rodada_dupla' || selectedCategory === 'drink_especial' || selectedCategory === 'premio_surpresa' || selectedCategory === 'consumo') && (
                         <div className="space-y-4 mb-4">
                             <div className="flex gap-4">
                                 <div className="flex-1">
                                     <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Pulseira</label>
                                     <input
-                                        type="text"
-                                        className={isSystemData ? disabledClass : "w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"}
+                                        type="number"
+                                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
                                         value={formData.pulseira}
                                         onChange={(e) => setFormData({ ...formData, pulseira: e.target.value })}
-                                        onBlur={(e) => !isSystemData && fetchNomeCliente(e.target.value)}
+                                        onBlur={(e) => fetchNomeCliente(e.target.value)}
                                         placeholder="Nº"
-                                        disabled={isSystemData || formData.recusado || loadingName}
+                                        disabled={formData.recusado || loadingName}
                                     />
                                 </div>
                                 <div className="flex-[2]">
                                     <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Nome do Cliente</label>
-                                    <input 
-                                        type="text" 
-                                        className={isSystemData ? disabledClass : "w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white/50 cursor-not-allowed"} 
-                                        value={loadingName ? "Buscando..." : formData.nomeCliente} 
-                                        readOnly={isSystemData} 
-                                        disabled={isSystemData}
-                                    />
+                                    <input type="text" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white/50 cursor-not-allowed" value={loadingName ? "Buscando..." : formData.nomeCliente} readOnly />
                                 </div>
                             </div>
                         </div>
@@ -317,16 +265,12 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
 
                     {selectedCategory === 'uma_vida' && (
                         <div>
-                             {/* Só mostra opção de Sem Cadastro se não for pré-selecionado (ou seja, uso genérico). 
-                                 Se for Quinta Premiada (preSelected), força modo cupom. */}
-                            {!preSelectedCategory && (
-                                <div className="flex bg-black/30 p-1 rounded-lg mb-4">
-                                    <button onClick={() => setUmaVidaTab('sem_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'sem_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>SEM CADASTRO</button>
-                                    <button onClick={() => setUmaVidaTab('com_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'com_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>GERAR CUPOM</button>
-                                </div>
-                            )}
+                            <div className="flex bg-black/30 p-1 rounded-lg mb-4">
+                                <button onClick={() => setUmaVidaTab('sem_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'sem_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>SEM CADASTRO</button>
+                                <button onClick={() => setUmaVidaTab('com_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'com_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>GERAR CUPOM</button>
+                            </div>
 
-                            {umaVidaTab === 'sem_cadastro' && !preSelectedCategory ? (
+                            {umaVidaTab === 'sem_cadastro' ? (
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Nome Completo</label>
@@ -347,8 +291,7 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
                                 <div className="space-y-4">
                                     {generatedCouponData ? (
                                         <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-black border border-yellow-600/50 rounded-2xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] group">
-                                            {/* Design Cupom */}
-                                             <div className="absolute inset-0 overflow-hidden opacity-[0.03] pointer-events-none">
+                                            <div className="absolute inset-0 overflow-hidden opacity-[0.03] pointer-events-none">
                                                 <div className="flex flex-wrap w-[200%] h-[200%] -ml-20 -mt-20 rotate-12">
                                                     {Array.from({ length: 30 }).map((_, index) => (
                                                         <div key={index} className="m-6">
@@ -398,24 +341,23 @@ export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp
                                         <>
                                             <div className="flex gap-4">
                                                 <div className="flex-1">
-                                                    <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Pulseira</label>
+                                                    <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Pulseira (Atual)</label>
                                                     <input
-                                                        type="text"
-                                                        className={isSystemData ? disabledClass : "w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"}
+                                                        type="number"
+                                                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
                                                         value={formData.pulseira}
                                                         onChange={(e) => setFormData({ ...formData, pulseira: e.target.value })}
-                                                        onBlur={(e) => !isSystemData && fetchNomeCliente(e.target.value)}
+                                                        onBlur={(e) => fetchNomeCliente(e.target.value)}
                                                         placeholder="Nº"
-                                                        disabled={isSystemData || generatingCoupon}
                                                     />
                                                 </div>
                                                 <div className="flex-[2]">
                                                     <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Nome Identificado</label>
                                                     <input
                                                         type="text"
-                                                        className={isSystemData ? disabledClass : "w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white/50 cursor-not-allowed"}
-                                                        value={formData.nomeCliente || "..."}
-                                                        readOnly={isSystemData}
+                                                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white/50 cursor-not-allowed"
+                                                        value={formData.nomeCliente || "Digite a pulseira..."}
+                                                        readOnly
                                                     />
                                                 </div>
                                             </div>
