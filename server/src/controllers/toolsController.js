@@ -1,7 +1,8 @@
 import pool from '../config/db.js';
 import axios from 'axios';
 
-// Salva o histórico final da promoção
+// --- FUNÇÕES DE HISTÓRICO ---
+
 export const salvarHistorico = async (req, res) => {
     try {
         const { tipo, unidade, total_sorteados, total_resgatados, detalhes } = req.body;
@@ -33,7 +34,6 @@ export const salvarHistorico = async (req, res) => {
     }
 };
 
-// Lista o histórico de promoções anteriores
 export const listarHistorico = async (req, res) => {
     try {
         const { unidade, tipo } = req.params;
@@ -59,12 +59,14 @@ export const listarHistorico = async (req, res) => {
     }
 };
 
-// Proxy para buscar dados do cliente na API externa
+// --- FUNÇÕES DE CLIENTE (PROXY) ---
+
 export const buscarClientePorPulseira = async (req, res) => {
     const { pulseira } = req.params;
 
-    const TOKEN = process.env.DEDALOS_API_TOKEN || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
-    const BASE_URL = "https://dedalosadm2-3dab78314381.herokuapp.com/";
+    // [CORREÇÃO] Usando VITE_ prefixo conforme docker-compose
+    const TOKEN = process.env.VITE_API_TOKEN_SP; 
+    const BASE_URL = process.env.VITE_API_URL_SP;
 
     try {
         const endpoint = `${BASE_URL}api/entradasOne/${pulseira}/`;
@@ -89,7 +91,8 @@ export const buscarClientePorPulseira = async (req, res) => {
     }
 };
 
-// Salva o estado atual do sorteio (Vencedor Ativo)
+// --- FUNÇÕES QUINTA PREMIADA (SORTEIO) ---
+
 export const saveGoldenWinner = async (req, res) => {
     const { unidade, type, data } = req.body;
 
@@ -111,8 +114,6 @@ export const saveGoldenWinner = async (req, res) => {
                 winner: data
             });
             console.log(`[SOCKET] Novo ganhador Quinta Premiada emitido para: ${unidade}`);
-        } else {
-            console.warn("[SOCKET] Instância IO não encontrada no request.");
         }
 
         res.json({ success: true, message: "Ganhador salvo e transmitido!" });
@@ -123,7 +124,6 @@ export const saveGoldenWinner = async (req, res) => {
     }
 };
 
-// Busca o último sorteio ativo (para persistência ao recarregar página)
 export const getLastGoldenWinner = async (req, res) => {
     const { unidade } = req.params;
     try {
@@ -150,7 +150,6 @@ export const getLastGoldenWinner = async (req, res) => {
     }
 };
 
-// [NOVO] Limpa o sorteio ativo do banco e avisa via socket (Correção do bug de finalização)
 export const clearGoldenWinner = async (req, res) => {
     const { unidade } = req.params;
     try {
@@ -161,7 +160,6 @@ export const clearGoldenWinner = async (req, res) => {
         
         await pool.query(query, [unidade]);
 
-        // Avisa via Socket para limpar a tela de todos conectados
         const io = req.app.get('io');
         if (io) {
             io.emit('golden:winner_update', {
@@ -177,7 +175,8 @@ export const clearGoldenWinner = async (req, res) => {
     }
 };
 
-// [NOVO] Salva a configuração dos 50 cards
+// --- FUNÇÕES QUINTA PREMIADA (CONFIGURAÇÃO) ---
+
 export const saveGoldenConfig = async (req, res) => {
     const { unidade, cards } = req.body;
     try {
@@ -197,7 +196,6 @@ export const saveGoldenConfig = async (req, res) => {
     }
 };
 
-// [NOVO] Busca a configuração salva dos cards
 export const getGoldenConfig = async (req, res) => {
     const { unidade } = req.params;
     try {
@@ -210,7 +208,7 @@ export const getGoldenConfig = async (req, res) => {
                 : rows[0].cards_data;
             res.json(data);
         } else {
-            res.json([]); // Retorna vazio se ainda não configurou
+            res.json([]);
         }
     } catch (error) {
         console.error("❌ Erro ao buscar config cards:", error);
@@ -218,23 +216,32 @@ export const getGoldenConfig = async (req, res) => {
     }
 };
 
-// [NOVO] Busca a lista completa de armários (Portas) da API Externa (Correção da Dinâmica)
+// --- FUNÇÕES QUINTA PREMIADA (BUSCA EXTERNA) ---
+
 export const getLockers = async (req, res) => {
     const { unidade } = req.params;
 
-    // Configurações de API baseadas na unidade
+    // [CORREÇÃO CRÍTICA] Usando os nomes exatos do docker-compose (VITE_)
     let baseUrl, token;
     if (unidade.toLowerCase() === 'bh') {
-        baseUrl = process.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/";
-        token = process.env.VITE_API_TOKEN_BH || "919d97d7df39ecbd0036631caba657221acab99d";
+        baseUrl = process.env.VITE_API_URL_BH;
+        token = process.env.VITE_API_TOKEN_BH;
     } else {
-        baseUrl = process.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/";
-        token = process.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552";
+        baseUrl = process.env.VITE_API_URL_SP;
+        token = process.env.VITE_API_TOKEN_SP;
+    }
+
+    if (!baseUrl || !token) {
+        console.error(`❌ Variáveis de ambiente VITE_API_... não configuradas para unidade: ${unidade}`);
+        return res.status(500).json({ message: "Configuração de API ausente no servidor." });
     }
 
     try {
-        const endpoint = `${baseUrl}api/portas/`;
-        console.log(`[BACKEND] Buscando armários (portas) em: ${endpoint}`);
+        // Remove barra final da URL se houver e adiciona /api/proxy
+        const sanitizedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+        const endpoint = `${sanitizedUrl}/api/proxy`;
+        
+        console.log(`[BACKEND] Buscando armários (via Proxy) em: ${endpoint}`);
 
         const response = await axios.get(endpoint, {
             headers: {
@@ -243,22 +250,52 @@ export const getLockers = async (req, res) => {
             }
         });
 
-        // A API externa retorna { status: '1', mensagem: '...', dados: [...] }
-        // Garantimos que retornamos apenas o array de dados
-        let dados = response.data;
-        if (dados.dados) {
-            dados = dados.dados;
+        // Tratamento da resposta (baseado no script que rodou no console)
+        let dados = response.data.dados || response.data.data || [];
+
+        // Converte para array se necessário
+        if (!Array.isArray(dados) && typeof dados === 'object') {
+            dados = Object.values(dados);
         }
 
-        return res.status(200).json(dados);
+        // Normalização dos dados
+        const cleanData = dados.map(item => {
+            const num = parseInt((item.name_door || '').replace(/\D/g, '')) || 0;
+
+            let size = 'UNK';
+            const typeUpper = (item.type_door || '').toUpperCase();
+            if (typeUpper.includes('MÉDIA') || typeUpper.includes('MEDIA')) size = 'M';
+            else if (typeUpper.includes('GRANDE')) size = 'G';
+            else if (typeUpper.includes('PEQUENA')) size = 'P';
+            else if (typeUpper.includes('MICRO') || typeUpper.includes('PP')) size = 'PP';
+
+            let status = 'LIVRE';
+            const sitUpper = (item.sit_door || '').toUpperCase();
+            if (sitUpper.includes('CLIENTE-IN')) status = 'OCUPADO';
+            else if (sitUpper.includes('MANUTEN') || sitUpper.includes('INDISPON')) status = 'MANUTENCAO';
+            else if (sitUpper.includes('RESERVADO')) status = 'RESERVADO';
+
+            return {
+                locker: num,
+                size: size,
+                status: status,
+                original_id: item.id_door
+            };
+        });
+
+        return res.status(200).json(cleanData);
 
     } catch (error) {
-        console.error("❌ Erro ao buscar lista de armários:", error.message);
+        console.error("❌ Erro ao buscar armários na API externa:", error.message);
         
         if (error.response) {
-            return res.status(error.response.status).json(error.response.data);
+            console.error("Status:", error.response.status);
+            return res.status(error.response.status).json({ 
+                message: "Erro na API externa", 
+                details: error.response.data 
+            });
         }
         
-        return res.status(500).json({ message: "Erro interno ao buscar lista de armários." });
+        return res.status(500).json({ message: "Erro interno ao buscar armários." });
     }
 };

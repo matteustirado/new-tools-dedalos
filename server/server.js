@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
     })
 })
 
-iniciarMaestro()
+//iniciarMaestro()
 
 httpServer.listen(port, () => {
     console.log(`Backend rodando (com Socket.io) na porta ${port}`)

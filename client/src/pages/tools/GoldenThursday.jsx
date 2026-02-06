@@ -149,11 +149,12 @@ export default function GoldenThursday() {
             return toast.warn("Configure os cards primeiro.");
         }
 
-        const toastId = toast.loading("Buscando mapa de armários...");
+        const toastId = toast.loading("Buscando mapa de armários (Proxy)...");
         setIsMonitoring(false);
 
         try {
             // 1. Busca lista completa de armários do servidor (proxy)
+            // Certifique-se que o backend foi atualizado com a rota /lockers
             const lockersResponse = await axios.get(`${API_URL}/api/tools/lockers/${currentUnit}`);
             const lockersData = lockersResponse.data;
 
@@ -172,25 +173,18 @@ export default function GoldenThursday() {
             const groups = { P: [], M: [], G: [] };
 
             lockersData.forEach(item => {
-                // Extrai número do nome (Ex: "PORTA 01" -> 1)
-                const num = parseInt(item.name_door.replace(/\D/g, ''));
-                if (isNaN(num)) return;
+                // Backend já deve entregar normalizado: { locker: 1, size: 'M', status: 'LIVRE' }
+                // Mas garantimos aqui
+                if (item.size === 'PP' || item.size === 'UNK') return;
+                
+                // Verifica status: não pode estar em manutenção ou ocupado agora
+                const isUnavailable = item.status === 'MANUTENCAO' || item.status === 'RESERVADO';
+                const isOccupied = occupiedNumbers.includes(item.locker);
 
-                // Normaliza tamanho
-                let size = 'UNK';
-                const typeUpper = (item.type_door || '').toUpperCase();
-                if (typeUpper.includes('MÉDIA') || typeUpper.includes('MEDIA')) size = 'M';
-                else if (typeUpper.includes('GRANDE')) size = 'G';
-                else if (typeUpper.includes('PEQUENA')) size = 'P';
-                else if (typeUpper.includes('MICRO') || typeUpper.includes('PP')) size = 'PP';
-
-                const isBroken = (item.sit_door || '').toUpperCase().includes('MANUTEN');
-                const isOccupied = occupiedNumbers.includes(num);
-
-                if (size !== 'PP' && size !== 'UNK' && !isBroken && !isOccupied) {
-                    validLockers.push({ locker: num, size });
-                    if (groups[size]) groups[size].push(num);
-                    else groups.M.push(num); // Fallback padrão para M
+                if (!isUnavailable && !isOccupied) {
+                    validLockers.push(item);
+                    if (groups[item.size]) groups[item.size].push(item.locker);
+                    else if (groups.M) groups.M.push(item.locker); // Fallback padrão
                 }
             });
 
@@ -216,6 +210,7 @@ export default function GoldenThursday() {
                 }
             });
 
+            // Ajuste fino para preencher total exato
             const availableSizes = ['P', 'M', 'G'].filter(s => groups[s].length > 0);
             while (assignedCount < totalPrizes && availableSizes.length > 0) {
                 const randomSize = availableSizes[Math.floor(Math.random() * availableSizes.length)];
@@ -319,26 +314,16 @@ export default function GoldenThursday() {
             detalhes: currentDraw
         };
         try {
-            // 1. Salvar histórico
             await axios.post(`${API_URL}/api/tools/history`, payload);
-            
-            // 2. Limpar vencedor ativo
+            // Chama a rota de limpeza
             await axios.delete(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
-
-            toast.success("Finalizado com sucesso!");
+            toast.success("Finalizado!");
             setCurrentDraw(null);
             setIsMonitoring(false);
-        } catch (e) { 
-            console.error(e);
-            toast.warning("Erro ao finalizar."); 
-        } finally { 
-            setShowFinalizeModal(false); 
-            setIsFinalizing(false); 
-            loadHistory(); 
-        }
+        } catch (e) { toast.warning("Erro ao finalizar."); } 
+        finally { setShowFinalizeModal(false); setIsFinalizing(false); loadHistory(); }
     };
 
-    // --- IMPRESSÃO ---
     const generatePrintReport = (dataToPrint, titleSuffix = "") => {
         if (!dataToPrint || dataToPrint.length === 0) return toast.info("Nada para imprimir");
 
@@ -478,7 +463,7 @@ export default function GoldenThursday() {
                 </div>
             </main>
 
-            {/* MODAL CONFIGURAÇÃO */}
+            {/* Modais de Configuração, Resgate e Finalização */}
             {showConfigModal && (
                 <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-6 backdrop-blur-md">
                     <div className="bg-[#1a1a1a] w-full max-w-7xl h-[90vh] rounded-3xl p-6 flex flex-col border border-white/10">
