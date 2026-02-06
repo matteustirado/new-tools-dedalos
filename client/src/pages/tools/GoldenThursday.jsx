@@ -3,79 +3,90 @@ import { useParams } from 'react-router-dom';
 import Sidebar from '../../components/Sidebar';
 import { toast } from 'react-toastify';
 import axios from 'axios';
-import GiftList from '../../components/GiftList';
+import GiftList, { PRIZE_CATEGORIES } from '../../components/GiftList';
 import { io } from 'socket.io-client';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-const CONFIG = {
+const POLL_CONFIG = {
     sp: {
         name: 'São Paulo',
-        totalLockers: 210,
-        couponsToDraw: 50,
         apiUrl: import.meta.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/",
         token: import.meta.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552",
-        broken: [209],
-        ranges: {
-            M: [1, 2, 3, 4, 5, 6, 21, 22, 23, 24, 25, 26, 41, 42, 43, 44, 45, 46, 61, 62, 63, 64, 65, 66, 81, 82, 83, 84, 85, 86, 191, 192, 193, 194, 195, 196],
-            G: [19, 20, 39, 40, 59, 60, 79, 80, 99, 100, 210],
-            PP: { start: 101, end: 160 }
-        }
     },
     bh: {
         name: 'Belo Horizonte',
-        totalLockers: 160,
-        couponsToDraw: 15,
         apiUrl: import.meta.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/",
         token: import.meta.env.VITE_API_TOKEN_BH || "919d97d7df39ecbd0036631caba657221acab99d",
-        broken: [17, 30, 36, 61],
-        ranges: {
-            M: [1, 2, 3, 4, 5, 6, 21, 22, 23, 24, 25, 26],
-            G: [19, 20, 39, 40],
-            PP: { start: 131, end: 160 }
-        }
     }
 };
 
 export default function GoldenThursday() {
     const { unidade } = useParams();
     const currentUnit = unidade ? unidade.toLowerCase() : 'sp';
-    const config = CONFIG[currentUnit] || CONFIG.sp;
+    const pollConfig = POLL_CONFIG[currentUnit] || POLL_CONFIG.sp;
 
+    // Estados de Dados
+    const [lockerDefinitions, setLockerDefinitions] = useState([]); 
+    // Garante 50 objetos únicos para configuração
+    const [cardConfig, setCardConfig] = useState(Array.from({ length: 50 }, (_, i) => ({ index: i, prize_type: 'sem_premio', prize_details: {} })));
+    const [occupiedData, setOccupiedData] = useState([]); // Dados brutos da API (com nome, id, etc)
     const [history, setHistory] = useState([]);
-    const [occupiedLockers, setOccupiedLockers] = useState([]);
+    
+    // Estados do Sorteio
     const [selectedLockerForPrize, setSelectedLockerForPrize] = useState(null);
-    const [showFinalizeModal, setShowFinalizeModal] = useState(false);
-    const [isFinalizing, setIsFinalizing] = useState(false);
-    const [showRedeemedModal, setShowRedeemedModal] = useState(false);
     const [currentDraw, setCurrentDraw] = useState(null);
     const [isMonitoring, setIsMonitoring] = useState(false);
+    
+    // Modais e Loadings
+    const [showFinalizeModal, setShowFinalizeModal] = useState(false);
+    const [isFinalizing, setIsFinalizing] = useState(false);
+    const [showConfigModal, setShowConfigModal] = useState(false);
+    const [isSavingConfig, setIsSavingConfig] = useState(false);
 
+    // ===================================================================================
+    // INICIALIZAÇÃO E SOCKET
+    // ===================================================================================
     useEffect(() => {
         const socket = io(API_URL);
         
         socket.on('golden:winner_update', (data) => {
             if (data.unidade.toLowerCase() === currentUnit) {
-                console.log("Recebido novo sorteio via socket:", data.winner);
+                // Se winner for null (limpeza), o estado vai para null e monitoramento para
                 setCurrentDraw(data.winner);
-                setIsMonitoring(true);
+                setIsMonitoring(!!data.winner);
             }
         });
 
-        const fetchLastWinner = async () => {
+        const fetchData = async () => {
             try {
-                const res = await axios.get(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
-                if (res.data) {
-                    setCurrentDraw(res.data);
+                // Busca todas as configurações do backend via API (Nunca importar DB direto)
+                const [lockersRes, configRes, lastWinnerRes] = await Promise.all([
+                    axios.get(`${API_URL}/api/tools/lockers/${currentUnit}`),
+                    axios.get(`${API_URL}/api/tools/golden/config/${currentUnit}`),
+                    axios.get(`${API_URL}/api/tools/golden/winner/${currentUnit}`)
+                ]);
+
+                if (Array.isArray(lockersRes.data)) setLockerDefinitions(lockersRes.data);
+                
+                if (configRes.data?.length > 0) {
+                    const loaded = Array.from({ length: 50 }, (_, idx) => {
+                        const found = configRes.data.find(c => c.index === idx);
+                        return found ? { index: idx, prize_type: found.prize_type || 'sem_premio', prize_details: found.prize_details || {} } 
+                                     : { index: idx, prize_type: 'sem_premio', prize_details: {} };
+                    });
+                    setCardConfig(loaded);
+                }
+
+                if (lastWinnerRes.data) {
+                    setCurrentDraw(lastWinnerRes.data);
                     setIsMonitoring(true);
                 }
-            } catch (error) {
-                console.error("Erro ao buscar sorteio ativo:", error);
-            }
+            } catch (error) { console.error("Erro carregamento inicial:", error); }
         };
-        fetchLastWinner();
+        
+        fetchData();
         loadHistory();
-
         return () => socket.disconnect();
     }, [currentUnit]);
 
@@ -83,42 +94,45 @@ export default function GoldenThursday() {
         try {
             const res = await axios.get(`${API_URL}/api/tools/history/${currentUnit.toUpperCase()}/QUINTA_PREMIADA`);
             setHistory(res.data);
-        } catch (error) {
-            console.error("Erro ao carregar histórico:", error);
-        }
+        } catch (e) {}
     };
 
+    // ===================================================================================
+    // POLLING (VERIFICAÇÃO DE OCUPAÇÃO E CORES)
+    // ===================================================================================
     useEffect(() => {
         let interval;
         if (isMonitoring && currentDraw) {
             const check = async () => {
                 try {
-                    const endpoint = config.apiUrl.includes('api/entradasCheckout') ? config.apiUrl : `${config.apiUrl}api/entradasCheckout/`;
-                    const response = await fetch(endpoint, { headers: { "Authorization": `Token ${config.token}` } });
+                    const endpoint = pollConfig.apiUrl.includes('api/entradasCheckout') ? pollConfig.apiUrl : `${pollConfig.apiUrl}api/entradasCheckout/`;
+                    const response = await fetch(endpoint, { headers: { "Authorization": `Token ${pollConfig.token}` } });
                     const data = await response.json();
-                    const currentOccupied = data.map(c => parseInt(c.armario)).filter(n => !isNaN(n));
                     
-                    setOccupiedLockers(currentOccupied);
+                    setOccupiedData(data); // Salva dados brutos para usar no resgate
+                    const currentOccupiedNums = data.map(c => parseInt(c.armario)).filter(n => !isNaN(n));
 
                     setCurrentDraw(prevDraw => {
                         if (!prevDraw) return null;
-                        
                         return prevDraw.map(item => {
+                            // 1. Roxo (Redeemed) é imutável
                             if (item.status === 'redeemed') return item;
+                            
+                            // 2. Vermelho (Lost) é imutável via polling
+                            if (item.status === 'lost') return item;
 
-                            const isNowOccupied = currentOccupied.includes(item.locker);
+                            const isNowOccupied = currentOccupiedNums.includes(item.locker);
 
+                            // 3. Verde (Occupied): Cliente entrou
                             if (isNowOccupied) {
                                 if (item.status !== 'occupied') return { ...item, status: 'occupied' };
                                 return item;
                             }
-
+                            
+                            // 4. Se estava Verde e ficou vazio sem resgate -> Vermelho (Lost)
                             if (item.status === 'occupied' && !isNowOccupied) {
                                 return { ...item, status: 'lost' };
                             }
-
-                            if (item.status === 'lost') return item;
-
                             return item;
                         });
                     });
@@ -128,375 +142,314 @@ export default function GoldenThursday() {
             interval = setInterval(check, 5000);
         }
         return () => clearInterval(interval);
-    }, [isMonitoring, config.apiUrl, config.token, currentDraw]);
+    }, [isMonitoring, pollConfig, currentDraw]);
 
-    const getLockerSize = (num) => {
-        if (config.broken.includes(num)) return 'BROKEN';
-        if (num >= config.ranges.PP.start && num <= config.ranges.PP.end) return 'PP';
-        if (config.ranges.M.includes(num)) return 'M';
-        if (config.ranges.G.includes(num)) return 'G';
-        if (num > 0 && num <= config.totalLockers) return 'P';
-        return 'UNKNOWN';
-    };
-
+    // ===================================================================================
+    // LÓGICA DO SORTEIO
+    // ===================================================================================
     const handleNewDraw = async () => {
-        if (currentDraw) {
-            toast.warn("Existe um sorteio em andamento! Você precisa FINALIZAR o sorteio atual antes de iniciar um novo.");
-            return;
-        }
+        if (currentDraw) return toast.warn("Finalize o sorteio atual.");
+        if (lockerDefinitions.length === 0) return toast.error("Infraestrutura não carregada.");
 
-        setIsMonitoring(false);
-        const toastId = toast.loading("Consultando sistema de armários...");
-
+        const toastId = toast.loading("Sorteando...");
         try {
-            const endpoint = config.apiUrl.includes('api/entradasCheckout') ? config.apiUrl : `${config.apiUrl}api/entradasCheckout/`;
-            const response = await fetch(endpoint, { headers: { "Authorization": `Token ${config.token}` } });
-            
-            if (response.status !== 200) throw new Error("Falha na API");
-
+            // Busca ocupação atual para não sortear armário ocupado
+            const endpoint = pollConfig.apiUrl.includes('api/entradasCheckout') ? pollConfig.apiUrl : `${pollConfig.apiUrl}api/entradasCheckout/`;
+            const response = await fetch(endpoint, { headers: { "Authorization": `Token ${pollConfig.token}` } });
             const data = await response.json();
-            const realOccupied = data.map(c => parseInt(c.armario)).filter(n => !isNaN(n));
-            setOccupiedLockers(realOccupied);
+            const realOccupied = data.map(c => parseInt(c.armario));
 
-            const available = { M: [], P: [], G: [] };
-            for (let i = 1; i <= config.totalLockers; i++) {
-                if (!realOccupied.includes(i)) {
-                    const size = getLockerSize(i);
-                    if (['M', 'P', 'G'].includes(size)) available[size].push(i);
-                }
-            }
-
-            const totalAvailableCount = available.M.length + available.P.length + available.G.length;
-            if (totalAvailableCount < config.couponsToDraw) {
-                toast.update(toastId, { render: `Atenção: Apenas ${totalAvailableCount} armários livres!`, type: "warning", isLoading: false, autoClose: 5000 });
-            } else {
-                toast.update(toastId, { render: "Sorteio realizado!", type: "success", isLoading: false, autoClose: 3000 });
-            }
-
-            let drawResult = [];
-            const targetTotal = Math.min(config.couponsToDraw, totalAvailableCount);
-
-            ['M', 'P', 'G'].forEach(size => {
-                const countSize = available[size].length;
-                if (countSize === 0) return;
-                let targetForSize = Math.floor((countSize / totalAvailableCount) * targetTotal);
-                const shuffled = available[size].sort(() => 0.5 - Math.random());
-                shuffled.slice(0, targetForSize).forEach(locker => drawResult.push({ locker, size, status: 'pending', prize: null, details: null }));
+            const validLockers = lockerDefinitions.filter(l => {
+                const num = parseInt(l.numero);
+                const isMicro = l.tamanho && l.tamanho.toUpperCase() === 'MICRO';
+                const isBroken = l.status && l.status !== 'ativo' && l.status !== 'ok';
+                return !realOccupied.includes(num) && !isMicro && !isBroken;
             });
 
-            while (drawResult.length < targetTotal) {
-                const allFree = [...available.M, ...available.P, ...available.G];
-                const used = drawResult.map(d => d.locker);
-                const remaining = allFree.filter(x => !used.includes(x));
-                if (remaining.length === 0) break;
-                const luckyOne = remaining[Math.floor(Math.random() * remaining.length)];
-                drawResult.push({ locker: luckyOne, size: getLockerSize(luckyOne), status: 'pending', prize: null, details: null });
+            // Pega cards válidos
+            const activeCards = cardConfig.filter(c => c.prize_type && c.prize_type !== 'sem_premio');
+            if (activeCards.length === 0) {
+                toast.update(toastId, { render: "Nenhum card configurado!", type: "warning", isLoading: false, autoClose: 3000 });
+                return;
+            }
+
+            const shuffledCards = [...activeCards].sort(() => 0.5 - Math.random());
+            const shuffledLockers = [...validLockers].sort(() => 0.5 - Math.random());
+            const targetTotal = Math.min(shuffledLockers.length, shuffledCards.length);
+
+            const drawResult = [];
+            for(let i=0; i<targetTotal; i++) {
+                const locker = shuffledLockers[i];
+                const card = shuffledCards[i];
+                const label = PRIZE_CATEGORIES.find(c => c.id === card.prize_type)?.label || card.prize_type;
+                
+                drawResult.push({
+                    locker: parseInt(locker.numero),
+                    size: locker.tamanho,
+                    status: 'pending', 
+                    card_index: card.index + 1,
+                    prize: label,
+                    prize_type_id: card.prize_type,
+                    details_obj: card.prize_details,
+                    details: null 
+                });
             }
 
             drawResult.sort((a, b) => a.locker - b.locker);
 
             await axios.post(`${API_URL}/api/tools/golden/winner`, {
-                unidade: currentUnit,
-                type: 'QUINTA_PREMIADA',
-                data: drawResult
+                unidade: currentUnit, type: 'QUINTA_PREMIADA', data: drawResult
             });
             
+            toast.update(toastId, { render: "Sorteio Realizado!", type: "success", isLoading: false, autoClose: 3000 });
+
         } catch (error) {
-            console.error(error);
-            toast.update(toastId, { render: "Erro ao realizar sorteio.", type: "error", isLoading: false, autoClose: 5000 });
+            toast.update(toastId, { render: "Erro no sorteio.", type: "error", isLoading: false });
         }
     };
 
-    const handleRequestFinalize = () => {
-        if (!currentDraw) return;
-        setShowFinalizeModal(true);
-    };
-
-    const confirmFinalize = async () => {
-        setIsFinalizing(true);
-        const redeemedCount = currentDraw.filter(i => i.status === 'redeemed').length;
-
-        const payload = {
-            tipo: 'QUINTA_PREMIADA',
-            unidade: currentUnit.toUpperCase(),
-            total_sorteados: currentDraw.length,
-            total_resgatados: redeemedCount,
-            detalhes: currentDraw
-        };
-
-        try {
-            await axios.post(`${API_URL}/api/tools/history`, payload);
-            toast.success("Promoção finalizada e salva no histórico!");
-            setCurrentDraw(null);
-            setIsMonitoring(false);
-        } catch (error) {
-            console.error("Erro ao salvar:", error);
-            toast.warning("Finalizado localmente. Falha ao salvar no histórico do servidor.");
-        } finally {
-            setShowFinalizeModal(false);
-            setIsFinalizing(false);
-            loadHistory();
-        }
-    };
+    // ===================================================================================
+    // MANIPULAÇÃO DE INTERFACE E RESGATE
+    // ===================================================================================
 
     const handleLockerClick = (item) => {
+        if (item.status === 'pending') return; 
+        if (item.status === 'redeemed') return toast.info("Este prêmio já foi resgatado.");
+        if (item.status === 'lost') return toast.error("Armário liberado sem resgate. Remova o card.");
+        
         if (item.status === 'occupied') {
-            setSelectedLockerForPrize(item);
-        } else if (item.status === 'redeemed') {
-            toast.info(`Resgatado: ${item.prize}`);
-        } else if (item.status === 'lost') {
-            toast.error("Cliente saiu sem resgatar! Retire o cupom.");
-        } else {
-            toast.info("Aguardando cliente...");
+            if (!item.prize_type_id) return toast.info("Card sem prêmio.");
+            
+            // Encontra dados do cliente
+            const clientInfo = occupiedData.find(c => parseInt(c.armario) === item.locker);
+            setSelectedLockerForPrize({ ...item, clientInfo }); 
         }
     };
 
     const handleGiftConfirm = async (prizeName, detailsString) => {
         if (!selectedLockerForPrize) return;
+        const updated = currentDraw.map(i => i.locker === selectedLockerForPrize.locker ? { ...i, status: 'redeemed', prize: prizeName, details: detailsString } : i);
         
-        const updatedDraw = currentDraw.map(item => {
-            if (item.locker === selectedLockerForPrize.locker) {
-                return { ...item, status: 'redeemed', prize: prizeName, details: detailsString };
-            }
-            return item;
-        });
-
         try {
-            await axios.post(`${API_URL}/api/tools/golden/winner`, {
-                unidade: currentUnit,
-                type: 'QUINTA_PREMIADA',
-                data: updatedDraw
+            await axios.post(`${API_URL}/api/tools/golden/winner`, { unidade: currentUnit, type: 'QUINTA_PREMIADA', data: updated });
+            setSelectedLockerForPrize(null);
+            toast.success("Resgate confirmado!");
+        } catch (e) { toast.error("Erro ao salvar."); }
+    };
+
+    const handleFinalize = async () => {
+        setIsFinalizing(true);
+        try {
+            const redeemed = currentDraw.filter(i => i.status === 'redeemed').length;
+            await axios.post(`${API_URL}/api/tools/history`, {
+                tipo: 'QUINTA_PREMIADA', unidade: currentUnit.toUpperCase(),
+                total_sorteados: currentDraw.length, total_resgatados: redeemed, detalhes: currentDraw
             });
             
-            setSelectedLockerForPrize(null);
-            toast.success("Resgate salvo com sucesso!");
-        } catch (error) {
-            console.error("Erro ao salvar resgate:", error);
-            toast.error("Erro ao salvar resgate no servidor.");
+            await axios.delete(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
+
+            toast.success("Promoção finalizada com sucesso!");
+            setCurrentDraw(null);
+            setIsMonitoring(false);
+        } catch (e) { 
+            console.error(e);
+            toast.warning("Erro ao finalizar."); 
+        } finally { 
+            setShowFinalizeModal(false); 
+            setIsFinalizing(false); 
+            loadHistory(); 
         }
+    };
+
+    const handleSaveConfig = async () => {
+        setIsSavingConfig(true);
+        try {
+            const cleanedConfig = cardConfig.map(c => ({
+                ...c,
+                prize_details: {} 
+            }));
+
+            await axios.post(`${API_URL}/api/tools/golden/config`, { unidade: currentUnit, cards: cleanedConfig });
+            toast.success("Configuração salva!");
+            setShowConfigModal(false);
+        } catch (e) { toast.error("Erro ao salvar."); } 
+        finally { setIsSavingConfig(false); }
+    };
+
+    const handleUpdateCard = (index, field, value) => {
+        const newC = [...cardConfig];
+        if (!newC[index]) newC[index] = { index, prize_type: 'sem_premio', prize_details: {} };
+        if (field === 'prize_type') newC[index].prize_type = value;
+        setCardConfig(newC);
     };
 
     const generatePrintReport = (drawData, dateLabel) => {
-        if (!drawData || !Array.isArray(drawData)) return;
-
-        const redeemedItems = drawData.filter(i => i.status === 'redeemed');
-
+        if (!drawData) return;
         const printWindow = window.open('', '', 'height=800,width=900');
-        printWindow.document.write('<html><head><title>Relatório de Resgates - Quinta Premiada</title>');
-        printWindow.document.write('<style>');
         printWindow.document.write(`
-            body { font-family: 'Courier New', Courier, monospace; padding: 20px; color: #000; }
-            h1 { text-align: center; font-size: 1.5em; margin-bottom: 5px; }
-            h2 { text-align: center; font-size: 1em; margin-top: 0; border-bottom: 2px dashed #000; padding-bottom: 10px; }
-            .summary { text-align: right; margin-bottom: 20px; font-weight: bold; }
-            .item { border-bottom: 1px dashed #ccc; padding: 10px 0; display: flex; flex-direction: column; gap: 4px; page-break-inside: avoid; }
-            .item-header { display: flex; justify-content: space-between; align-items: center; }
-            .locker { font-size: 1.3em; font-weight: bold; }
-            .prize { font-weight: bold; text-transform: uppercase; }
-            .details { font-size: 0.9em; color: #333; margin-left: 10px; border-left: 2px solid #ccc; padding-left: 8px; }
-            .footer { margin-top: 30px; text-align: center; font-size: 0.8em; border-top: 2px dashed #000; padding-top: 10px; }
+            <html><head><title>Relatório Quinta Premiada</title>
+            <style>
+                body{font-family:'Courier New', monospace; padding:20px; color:#000;} 
+                h1{text-align:center;border-bottom:2px dashed #000;padding-bottom:10px;}
+                table{width:100%;border-collapse:collapse;margin-top:20px;} 
+                th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px;} 
+                th{background:#eee;}
+                .redeemed{font-weight:bold;color:green;}
+                .lost{color:red;text-decoration:line-through;}
+                .summary{margin-top:20px;text-align:right;font-weight:bold;}
+            </style>
+            </head><body>
+            <h1>${pollConfig.name} - ${dateLabel}</h1>
+            <table>
+                <thead><tr><th>Armário</th><th>Card</th><th>Prêmio</th><th>Status</th><th>Detalhes</th></tr></thead>
+                <tbody>
+                    ${drawData.map(d => `
+                        <tr>
+                            <td>${d.locker} (${d.size || '?'})</td>
+                            <td>#${d.card_index || '?'}</td>
+                            <td>${d.prize || '-'}</td>
+                            <td class="${d.status}">${d.status === 'redeemed' ? 'RESGATADO' : d.status.toUpperCase()}</td>
+                            <td>${d.details || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div class="summary">
+                Total Sorteado: ${drawData.length} | 
+                Resgatados: ${drawData.filter(i => i.status === 'redeemed').length}
+            </div>
+            </body></html>
         `);
-        printWindow.document.write('</style></head><body>');
-
-        printWindow.document.write(`<h1>${config.name}</h1>`);
-        printWindow.document.write(`<h2>RELATÓRIO DE PREMIAÇÕES</h2>`);
-
-        printWindow.document.write(`<div class="summary">`);
-        printWindow.document.write(`DATA: ${dateLabel}<br/>`);
-        printWindow.document.write(`TOTAL RESGATADO: ${redeemedItems.length}`);
-        printWindow.document.write(`</div>`);
-
-        if (redeemedItems.length === 0) {
-            printWindow.document.write('<p style="text-align:center; margin-top:50px;">Nenhum prêmio foi resgatado neste sorteio.</p>');
-        } else {
-            redeemedItems.forEach(item => {
-                const formattedDetails = item.details ? item.details.replace(/ \| /g, '<br/>') : 'Sem detalhes adicionais';
-
-                printWindow.document.write('<div class="item">');
-                printWindow.document.write('<div class="item-header">');
-                printWindow.document.write(`<span class="locker">Armário ${item.locker} <small>(${item.size})</small></span>`);
-                printWindow.document.write(`<span class="prize">${item.prize}</span>`);
-                printWindow.document.write('</div>');
-                printWindow.document.write(`<div class="details">${formattedDetails}</div>`);
-                printWindow.document.write('</div>');
-            });
-        }
-
-        printWindow.document.write('<div class="footer">DEDALOS BAR - QUINTA PREMIADA</div>');
-        printWindow.document.write('</body></html>');
         printWindow.document.close();
         printWindow.print();
-    };
-
-    const handlePrintCurrent = () => {
-        if (currentDraw) {
-            generatePrintReport(currentDraw, new Date().toLocaleString());
-        }
     };
 
     return (
         <div className="min-h-screen bg-gradient-warm flex">
             <Sidebar activePage="thursday" headerTitle="Quinta Premiada" headerIcon="stars" group="maintenance" unit={currentUnit} />
-
             <main className="ml-64 flex-1 p-8 h-screen overflow-hidden flex flex-col">
+                {/* HEADER */}
                 <div className="flex justify-between items-center mb-8 flex-shrink-0">
                     <div>
-                        <h1 className="text-4xl font-bold text-white mb-1">Quinta Premiada</h1>
-                        <div className="flex items-center gap-3">
-                            <span className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-widest ${currentUnit === 'sp' ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                                {config.name}
-                            </span>
-                            {isMonitoring && <span className="flex items-center gap-2 text-green-400 text-xs font-bold animate-pulse"><span className="w-2 h-2 bg-green-500 rounded-full"></span> MONITORANDO ARMÁRIOS EM TEMPO REAL</span>}
-                        </div>
+                        <h1 className="text-4xl font-bold text-white mb-1">{pollConfig.name} <span className="text-sm font-normal opacity-50 block">Quinta Premiada</span></h1>
+                        {isMonitoring && <span className="flex items-center gap-2 text-green-400 text-xs font-bold animate-pulse mt-2"><span className="w-2 h-2 bg-green-500 rounded-full"></span> MONITORANDO EM TEMPO REAL</span>}
                     </div>
                     <div className="flex gap-4">
-                        <button
-                            onClick={handlePrintCurrent}
-                            disabled={!currentDraw}
-                            className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                            <span className="material-symbols-outlined">print</span> IMPRIMIR
-                        </button>
-
-                        <button
-                            onClick={() => setShowRedeemedModal(true)}
-                            disabled={!currentDraw}
-                            className="bg-purple-600/80 text-white px-6 py-3 rounded-xl font-bold hover:bg-purple-600 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                            <span className="material-symbols-outlined">emoji_events</span> RESGATADOS
-                        </button>
-
-                        <button
-                            onClick={handleNewDraw}
-                            className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-500 transition-colors shadow-lg flex items-center gap-2"
-                        >
-                            <span className="material-symbols-outlined">casino</span> NOVO SORTEIO
-                        </button>
+                        <button onClick={() => setShowConfigModal(true)} className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 flex gap-2"><span className="material-symbols-outlined">settings</span> CONFIGURAR</button>
+                        <button onClick={() => generatePrintReport(currentDraw, "Sorteio Atual")} disabled={!currentDraw} className="bg-white/10 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 flex gap-2 disabled:opacity-50"><span className="material-symbols-outlined">print</span> IMPRIMIR</button>
+                        <button onClick={handleNewDraw} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-500 shadow-lg flex gap-2"><span className="material-symbols-outlined">casino</span> NOVO SORTEIO</button>
+                        {currentDraw && <button onClick={() => setShowFinalizeModal(true)} className="bg-red-600/80 text-white px-6 py-3 rounded-xl font-bold hover:bg-red-600 flex gap-2"><span className="material-symbols-outlined">stop_circle</span> FINALIZAR</button>}
                     </div>
                 </div>
 
+                {/* CONTENT */}
                 <div className="grid grid-cols-12 gap-8 flex-1 min-h-0">
-                    <div className="col-span-4 liquid-glass rounded-3xl p-6 flex flex-col min-h-0">
-                        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><span className="material-symbols-outlined text-white/50">history</span> Histórico</h2>
-                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                            {history.length === 0 && <p className="text-white/30 text-sm text-center mt-10">Nenhum histórico recente.</p>}
-                            {history.map(h => (
-                                <div key={h.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:bg-white/10 transition-colors group flex flex-col gap-2">
-                                    <div className="flex justify-between items-start">
-                                        <p className="text-white font-bold text-sm">{new Date(h.data_hora).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
-                                        <span className="text-xs text-white/50 bg-black/20 px-2 py-0.5 rounded">{h.total_sorteados} cupons</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2">
-                                            <span className="material-symbols-outlined text-green-400 text-base">check_circle</span>
-                                            <p className="text-sm text-green-100">{h.total_resgatados} resgatados</p>
-                                        </div>
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                generatePrintReport(h.detalhes, new Date(h.data_hora).toLocaleString());
-                                            }}
-                                            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center shadow-sm"
-                                            title="Imprimir Relatório Antigo"
-                                        >
-                                            <span className="material-symbols-outlined text-sm">print</span>
-                                        </button>
-                                    </div>
+                    {/* HISTÓRICO */}
+                    <div className="col-span-3 liquid-glass rounded-3xl p-4 overflow-y-auto custom-scrollbar">
+                        <h3 className="text-white font-bold mb-4 flex items-center gap-2"><span className="material-symbols-outlined">history</span> Histórico</h3>
+                        {history.length === 0 && <p className="text-white/30 text-sm">Sem histórico.</p>}
+                        {history.map(h => (
+                            <div key={h.id} className="bg-white/5 p-3 rounded-lg mb-2 border border-white/5 text-sm flex justify-between items-center group cursor-pointer hover:bg-white/10">
+                                <div>
+                                    <p className="text-white font-bold">{new Date(h.data_hora).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute:'2-digit' })}</p>
+                                    <p className="text-white/50">{h.total_resgatados}/{h.total_sorteados} resgatados</p>
                                 </div>
-                            ))}
-                        </div>
+                                <button onClick={(e) => { e.stopPropagation(); generatePrintReport(h.detalhes, new Date(h.data_hora).toLocaleString()); }} className="text-white/30 hover:text-white"><span className="material-symbols-outlined">print</span></button>
+                            </div>
+                        ))}
                     </div>
 
-                    <div className="col-span-8 liquid-glass rounded-3xl p-8 flex flex-col min-h-0 relative overflow-hidden">
+                    {/* GRID DE ARMÁRIOS */}
+                    <div className="col-span-9 liquid-glass rounded-3xl p-6 relative overflow-y-auto custom-scrollbar">
                         {!currentDraw ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-white/20"><span className="material-symbols-outlined text-8xl mb-4">stars</span><p className="text-xl font-medium uppercase tracking-widest">Aguardando Sorteio</p></div>
+                            <div className="h-full flex flex-col items-center justify-center text-white/20">
+                                <span className="material-symbols-outlined text-8xl mb-4">stars</span>
+                                <p className="text-xl font-bold uppercase">Aguardando Sorteio</p>
+                            </div>
                         ) : (
-                            <>
-                                <div className="grid grid-cols-10 gap-2 overflow-hidden content-start pb-4">
-                                    {currentDraw.map((item) => {
-                                        let cardClass = "bg-white/5 border-white/10 text-white hover:bg-white/10";
-                                        let icon = null;
-                                        if (item.status === 'occupied') {
-                                            cardClass = "bg-green-600 border-green-400 text-white animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.5)] scale-105";
-                                            icon = "person";
-                                        } else if (item.status === 'lost') {
-                                            cardClass = "bg-red-900/80 border-red-500 text-red-100";
-                                            icon = "priority_high";
-                                        } else if (item.status === 'redeemed') {
-                                            cardClass = "bg-purple-600 border-purple-400 text-white opacity-60";
-                                            icon = "emoji_events";
-                                        }
-                                        return (
-                                            <div key={item.locker} onClick={() => handleLockerClick(item)} className={`aspect-square rounded-xl border flex flex-col items-center justify-center cursor-pointer transition-all relative ${cardClass} p-1`}>
-                                                <span className="text-xl font-bold">{item.locker}</span>
-                                                <span className="text-[10px] font-bold uppercase opacity-80">{item.size}</span>
-                                                {icon && <span className="material-symbols-outlined absolute top-1 right-1 text-xs">{icon}</span>}
-                                            </div>
-                                        )
-                                    })}
+                            <div className="grid grid-cols-10 gap-2 content-start">
+                                {currentDraw.map((item) => (
+                                    <div 
+                                        key={item.locker} 
+                                        onClick={() => handleLockerClick(item)} 
+                                        className={`aspect-square rounded-lg border flex flex-col items-center justify-center transition-all relative p-1
+                                            ${item.status === 'occupied' ? 'bg-green-600 border-green-400 animate-pulse cursor-pointer shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:scale-105' : 
+                                              item.status === 'redeemed' ? 'bg-purple-600 border-purple-400 opacity-80 cursor-default' : 
+                                              item.status === 'lost' ? 'bg-red-900 border-red-500 cursor-default' : 
+                                              'bg-white/5 border-white/10 text-white/50 cursor-default'}`} 
+                                    >
+                                        <span className="text-lg font-bold text-white leading-none">{item.locker}</span>
+                                        <div className="mt-1 flex flex-col items-center">
+                                            <span className="text-[8px] font-bold uppercase bg-black/30 px-1 rounded text-white/80">CARD {item.card_index}</span>
+                                        </div>
+                                        
+                                        {item.status === 'occupied' && <span className="material-symbols-outlined absolute -top-1 -right-1 text-sm bg-black rounded-full text-white shadow-sm">priority_high</span>}
+                                        {item.status === 'redeemed' && <span className="material-symbols-outlined absolute -top-1 -right-1 text-sm bg-white rounded-full text-purple-600 shadow-sm">check</span>}
+                                        {item.status === 'lost' && <span className="material-symbols-outlined absolute -top-1 -right-1 text-sm bg-white rounded-full text-red-600 shadow-sm">close</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        
+                        {currentDraw && (
+                            <div className="mt-8 border-t border-white/10 pt-4">
+                                <h3 className="text-white font-bold mb-2 flex items-center gap-2"><span className="material-symbols-outlined text-purple-400">emoji_events</span> Resgatados Recentemente</h3>
+                                <div className="flex gap-2 flex-wrap">
+                                    {currentDraw.filter(i => i.status === 'redeemed').length === 0 && <p className="text-white/30 text-sm">Nenhum resgate efetuado.</p>}
+                                    {currentDraw.filter(i => i.status === 'redeemed').map(i => (
+                                        <div key={i.locker} className="bg-purple-900/40 border border-purple-500/30 rounded px-3 py-1 text-xs text-purple-200 flex items-center gap-2">
+                                            <span className="font-bold text-white">{i.locker}</span> 
+                                            <span>{i.prize}</span>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="mt-auto pt-4 border-t border-white/10 flex justify-end">
-                                    <button onClick={handleRequestFinalize} className="bg-red-600/80 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-600 transition-colors text-sm flex items-center gap-2"><span className="material-symbols-outlined">stop_circle</span> FINALIZAR PROMOÇÃO</button>
-                                </div>
-                            </>
+                            </div>
                         )}
                     </div>
                 </div>
             </main>
 
-            {selectedLockerForPrize && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-                    <GiftList
-                        lockerNumber={selectedLockerForPrize.locker}
-                        onCancel={() => setSelectedLockerForPrize(null)}
-                        onConfirm={handleGiftConfirm}
-                        unit={currentUnit}
-                    />
-                </div>
-            )}
-
-            {showRedeemedModal && currentDraw && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-                    <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 max-w-3xl w-full shadow-2xl relative flex flex-col max-h-[80vh]">
-                        <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
-                            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                                <span className="bg-purple-600 text-white text-sm px-3 py-1 rounded-full">
-                                    {currentDraw.filter(i => i.status === 'redeemed').length}
-                                </span>
-                                Prêmios Resgatados
-                            </h2>
-                            <button onClick={() => setShowRedeemedModal(false)} className="text-white/50 hover:text-white"><span className="material-symbols-outlined">close</span></button>
+            {/* MODAL CONFIGURAÇÃO */}
+            {showConfigModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
+                    <div className="bg-[#1a1a1a] rounded-3xl p-6 w-full max-w-5xl h-[85vh] flex flex-col border border-white/10 shadow-2xl">
+                        <div className="flex justify-between items-center mb-4 pb-4 border-b border-white/10">
+                            <div>
+                                <h2 className="text-white font-bold text-xl">Configuração dos Cards</h2>
+                                <p className="text-white/50 text-xs">Defina a categoria de prêmio para cada um dos 50 cartões físicos.</p>
+                            </div>
+                            <button onClick={() => setShowConfigModal(false)} className="text-white/50 hover:text-white"><span className="material-symbols-outlined">close</span></button>
                         </div>
-
-                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                            {currentDraw.filter(i => i.status === 'redeemed').length === 0 ? (
-                                <div className="text-center py-10 text-white/30">
-                                    <span className="material-symbols-outlined text-4xl mb-2">inbox</span>
-                                    <p>Nenhum prêmio resgatado ainda.</p>
-                                </div>
-                            ) : (
-                                currentDraw.filter(i => i.status === 'redeemed').map(item => (
-                                    <div key={item.locker} className="bg-white/5 p-4 rounded-xl border border-white/5 flex gap-4 items-center">
-                                        <div className="bg-purple-600/20 text-purple-400 w-16 h-16 rounded-lg flex flex-col items-center justify-center flex-shrink-0 border border-purple-600/30">
-                                            <span className="text-xs font-bold uppercase">Armário</span>
-                                            <span className="text-2xl font-bold">{item.locker}</span>
-                                        </div>
-                                        <div className="flex-1">
-                                            <h3 className="text-white font-bold text-lg mb-1">{item.prize}</h3>
-                                            <div className="flex flex-col gap-1 text-sm text-text-muted">
-                                                {item.details && item.details.split(' | ').map((detail, idx) => (
-                                                    <span key={idx} className="block">• {detail.trim()}</span>
-                                                ))}
-                                            </div>
-                                        </div>
+                        <div className="grid grid-cols-5 gap-3 overflow-y-auto custom-scrollbar p-2 flex-1 content-start">
+                            {cardConfig.map((card, idx) => (
+                                <div key={idx} className={`p-2 rounded border flex flex-col gap-1 text-xs ${card.prize_type !== 'sem_premio' ? 'bg-blue-900/20 border-blue-500/50' : 'bg-white/5 border-white/10'}`}>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-white/50 font-bold">CARD #{idx + 1}</span>
+                                        {card.prize_type !== 'sem_premio' && <span className="w-2 h-2 rounded-full bg-blue-500"></span>}
                                     </div>
-                                ))
-                            )}
+                                    <select 
+                                        className="bg-black/50 border border-white/20 rounded text-white p-1 outline-none w-full"
+                                        value={card.prize_type}
+                                        onChange={(e) => handleUpdateCard(idx, 'prize_type', e.target.value)}
+                                    >
+                                        <option value="sem_premio">Sem Prêmio</option>
+                                        {PRIZE_CATEGORIES.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                                    </select>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-white/10 flex justify-end gap-3">
+                            <button onClick={() => setShowConfigModal(false)} className="text-white font-bold px-4 hover:underline">Cancelar</button>
+                            <button onClick={handleSaveConfig} className="bg-blue-600 px-6 py-2 rounded-xl text-white font-bold hover:bg-blue-500 transition-colors shadow-lg flex items-center gap-2">
+                                {isSavingConfig ? <span className="material-symbols-outlined animate-spin text-sm">refresh</span> : <span className="material-symbols-outlined text-sm">save</span>} 
+                                SALVAR
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* MODAL FINALIZAR */}
             {showFinalizeModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
                     <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl relative text-center">
@@ -504,18 +457,29 @@ export default function GoldenThursday() {
                             <span className="material-symbols-outlined text-red-500 text-4xl">warning</span>
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">Finalizar Promoção?</h2>
-                        <p className="text-text-muted mb-8">
-                            Isso encerrará o sorteio atual e salvará os resultados no histórico. <br />
-                            <span className="text-red-400 font-bold block mt-2">Esta ação não pode ser desfeita.</span>
-                        </p>
-
+                        <p className="text-text-muted mb-8">O sorteio atual será encerrado, os dados salvos no histórico e a tela limpa.</p>
                         <div className="flex gap-4">
                             <button onClick={() => setShowFinalizeModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-colors">CANCELAR</button>
-                            <button onClick={confirmFinalize} disabled={isFinalizing} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center justify-center gap-2">
+                            <button onClick={handleFinalize} disabled={isFinalizing} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center justify-center gap-2">
                                 {isFinalizing ? <span className="material-symbols-outlined animate-spin">refresh</span> : 'FINALIZAR'}
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* MODAL RESGATE INTELIGENTE */}
+            {selectedLockerForPrize && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <GiftList
+                        lockerNumber={selectedLockerForPrize.locker}
+                        onCancel={() => setSelectedLockerForPrize(null)}
+                        onConfirm={handleGiftConfirm}
+                        unit={currentUnit}
+                        preselectedPrize={selectedLockerForPrize.prize_type_id}
+                        preselectedDetails={selectedLockerForPrize.details_obj}
+                        clientData={selectedLockerForPrize.clientInfo} 
+                    />
                 </div>
             )}
         </div>
