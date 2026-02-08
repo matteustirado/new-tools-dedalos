@@ -26,33 +26,29 @@ export default function GoldenThursday() {
     const currentUnit = unidade ? unidade.toLowerCase() : 'sp';
     const pollConfig = POLL_CONFIG[currentUnit] || POLL_CONFIG.sp;
 
-    // Estados de Dados
+    // Estados
     const [lockerDefinitions, setLockerDefinitions] = useState([]); 
-    // Garante 50 objetos únicos para configuração
     const [cardConfig, setCardConfig] = useState(Array.from({ length: 50 }, (_, i) => ({ index: i, prize_type: 'sem_premio', prize_details: {} })));
-    const [occupiedData, setOccupiedData] = useState([]); // Dados brutos da API (com nome, id, etc)
+    const [occupiedData, setOccupiedData] = useState([]); 
     const [history, setHistory] = useState([]);
     
-    // Estados do Sorteio
+    // Sorteio
     const [selectedLockerForPrize, setSelectedLockerForPrize] = useState(null);
     const [currentDraw, setCurrentDraw] = useState(null);
     const [isMonitoring, setIsMonitoring] = useState(false);
     
-    // Modais e Loadings
+    // Modais
     const [showFinalizeModal, setShowFinalizeModal] = useState(false);
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [isSavingConfig, setIsSavingConfig] = useState(false);
 
-    // ===================================================================================
-    // INICIALIZAÇÃO E SOCKET
-    // ===================================================================================
+    // Inicialização
     useEffect(() => {
         const socket = io(API_URL);
         
         socket.on('golden:winner_update', (data) => {
             if (data.unidade.toLowerCase() === currentUnit) {
-                // Se winner for null (limpeza), o estado vai para null e monitoramento para
                 setCurrentDraw(data.winner);
                 setIsMonitoring(!!data.winner);
             }
@@ -60,7 +56,6 @@ export default function GoldenThursday() {
 
         const fetchData = async () => {
             try {
-                // Busca todas as configurações do backend via API (Nunca importar DB direto)
                 const [lockersRes, configRes, lastWinnerRes] = await Promise.all([
                     axios.get(`${API_URL}/api/tools/lockers/${currentUnit}`),
                     axios.get(`${API_URL}/api/tools/golden/config/${currentUnit}`),
@@ -82,7 +77,7 @@ export default function GoldenThursday() {
                     setCurrentDraw(lastWinnerRes.data);
                     setIsMonitoring(true);
                 }
-            } catch (error) { console.error("Erro carregamento inicial:", error); }
+            } catch (error) { console.error("Erro inicial:", error); }
         };
         
         fetchData();
@@ -97,9 +92,7 @@ export default function GoldenThursday() {
         } catch (e) {}
     };
 
-    // ===================================================================================
-    // POLLING (VERIFICAÇÃO DE OCUPAÇÃO E CORES)
-    // ===================================================================================
+    // Polling
     useEffect(() => {
         let interval;
         if (isMonitoring && currentDraw) {
@@ -109,27 +102,21 @@ export default function GoldenThursday() {
                     const response = await fetch(endpoint, { headers: { "Authorization": `Token ${pollConfig.token}` } });
                     const data = await response.json();
                     
-                    setOccupiedData(data); // Salva dados brutos para usar no resgate
+                    setOccupiedData(data); 
                     const currentOccupiedNums = data.map(c => parseInt(c.armario)).filter(n => !isNaN(n));
 
                     setCurrentDraw(prevDraw => {
                         if (!prevDraw) return null;
                         return prevDraw.map(item => {
-                            // 1. Roxo (Redeemed) é imutável
                             if (item.status === 'redeemed') return item;
-                            
-                            // 2. Vermelho (Lost) é imutável via polling
                             if (item.status === 'lost') return item;
 
                             const isNowOccupied = currentOccupiedNums.includes(item.locker);
 
-                            // 3. Verde (Occupied): Cliente entrou
                             if (isNowOccupied) {
                                 if (item.status !== 'occupied') return { ...item, status: 'occupied' };
                                 return item;
                             }
-                            
-                            // 4. Se estava Verde e ficou vazio sem resgate -> Vermelho (Lost)
                             if (item.status === 'occupied' && !isNowOccupied) {
                                 return { ...item, status: 'lost' };
                             }
@@ -144,16 +131,13 @@ export default function GoldenThursday() {
         return () => clearInterval(interval);
     }, [isMonitoring, pollConfig, currentDraw]);
 
-    // ===================================================================================
-    // LÓGICA DO SORTEIO
-    // ===================================================================================
+    // Ações
     const handleNewDraw = async () => {
         if (currentDraw) return toast.warn("Finalize o sorteio atual.");
         if (lockerDefinitions.length === 0) return toast.error("Infraestrutura não carregada.");
 
         const toastId = toast.loading("Sorteando...");
         try {
-            // Busca ocupação atual para não sortear armário ocupado
             const endpoint = pollConfig.apiUrl.includes('api/entradasCheckout') ? pollConfig.apiUrl : `${pollConfig.apiUrl}api/entradasCheckout/`;
             const response = await fetch(endpoint, { headers: { "Authorization": `Token ${pollConfig.token}` } });
             const data = await response.json();
@@ -166,7 +150,6 @@ export default function GoldenThursday() {
                 return !realOccupied.includes(num) && !isMicro && !isBroken;
             });
 
-            // Pega cards válidos
             const activeCards = cardConfig.filter(c => c.prize_type && c.prize_type !== 'sem_premio');
             if (activeCards.length === 0) {
                 toast.update(toastId, { render: "Nenhum card configurado!", type: "warning", isLoading: false, autoClose: 3000 });
@@ -185,7 +168,7 @@ export default function GoldenThursday() {
                 
                 drawResult.push({
                     locker: parseInt(locker.numero),
-                    size: locker.tamanho,
+                    size: locker.tamanho ? locker.tamanho.toUpperCase() : '?',
                     status: 'pending', 
                     card_index: card.index + 1,
                     prize: label,
@@ -208,10 +191,6 @@ export default function GoldenThursday() {
         }
     };
 
-    // ===================================================================================
-    // MANIPULAÇÃO DE INTERFACE E RESGATE
-    // ===================================================================================
-
     const handleLockerClick = (item) => {
         if (item.status === 'pending') return; 
         if (item.status === 'redeemed') return toast.info("Este prêmio já foi resgatado.");
@@ -219,8 +198,6 @@ export default function GoldenThursday() {
         
         if (item.status === 'occupied') {
             if (!item.prize_type_id) return toast.info("Card sem prêmio.");
-            
-            // Encontra dados do cliente
             const clientInfo = occupiedData.find(c => parseInt(c.armario) === item.locker);
             setSelectedLockerForPrize({ ...item, clientInfo }); 
         }
@@ -245,42 +222,23 @@ export default function GoldenThursday() {
                 tipo: 'QUINTA_PREMIADA', unidade: currentUnit.toUpperCase(),
                 total_sorteados: currentDraw.length, total_resgatados: redeemed, detalhes: currentDraw
             });
-            
             await axios.delete(`${API_URL}/api/tools/golden/winner/${currentUnit}`);
-
-            toast.success("Promoção finalizada com sucesso!");
+            toast.success("Finalizado com sucesso!");
             setCurrentDraw(null);
             setIsMonitoring(false);
-        } catch (e) { 
-            console.error(e);
-            toast.warning("Erro ao finalizar."); 
-        } finally { 
-            setShowFinalizeModal(false); 
-            setIsFinalizing(false); 
-            loadHistory(); 
-        }
+        } catch (e) { toast.warning("Erro ao finalizar."); } 
+        finally { setShowFinalizeModal(false); setIsFinalizing(false); loadHistory(); }
     };
 
     const handleSaveConfig = async () => {
         setIsSavingConfig(true);
         try {
-            const cleanedConfig = cardConfig.map(c => ({
-                ...c,
-                prize_details: {} 
-            }));
-
+            const cleanedConfig = cardConfig.map(c => ({ ...c, prize_details: {} }));
             await axios.post(`${API_URL}/api/tools/golden/config`, { unidade: currentUnit, cards: cleanedConfig });
             toast.success("Configuração salva!");
             setShowConfigModal(false);
         } catch (e) { toast.error("Erro ao salvar."); } 
         finally { setIsSavingConfig(false); }
-    };
-
-    const handleUpdateCard = (index, field, value) => {
-        const newC = [...cardConfig];
-        if (!newC[index]) newC[index] = { index, prize_type: 'sem_premio', prize_details: {} };
-        if (field === 'prize_type') newC[index].prize_type = value;
-        setCardConfig(newC);
     };
 
     const generatePrintReport = (drawData, dateLabel) => {
@@ -328,7 +286,6 @@ export default function GoldenThursday() {
         <div className="min-h-screen bg-gradient-warm flex">
             <Sidebar activePage="thursday" headerTitle="Quinta Premiada" headerIcon="stars" group="maintenance" unit={currentUnit} />
             <main className="ml-64 flex-1 p-8 h-screen overflow-hidden flex flex-col">
-                {/* HEADER */}
                 <div className="flex justify-between items-center mb-8 flex-shrink-0">
                     <div>
                         <h1 className="text-4xl font-bold text-white mb-1">{pollConfig.name} <span className="text-sm font-normal opacity-50 block">Quinta Premiada</span></h1>
@@ -342,9 +299,7 @@ export default function GoldenThursday() {
                     </div>
                 </div>
 
-                {/* CONTENT */}
                 <div className="grid grid-cols-12 gap-8 flex-1 min-h-0">
-                    {/* HISTÓRICO */}
                     <div className="col-span-3 liquid-glass rounded-3xl p-4 overflow-y-auto custom-scrollbar">
                         <h3 className="text-white font-bold mb-4 flex items-center gap-2"><span className="material-symbols-outlined">history</span> Histórico</h3>
                         {history.length === 0 && <p className="text-white/30 text-sm">Sem histórico.</p>}
@@ -359,7 +314,6 @@ export default function GoldenThursday() {
                         ))}
                     </div>
 
-                    {/* GRID DE ARMÁRIOS */}
                     <div className="col-span-9 liquid-glass rounded-3xl p-6 relative overflow-y-auto custom-scrollbar">
                         {!currentDraw ? (
                             <div className="h-full flex flex-col items-center justify-center text-white/20">
@@ -378,6 +332,7 @@ export default function GoldenThursday() {
                                               item.status === 'lost' ? 'bg-red-900 border-red-500 cursor-default' : 
                                               'bg-white/5 border-white/10 text-white/50 cursor-default'}`} 
                                     >
+                                        <span className="text-xs font-black text-yellow-400 mb-0.5">{item.size}</span>
                                         <span className="text-lg font-bold text-white leading-none">{item.locker}</span>
                                         <div className="mt-1 flex flex-col items-center">
                                             <span className="text-[8px] font-bold uppercase bg-black/30 px-1 rounded text-white/80">CARD {item.card_index}</span>
@@ -430,7 +385,11 @@ export default function GoldenThursday() {
                                     <select 
                                         className="bg-black/50 border border-white/20 rounded text-white p-1 outline-none w-full"
                                         value={card.prize_type}
-                                        onChange={(e) => handleUpdateCard(idx, 'prize_type', e.target.value)}
+                                        onChange={(e) => {
+                                            const newC = [...cardConfig];
+                                            newC[idx] = { index: idx, prize_type: e.target.value, prize_details: {} };
+                                            setCardConfig(newC);
+                                        }}
                                     >
                                         <option value="sem_premio">Sem Prêmio</option>
                                         {PRIZE_CATEGORIES.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
@@ -457,7 +416,7 @@ export default function GoldenThursday() {
                             <span className="material-symbols-outlined text-red-500 text-4xl">warning</span>
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">Finalizar Promoção?</h2>
-                        <p className="text-text-muted mb-8">O sorteio atual será encerrado, os dados salvos no histórico e a tela limpa.</p>
+                        <p className="text-text-muted mb-8">O sorteio atual será encerrado e a tela limpa.</p>
                         <div className="flex gap-4">
                             <button onClick={() => setShowFinalizeModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-colors">CANCELAR</button>
                             <button onClick={handleFinalize} disabled={isFinalizing} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-red-900/30 flex items-center justify-center gap-2">
@@ -468,7 +427,7 @@ export default function GoldenThursday() {
                 </div>
             )}
 
-            {/* MODAL RESGATE INTELIGENTE */}
+            {/* MODAL RESGATE */}
             {selectedLockerForPrize && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
                     <GiftList
