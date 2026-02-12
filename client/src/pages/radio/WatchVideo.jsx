@@ -3,9 +3,9 @@ import { io } from 'socket.io-client';
 import YouTube from 'react-youtube';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-const CROSSFADE_DURATION_MS = 4000;
-const SILENT_AUDIO_URI = "data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+const CROSSFADE_DURATION_MS = 4000; // Sincronizado com o Backend
 
+// Configurações otimizadas para "TV Mode"
 const playerOptions = {
   height: '100%',
   width: '100%',
@@ -18,270 +18,266 @@ const playerOptions = {
     modestbranding: 1,
     rel: 0,
     playsinline: 1,
-    mute: 1,
+    mute: 1, // Começa mutado para evitar bloqueio de autoplay, o script desmuta
   },
-};
-
-const fadeVolume = (player, startVol, endVol, duration) => {
-  if (!player || typeof player.setVolume !== 'function') return;
-  let currentVol = startVol;
-  const steps = 20;
-  const stepTime = duration / steps;
-  const volStep = (endVol - startVol) / steps;
-
-  player.setVolume(currentVol);
-
-  const timer = setInterval(() => {
-    currentVol += volStep;
-    if ((volStep > 0 && currentVol >= endVol) || (volStep < 0 && currentVol <= endVol)) {
-      player.setVolume(endVol);
-      clearInterval(timer);
-    } else {
-      player.setVolume(currentVol);
-    }
-  }, stepTime);
 };
 
 export default function WatchVideo() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [radioState, setRadioState] = useState(null);
-  const [isPlayerReady, setIsPlayerReady] = useState({ A: false, B: false });
+  const [currentTrackInfo, setCurrentTrackInfo] = useState(null);
+  
+  // Controle visual
   const [opacityA, setOpacityA] = useState(0);
   const [opacityB, setOpacityB] = useState(0);
   const [overlayUrl, setOverlayUrl] = useState(null);
-  const [currentTrackInfo, setCurrentTrackInfo] = useState(null);
   const [showTrackInfo, setShowTrackInfo] = useState(false);
-  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('dedalos_local_mute') === 'true');
 
+  // Refs de Controle (Evita re-renders desnecessários)
   const playerARef = useRef(null);
   const playerBRef = useRef(null);
-  const keepAliveAudioRef = useRef(null);
-  const lastLoadedRef = useRef({ A: null, B: null });
-  const fadeIntervalRef = useRef({ A: null, B: null });
-  const activePlayerRef = useRef(null);
+  const activePlayerIdRef = useRef(null); // 'A' ou 'B'
+  const fadeFrameRef = useRef(null); // ID do requestAnimationFrame
+  const socketRef = useRef(null);
 
-  const systemIsReady = radioState && (radioState.playerAtivo === 'A' ? isPlayerReady.A : isPlayerReady.B);
+  // ==========================================
+  // ENGINE DE ÁUDIO (VOLUME FADER)
+  // ==========================================
+  
+  // Interpolação linear suave usando requestAnimationFrame (60fps)
+  const smoothFade = (playerOut, playerIn, duration) => {
+    if (fadeFrameRef.current) cancelAnimationFrame(fadeFrameRef.current);
 
-  const runFade = (player, pKey, startVol, endVol, duration) => {
-    if (!player || typeof player.setVolume !== 'function') return;
-    if (fadeIntervalRef.current[pKey]) clearInterval(fadeIntervalRef.current[pKey]);
+    const startTime = performance.now();
+    const startVolOut = playerOut ? playerOut.getVolume() : 0;
+    const startVolIn = playerIn ? playerIn.getVolume() : 0;
+    
+    // Alvo: Out -> 0, In -> 100
+    
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Curva Ease-In-Out para áudio mais natural
+      // const ease = progress < .5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress; 
+      // Linear é mais seguro para crossfade de DJ
+      const ease = progress;
 
-    let currentVol = startVol;
-    const steps = 20;
-    const stepTime = duration / steps;
-    const volStep = (endVol - startVol) / steps;
-
-    player.setVolume(currentVol);
-
-    fadeIntervalRef.current[pKey] = setInterval(() => {
-      currentVol += volStep;
-      if ((volStep > 0 && currentVol >= endVol) || (volStep < 0 && currentVol <= endVol)) {
-        player.setVolume(endVol);
-        clearInterval(fadeIntervalRef.current[pKey]);
-      } else {
-        player.setVolume(currentVol);
+      if (playerOut && typeof playerOut.setVolume === 'function') {
+        playerOut.setVolume(Math.max(0, startVolOut * (1 - ease)));
       }
-    }, stepTime);
+      if (playerIn && typeof playerIn.setVolume === 'function') {
+        playerIn.setVolume(Math.min(100, startVolIn + ((100 - startVolIn) * ease)));
+      }
+
+      if (progress < 1) {
+        fadeFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        // Fim da transição
+        if (playerOut) {
+          playerOut.pauseVideo();
+          playerOut.setVolume(0);
+        }
+        if (playerIn) {
+          playerIn.setVolume(100);
+        }
+      }
+    };
+
+    fadeFrameRef.current = requestAnimationFrame(animate);
   };
 
+  // ==========================================
+  // LÓGICA DE EVENTOS (SOCKET)
+  // ==========================================
+
   useEffect(() => {
-    const socket = io(API_URL);
+    const socket = io(API_URL, {
+      reconnection: true,
+      reconnectionDelay: 1000
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => console.log('[Watch] Conectado ao Maestro.'));
 
     socket.on('maestro:estadoCompleto', (estado) => {
-      if (estado.overlayUrl) setOverlayUrl(`${API_URL}${estado.overlayUrl}`);
       setRadioState(estado);
-      activePlayerRef.current = estado.playerAtivo;
-      setCurrentTrackInfo(estado.musicaAtual);
+      syncState(estado);
+      if (estado.overlayUrl) setOverlayUrl(`${API_URL}${estado.overlayUrl}`);
     });
 
     socket.on('maestro:tocarAgora', ({ player, musicaInfo }) => {
-      const newState = {
-        playerAtivo: player,
-        musicaAtual: musicaInfo,
-        tempoAtualSegundos: parseInt(musicaInfo.start_segundos) || 0
-      };
-      setRadioState(newState);
-      activePlayerRef.current = player;
+      console.log(`[Watch] Tocar Agora: ${musicaInfo.titulo} no Player ${player}`);
       setCurrentTrackInfo(musicaInfo);
+      activePlayerIdRef.current = player;
+      
+      // Hard Cut (Troca imediata, sem fade lento)
+      const targetPlayer = player === 'A' ? playerARef.current : playerBRef.current;
+      const otherPlayer = player === 'A' ? playerBRef.current : playerARef.current;
+
+      loadAndPlay(targetPlayer, musicaInfo, 0, false); // false = sem fade in
+      if (otherPlayer) {
+        otherPlayer.setVolume(0);
+        otherPlayer.stopVideo();
+      }
+
+      // Visual
+      if (player === 'A') { setOpacityA(1); setOpacityB(0); }
+      else { setOpacityA(0); setOpacityB(1); }
     });
 
     socket.on('maestro:iniciarCrossfade', ({ playerAtivo, proximoPlayer, proximaMusica }) => {
-      const newState = {
-        playerAtivo: proximoPlayer,
-        musicaAtual: proximaMusica,
-        tempoAtualSegundos: parseInt(proximaMusica.start_segundos) || 0,
-        isCrossfade: true
-      };
-      setRadioState(newState);
-      activePlayerRef.current = proximoPlayer;
-      setCurrentTrackInfo(proximaMusica);
+      console.log(`[Watch] Iniciando Crossfade para: ${proximaMusica.titulo}`);
+      setCurrentTrackInfo(proximaMusica); // Atualiza info visual antecipadamente
+      
+      const pOut = playerAtivo === 'A' ? playerARef.current : playerBRef.current;
+      const pIn = proximoPlayer === 'A' ? playerARef.current : playerBRef.current;
+
+      // Carrega o próximo já tocando (mute inicial é controlado no loadAndPlay)
+      loadAndPlay(pIn, proximaMusica, 0, true); 
+      
+      // Inicia a transição de áudio
+      smoothFade(pOut, pIn, CROSSFADE_DURATION_MS);
+
+      // Inicia transição visual
+      if (proximoPlayer === 'A') { setOpacityA(1); setOpacityB(0); }
+      else { setOpacityA(0); setOpacityB(1); }
+      
+      activePlayerIdRef.current = proximoPlayer;
     });
 
     socket.on('maestro:pararTudo', () => {
+      console.log('[Watch] Parar Tudo (Silêncio).');
       if (playerARef.current) playerARef.current.stopVideo();
       if (playerBRef.current) playerBRef.current.stopVideo();
       setOpacityA(0);
       setOpacityB(0);
       setCurrentTrackInfo(null);
-      activePlayerRef.current = null;
-      lastLoadedRef.current = { A: null, B: null };
     });
 
     socket.on('maestro:overlayAtualizado', (url) => setOverlayUrl(url ? `${API_URL}${url}` : null));
 
-    return () => socket.disconnect();
+    return () => {
+      if (fadeFrameRef.current) cancelAnimationFrame(fadeFrameRef.current);
+      socket.disconnect();
+    };
   }, []);
 
-  useEffect(() => {
-    if (!hasInteracted || !radioState || !radioState.musicaAtual) return;
+  // ==========================================
+  // CONTROLE DOS PLAYERS
+  // ==========================================
 
-    const { playerAtivo, musicaAtual, tempoAtualSegundos, isCrossfade } = radioState;
-    if (!isPlayerReady[playerAtivo]) return;
+  const loadAndPlay = (player, musica, startSeconds = 0, isCrossfading = false) => {
+    if (!player || !musica) return;
+    
+    // Se o usuário ainda não interagiu, não podemos dar play com som
+    if (!hasInteracted) {
+        player.mute();
+    }
 
-    const videoId = musicaAtual.youtube_id;
-    const startSeconds = Math.floor(tempoAtualSegundos);
+    const videoId = musica.youtube_id;
+    const start = musica.start_segundos || startSeconds;
 
-    const executeLoad = (player, pKey) => {
-      const loadKey = `${videoId}_${startSeconds}`;
-      const isSameVideo = lastLoadedRef.current[pKey] && lastLoadedRef.current[pKey].startsWith(videoId);
-
-      if (isSameVideo && !isCrossfade) return;
-
-      lastLoadedRef.current[pKey] = loadKey;
-      const otherKey = pKey === 'A' ? 'B' : 'A';
-      lastLoadedRef.current[otherKey] = null;
-
-      if (fadeIntervalRef.current[pKey]) clearInterval(fadeIntervalRef.current[pKey]);
-
-      player.mute();
+    try {
+      if (isCrossfading) {
+        player.setVolume(0); // Garante que comece mudo para o fade in
+      } else {
+        player.setVolume(100);
+      }
+      
       player.loadVideoById({
         videoId: videoId,
-        startSeconds: startSeconds
+        startSeconds: start
       });
+      
       player.playVideo();
-    };
-
-    const executeStop = (player, pKey) => {
-      if (!player) return;
-      if (fadeIntervalRef.current[pKey]) clearInterval(fadeIntervalRef.current[pKey]);
-      player.mute();
-      player.stopVideo();
-    };
-
-    if (playerAtivo === 'A') {
-      setOpacityA(1);
-      setOpacityB(0);
-
-      if (playerARef.current) {
-        executeLoad(playerARef.current, 'A');
-        if (isCrossfade) {
-          playerARef.current.setVolume(0);
-          runFade(playerARef.current, 'A', 0, 100, CROSSFADE_DURATION_MS);
-        } else {
-          playerARef.current.setVolume(100);
-        }
-      }
-
-      if (playerBRef.current) {
-        if (isCrossfade) {
-          runFade(playerBRef.current, 'B', 100, 0, CROSSFADE_DURATION_MS);
-        } else {
-          executeStop(playerBRef.current, 'B');
-        }
-      }
-    } else {
-      setOpacityB(1);
-      setOpacityA(0);
-
-      if (playerBRef.current) {
-        executeLoad(playerBRef.current, 'B');
-        if (isCrossfade) {
-          playerBRef.current.setVolume(0);
-          runFade(playerBRef.current, 'B', 0, 100, CROSSFADE_DURATION_MS);
-        } else {
-          playerBRef.current.setVolume(100);
-        }
-      }
-
-      if (playerARef.current) {
-        if (isCrossfade) {
-          runFade(playerARef.current, 'A', 100, 0, CROSSFADE_DURATION_MS);
-        } else {
-          executeStop(playerARef.current, 'A');
-        }
-      }
-    }
-  }, [hasInteracted, radioState, isPlayerReady]);
-
-  const onPlayerStateChange = (event, pKey) => {
-    const player = event.target;
-    const status = event.data;
-
-    if (activePlayerRef.current !== pKey && activePlayerRef.current !== null) {
-      return;
-    }
-
-    if (status === 1 && !isMuted) {
-      if (player.getVolume() > 90) player.unMute();
-      else player.unMute();
-    }
-
-    if ((status === 2 || status === 5) && hasInteracted) {
-      player.playVideo();
+    } catch (e) {
+      console.error("[Watch] Erro ao comandar player:", e);
     }
   };
 
-  const onPlayerReady = (evt, key) => {
-    if (key === 'A') playerARef.current = evt.target;
+  const syncState = (estado) => {
+    if (!estado.musicaAtual) return;
+    // Lógica para recuperar estado caso a TV seja recarregada no meio da música
+    // (Implementação simplificada para focar na transição)
+    setCurrentTrackInfo(estado.musicaAtual);
+    activePlayerIdRef.current = estado.playerAtivo;
+
+    const targetPlayer = estado.playerAtivo === 'A' ? playerARef.current : playerBRef.current;
+    if (targetPlayer && hasInteracted) {
+        // Se recarregou a página, retoma de onde o servidor diz
+        const delayRede = 2; // Compensação de lag
+        loadAndPlay(targetPlayer, estado.musicaAtual, estado.tempoAtualSegundos + delayRede);
+        if (estado.playerAtivo === 'A') { setOpacityA(1); setOpacityB(0); }
+        else { setOpacityA(0); setOpacityB(1); }
+    }
+  };
+
+  // ==========================================
+  // HANDLERS E TRATAMENTO DE ERRO
+  // ==========================================
+
+  const onPlayerReady = (evt, id) => {
+    console.log(`[Watch] Player ${id} Pronto.`);
+    if (id === 'A') playerARef.current = evt.target;
     else playerBRef.current = evt.target;
-    evt.target.mute();
-    setIsPlayerReady(prev => ({ ...prev, [key]: true }));
+    
+    // Se já tinha estado carregado antes do player estar pronto
+    if (radioState && radioState.playerAtivo === id && hasInteracted) {
+        syncState(radioState);
+    }
+  };
+
+  const onPlayerError = (evt, id) => {
+    console.error(`[Watch] ERRO CRÍTICO no Player ${id}. Código: ${evt.data}`);
+    // Códigos: 2 (inválido), 100 (removido), 101/150 (não embedável)
+    // Ação: Pular música imediatamente
+    if (socketRef.current) {
+        console.warn("[Watch] Solicitando pulo de emergência ao Maestro...");
+        socketRef.current.emit('dj:pularMusica');
+    }
+  };
+
+  const onStateChange = (evt) => {
+    // 0 = Ended, 1 = Playing, 2 = Paused, 3 = Buffering
+    if (evt.data === 1 && !hasInteracted) {
+        // Se tentar tocar sem interação, o browser pode bloquear o som.
+        // O mute inicial ajuda, mas aqui monitoramos.
+    }
   };
 
   const handleInteraction = () => {
     setHasInteracted(true);
-    if (keepAliveAudioRef.current) keepAliveAudioRef.current.play().catch(() => {});
+    // Destrava o áudio context do navegador tocando um silêncio
+    const audio = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAgZGF0YQQAAAAAAA==");
+    audio.play().catch(e => console.log("Audio unlock failed", e));
+    
+    // Se já havia música tentando tocar, força o play agora
+    if (radioState && radioState.musicaAtual) {
+        syncState(radioState);
+    }
   };
 
+  // ==========================================
+  // INTERFACE VISUAL (OVERLAY)
+  // ==========================================
+
+  // Monitora tempo para mostrar Info da música (Intro/Outro)
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'dedalos_local_mute') setIsMuted(e.newValue === 'true');
-    };
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('dedalos_mute_update', () => setIsMuted(localStorage.getItem('dedalos_local_mute') === 'true'));
-    return () => window.removeEventListener('storage', handleStorageChange);
+    const infoInterval = setInterval(async () => {
+        const active = activePlayerIdRef.current === 'A' ? playerARef.current : playerBRef.current;
+        if (active && typeof active.getCurrentTime === 'function') {
+            try {
+                const t = await active.getCurrentTime();
+                const total = await active.getDuration();
+                // Mostra nos primeiros 15s e últimos 15s
+                const show = t < 15 || (total > 0 && t > total - 15);
+                setShowTrackInfo(show);
+            } catch (e) {}
+        }
+    }, 1000);
+    return () => clearInterval(infoInterval);
   }, []);
-
-  useEffect(() => {
-    const applyMute = (player) => {
-      if (player && typeof player.mute === 'function') {
-        if (isMuted) player.mute(); else player.unMute();
-      }
-    };
-    const active = activePlayerRef.current === 'A' ? playerARef.current : playerBRef.current;
-    if (active) applyMute(active);
-  }, [isMuted]);
-
-  useEffect(() => {
-    const timer = setInterval(async () => {
-      if (!currentTrackInfo || !hasInteracted) return;
-      const active = opacityA ? playerARef.current : playerBRef.current;
-      if (active && typeof active.getCurrentTime === 'function') {
-        try {
-          const t = await active.getCurrentTime();
-          const start = currentTrackInfo.start_segundos || 0;
-          const dur = currentTrackInfo.end_segundos || currentTrackInfo.duracao_segundos || 0;
-          const rel = t - start;
-
-          const showIntro = rel >= 10 && rel < 20;
-          const showOutro = dur > 30 && (t >= (dur - 20) && t < (dur - 10));
-
-          setShowTrackInfo(showIntro || showOutro);
-        } catch (e) {}
-      }
-    }, 500);
-    return () => clearInterval(timer);
-  }, [currentTrackInfo, opacityA, hasInteracted]);
 
   const getArtistDisplay = () => {
     if (!currentTrackInfo) return '';
@@ -290,81 +286,84 @@ export default function WatchVideo() {
     return text;
   };
 
-  const metaClass = "bg-black/50 backdrop-blur-sm px-4 py-1 rounded-r-full border-l-4 border-gray-400 shadow-md";
-  const labelClass = "text-primary/90 font-bold uppercase text-xs mr-2 tracking-wider";
-
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden cursor-none font-display">
+      
+      {/* Tela de Bloqueio / Interação Inicial */}
       {!hasInteracted && (
         <div 
           onClick={handleInteraction}
-          className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-[#0a0a0a] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-[#0a0a0a] to-black cursor-pointer group select-none transition-all duration-700"
+          className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 cursor-pointer transition-all duration-700 backdrop-blur-md"
         >
-          {!systemIsReady ? (
-            <div className="flex flex-col items-center gap-6 animate-pulse">
-              <div className="relative w-24 h-24">
-                <div className="absolute inset-0 border-t-4 border-primary rounded-full animate-spin"></div>
-                <div className="absolute inset-3 border-t-4 border-white/20 rounded-full animate-spin-reverse"></div>
-                <span className="material-symbols-outlined absolute inset-0 flex items-center justify-center text-4xl text-white/20">dns</span>
-              </div>
-              <h2 className="text-xl font-bold text-white tracking-[0.2em] uppercase">Sintonizando...</h2>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center animate-fade-in-up transform transition-transform duration-700 group-hover:scale-105">
-              <div className="relative flex items-center justify-center mb-10">
-                <div className="absolute w-40 h-40 bg-primary/30 blur-[80px] rounded-full animate-pulse group-hover:bg-primary/50 transition-colors duration-500"></div>
-                <span className="material-symbols-outlined text-9xl text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.4)] group-hover:text-primary transition-all duration-700 ease-out group-hover:rotate-[360deg] group-hover:scale-110">
-                  play_circle
-                </span>
-              </div>
-              <h1 className="text-5xl font-bold text-white tracking-widest uppercase mb-4 drop-shadow-lg">Conectar</h1>
-              <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-ping"></div>
-                <div className="w-2 h-2 rounded-full bg-green-500 absolute"></div>
-                <p className="text-primary font-mono text-xs tracking-[0.3em] uppercase">Sinal Estabelecido</p>
-              </div>
-              <p className="mt-16 text-white/20 text-[10px] font-mono uppercase tracking-[0.2em] group-hover:text-white/40 transition-colors">
-                Toque em qualquer lugar da tela
-              </p>
-            </div>
-          )}
+          <div className="animate-pulse flex flex-col items-center">
+            <span className="material-symbols-outlined text-9xl text-primary mb-6">play_circle</span>
+            <h1 className="text-4xl font-bold text-white tracking-widest uppercase">Toque para Iniciar</h1>
+            <p className="text-white/50 mt-4 text-sm font-mono">Sincronizando com Rádio Dedalos...</p>
+          </div>
         </div>
       )}
 
-      <audio ref={keepAliveAudioRef} src={SILENT_AUDIO_URI} loop muted={false} volume={0.01} style={{ display: 'none' }} />
-
+      {/* Marca D'água Global */}
       {overlayUrl && (
-        <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center">
-          <img src={overlayUrl} alt="Overlay" className="w-full h-full object-contain" />
+        <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center animate-fade-in">
+          <img src={overlayUrl} alt="Overlay" className="w-full h-full object-contain opacity-90" />
         </div>
       )}
 
-      <div className={`absolute bottom-16 left-16 z-40 pointer-events-none transition-all duration-1000 ease-in-out transform ${showTrackInfo && currentTrackInfo ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+      {/* Info da Música (Lower Third) */}
+      <div className={`absolute bottom-20 left-16 z-40 pointer-events-none transition-all duration-1000 ease-out transform ${showTrackInfo && currentTrackInfo ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
         {currentTrackInfo && (
           <div className="flex flex-col items-start space-y-1">
-            <div className="bg-black/80 backdrop-blur-sm px-6 py-2 rounded-r-full border-l-4 border-primary shadow-lg mb-1">
-              <h1 className="text-white text-3xl font-bold font-display uppercase tracking-wide drop-shadow-md">{currentTrackInfo.titulo}</h1>
+            <div className="bg-black/80 backdrop-blur-md px-8 py-3 rounded-r-full border-l-4 border-primary shadow-2xl">
+              <h1 className="text-white text-4xl font-black font-display uppercase tracking-wider drop-shadow-lg leading-none">
+                {currentTrackInfo.titulo}
+              </h1>
             </div>
-            {(currentTrackInfo.artista || currentTrackInfo.artistas_participantes?.length > 0) && (
-              <div className="bg-black/70 backdrop-blur-sm px-5 py-1.5 rounded-r-full border-l-4 border-white shadow-lg mb-1">
-                <p className="text-gray-100 text-xl font-semibold drop-shadow-md">{getArtistDisplay()}</p>
+            {(currentTrackInfo.artista || currentTrackInfo.artistas_participantes) && (
+              <div className="bg-white/90 backdrop-blur-md px-6 py-2 rounded-r-full border-l-4 border-black shadow-xl mt-2">
+                <p className="text-black text-2xl font-bold uppercase tracking-wide">
+                  {getArtistDisplay()}
+                </p>
               </div>
             )}
-            <div className="space-y-1">
-              {currentTrackInfo.album && <div className={metaClass}><p className="text-gray-200 text-base font-medium"><span className={labelClass}>ÁLBUM:</span>{currentTrackInfo.album}</p></div>}
-              {currentTrackInfo.gravadora && <div className={metaClass}><p className="text-gray-200 text-base font-medium"><span className={labelClass}>GRAVADORA:</span>{currentTrackInfo.gravadora}</p></div>}
-              {currentTrackInfo.diretor && <div className={metaClass}><p className="text-gray-200 text-base font-medium"><span className={labelClass}>DIRETOR:</span>{currentTrackInfo.diretor}</p></div>}
-            </div>
+            {/* Metadados Extras (Opcional) */}
+            {(currentTrackInfo.album || currentTrackInfo.gravadora) && (
+               <div className="flex gap-2 mt-1 ml-1 opacity-80">
+                  {currentTrackInfo.album && <span className="bg-black/50 text-white/80 text-xs px-2 py-0.5 rounded uppercase font-bold tracking-widest">{currentTrackInfo.album}</span>}
+                  {currentTrackInfo.gravadora && <span className="bg-primary/50 text-white/90 text-xs px-2 py-0.5 rounded uppercase font-bold tracking-widest">{currentTrackInfo.gravadora}</span>}
+               </div>
+            )}
           </div>
         )}
       </div>
 
-      <div className="absolute inset-0 w-full h-full" style={{ opacity: opacityA, transition: `opacity ${CROSSFADE_DURATION_MS}ms linear` }}>
-        <YouTube opts={playerOptions} onReady={(e) => onPlayerReady(e, 'A')} onStateChange={(e) => onPlayerStateChange(e, 'A')} className="w-full h-full pointer-events-none" />
+      {/* Players do YouTube (Double Buffering) */}
+      <div className="absolute inset-0 w-full h-full bg-black">
+        {/* Player A */}
+        <div className="absolute inset-0 w-full h-full transition-opacity duration-1000" style={{ opacity: opacityA, zIndex: opacityA > 0 ? 10 : 0 }}>
+            <YouTube 
+                videoId={null} // Carregado via API
+                opts={playerOptions} 
+                onReady={(e) => onPlayerReady(e, 'A')} 
+                onError={(e) => onPlayerError(e, 'A')}
+                onStateChange={onStateChange}
+                className="w-full h-full"
+            />
+        </div>
+
+        {/* Player B */}
+        <div className="absolute inset-0 w-full h-full transition-opacity duration-1000" style={{ opacity: opacityB, zIndex: opacityB > 0 ? 10 : 0 }}>
+            <YouTube 
+                videoId={null} 
+                opts={playerOptions} 
+                onReady={(e) => onPlayerReady(e, 'B')} 
+                onError={(e) => onPlayerError(e, 'B')}
+                onStateChange={onStateChange}
+                className="w-full h-full"
+            />
+        </div>
       </div>
-      <div className="absolute inset-0 w-full h-full" style={{ opacity: opacityB, transition: `opacity ${CROSSFADE_DURATION_MS}ms linear` }}>
-        <YouTube opts={playerOptions} onReady={(e) => onPlayerReady(e, 'B')} onStateChange={(e) => onPlayerStateChange(e, 'B')} className="w-full h-full pointer-events-none" />
-      </div>
+
     </div>
   );
 }

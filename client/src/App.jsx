@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -6,6 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import ConnectionGuardian from './components/ConnectionGuardian';
 import Home from './pages/Home';
 
+// Rádio Pages
 import DJController from './pages/radio/DJController';
 import MusicCollection from './pages/radio/MusicCollection';
 import PlaylistCreator from './pages/radio/PlaylistCreator';
@@ -14,6 +15,7 @@ import Schedule from './pages/radio/Schedule';
 import WatchVideo from './pages/radio/WatchVideo';
 import Jukebox from './pages/radio/Jukebox';
 
+// Tools Pages
 import GoldenThursday from './pages/tools/GoldenThursday';
 import ScoreboardEdit from './pages/tools/ScoreboardEdit';
 import ScoreboardGame from './pages/tools/ScoreboardGame';
@@ -21,64 +23,66 @@ import ScoreboardDisplay from './pages/tools/ScoreboardDisplay';
 import PricesEdit from './pages/tools/PricesEdit';
 import PricesDisplay from './pages/tools/PricesDisplay';
 
+// People Pages
 import NameTagGenerator from './pages/people/NameTagGenerator';
 import BenefitsCheck from './pages/people/BenefitsCheck';
 import BadgeModelEditor from './pages/people/BadgeModelEditor';
 
 function App() {
-  const [appVersion, setAppVersion] = useState(0);
-
-  const handleSystemReset = useCallback(() => {
-    setAppVersion(prev => prev + 1);
-  }, []);
-
   return (
     <BrowserRouter>
-      <ConnectionGuardian onConnectionRestored={handleSystemReset} />
+      {/* O ConnectionGuardian agora envolve toda a aplicação interna */}
+      <ConnectionGuardian>
+        <ToastContainer 
+          position="top-right" 
+          autoClose={3000} 
+          hideProgressBar={false} 
+          newestOnTop={false} 
+          closeOnClick 
+          rtl={false} 
+          pauseOnFocusLoss 
+          draggable 
+          pauseOnHover 
+          theme="dark" 
+        />
+        
+        <Routes>
+          {/* Home / Dashboards */}
+          <Route path="/" element={<Home unit="sp" />} />
+          <Route path="/bh" element={<Home unit="bh" />} />
 
-      <ToastContainer 
-        position="top-right" 
-        autoClose={3000} 
-        hideProgressBar={false} 
-        newestOnTop={false} 
-        closeOnClick 
-        rtl={false} 
-        pauseOnFocusLoss 
-        draggable 
-        pauseOnHover 
-        theme="dark" 
-      />
-      
-      <Routes key={appVersion}>
-        <Route path="/" element={<Home unit="sp" />} />
-        <Route path="/bh" element={<Home unit="bh" />} />
+          {/* Rádio Dedalos */}
+          <Route path="/radio/dj" element={<DJController />} />
+          <Route path="/radio/collection" element={<MusicCollection />} />
+          <Route path="/radio/playlist-creator" element={<PlaylistCreator />} />
+          <Route path="/radio/library" element={<Library />} />
+          <Route path="/radio/schedule" element={<Schedule />} />
+          <Route path="/radio/watch" element={<WatchVideo />} />
+          <Route path="/radio/jukebox" element={<Jukebox />} />
+          <Route path="/radio/jukebox/:unidade" element={<Jukebox />} />
 
-        <Route path="/radio/dj" element={<DJController />} />
-        <Route path="/radio/collection" element={<MusicCollection />} />
-        <Route path="/radio/playlist-creator" element={<PlaylistCreator />} />
-        <Route path="/radio/library" element={<Library />} />
-        <Route path="/radio/schedule" element={<Schedule />} />
-        <Route path="/radio/watch" element={<WatchVideo />} />
-        <Route path="/radio/jukebox" element={<Jukebox />} />
-        <Route path="/radio/jukebox/:unidade" element={<Jukebox />} />
+          {/* Ferramentas e Manutenção */}
+          <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
+          <Route path="/tools/thursday" element={<GoldenThursday />} />
+          
+          <Route path="/tools/scoreboard/maintenance/:unidade" element={<ScoreboardEdit />} /> 
+          <Route path="/tools/scoreboard/display/:unidade" element={<ScoreboardDisplay />} />
+          <Route path="/tools/scoreboard/game/:unidade" element={<ScoreboardGame />} /> 
+          
+          <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
+          <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
 
-        <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
-        <Route path="/tools/thursday" element={<GoldenThursday />} />
-        <Route path="/tools/scoreboard/maintenance/:unidade" element={<ScoreboardEdit />} /> 
-        <Route path="/tools/scoreboard/display/:unidade" element={<ScoreboardDisplay />} />
-        <Route path="/tools/scoreboard/game/:unidade" element={<ScoreboardGame />} /> 
-        <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
-        <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
+          {/* Gestão de Pessoas */}
+          <Route path="/identification/models" element={<BadgeModelEditor />} />
+          <Route path="/benefits/conference" element={<BenefitsCheck />} />
+          <Route path="/people/nametag" element={<NameTagGenerator />} />
+          <Route path="/people/benefits" element={<BenefitsCheck />} />
 
-        <Route path="/identification/models" element={<BadgeModelEditor />} />
-        <Route path="/benefits/conference" element={<BenefitsCheck />} />
-
-        <Route path="/people/nametag" element={<NameTagGenerator />} />
-        <Route path="/people/benefits" element={<BenefitsCheck />} />
-
-        <Route path="/cx/pesquisa" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Pesquisa de Satisfação (Em Breve)</div>} />
-        <Route path="/cx/avaliacoes" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Avaliações (Em Breve)</div>} />
-      </Routes>
+          {/* CX (Em Breve) */}
+          <Route path="/cx/pesquisa" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Pesquisa de Satisfação (Em Breve)</div>} />
+          <Route path="/cx/avaliacoes" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Avaliações (Em Breve)</div>} />
+        </Routes>
+      </ConnectionGuardian>
     </BrowserRouter>
   );
 }
