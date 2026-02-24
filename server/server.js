@@ -35,7 +35,7 @@ const port = process.env.PORT || 4000
 const io = new Server(httpServer, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST", "PUT", "DELETE"]
     }
 })
 
@@ -76,6 +76,14 @@ app.use(cors())
 app.use(morgan('dev'))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// === MIDDLEWARE PARA SOCKET.IO ===
+// Permite usar req.io.emit nos controllers
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
+// =================================
 
 app.use('/assets/upload/covers', express.static(path.join(__dirname, 'src/assets/upload/covers')))
 app.use('/assets/upload/overlays', express.static(path.join(__dirname, 'src/assets/upload/overlays')))

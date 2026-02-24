@@ -7,23 +7,37 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function PricesDisplay() {
     const { unidade } = useParams();
-    const currentUnit = unidade ? unidade.toLowerCase() : 'sp';
+    const currentUnit = unidade ? unidade.toUpperCase() : 'SP';
 
-    const [config, setConfig] = useState(null);
+    const [liveState, setLiveState] = useState(null);
+    const [defaults, setDefaults] = useState([]);
+    const [categoryMedia, setCategoryMedia] = useState([]);
     const [promotions, setPromotions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activePeriod, setActivePeriod] = useState('p1');
-    const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
+    
+    // Controle de Rotação
+    const [activePeriod, setActivePeriod] = useState('manha');
+    const [currentPromoIndex, setCurrentPromoIndex] = useState(0); // Slider Promoções (16:9)
+    const [currentPartyBannerIndex, setCurrentPartyBannerIndex] = useState(0); // Slider Festa (3:4)
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 60000);
-        const periodInterval = setInterval(updateActivePeriod, 10000);
+        
+        // Polling de segurança e atualização de turno
+        const interval = setInterval(fetchData, 30000); 
+        const periodInterval = setInterval(updateActivePeriod, 10000); 
         updateActivePeriod();
 
+        // === SOCKET.IO (Tempo Real) ===
         const socket = io(API_URL);
+        
+        socket.on('connect', () => console.log("Socket conectado"));
+        
         socket.on('prices:updated', (data) => {
-            if (data.unidade === currentUnit) fetchData();
+            // Atualiza se for para esta unidade ou global
+            if (!data.unidade || data.unidade === currentUnit) {
+                fetchData();
+            }
         });
 
         return () => {
@@ -33,6 +47,7 @@ export default function PricesDisplay() {
         };
     }, [currentUnit]);
 
+    // Rotação Promoções (Padrão)
     useEffect(() => {
         if (promotions.length <= 1) return;
         const promoInterval = setInterval(() => {
@@ -41,27 +56,50 @@ export default function PricesDisplay() {
         return () => clearInterval(promoInterval);
     }, [promotions]);
 
+    // Rotação Banners Festa (Festa)
+    useEffect(() => {
+        if (!liveState?.modo_festa || !liveState?.party_banners || liveState.party_banners.length <= 1) return;
+        const bannerInterval = setInterval(() => {
+            setCurrentPartyBannerIndex(prev => (prev + 1) % liveState.party_banners.length);
+        }, 5000);
+        return () => clearInterval(bannerInterval);
+    }, [liveState?.modo_festa, liveState?.party_banners]);
+
     const fetchData = async () => {
         try {
+            const [stateRes, defaultsRes, mediaRes, promoRes] = await Promise.all([
+                axios.get(`${API_URL}/api/prices/state/${currentUnit}`),
+                axios.get(`${API_URL}/api/prices/defaults`),
+                axios.get(`${API_URL}/api/prices/media/${currentUnit}`),
+                axios.get(`${API_URL}/api/prices/promotions/${currentUnit}`).catch(() => ({ data: [] }))
+            ]);
+
+            // Normaliza banners da festa
+            const stateData = stateRes.data;
+            if (typeof stateData.party_banners === 'string') {
+                try { stateData.party_banners = JSON.parse(stateData.party_banners); } catch (e) { stateData.party_banners = []; }
+            } else if (!Array.isArray(stateData.party_banners)) {
+                stateData.party_banners = [];
+            }
+
+            setLiveState(stateData);
+            setDefaults(defaultsRes.data);
+            
+            // Garante objeto de mídia
+            const media = mediaRes.data;
+            const fullMedia = [1, 2, 3].map(qtd => 
+                media.find(m => m.qtd_pessoas === qtd) || { qtd_pessoas: qtd, titulo: 'Categoria', media_url: null, aviso_categoria: '' }
+            );
+            setCategoryMedia(fullMedia);
+
+            // Filtra promoções do dia
             const today = new Date();
             const dayOfWeek = today.getDay();
-            const dateStr = today.toISOString().split('T')[0];
-
-            const holidaysRes = await axios.get(`${API_URL}/api/prices/holidays/${currentUnit}`);
-            const isHoliday = holidaysRes.data.some(h => h.data_feriado.startsWith(dateStr));
-
-            let type = 'padrao';
-            if (isHoliday) type = 'feriado';
-            else if (dayOfWeek === 0 || dayOfWeek === 6) type = 'fim_de_semana';
-
-            const configRes = await axios.get(`${API_URL}/api/prices/config/${currentUnit}/${type}`);
-            setConfig(configRes.data);
-
-            const promoRes = await axios.get(`${API_URL}/api/prices/promotions/${currentUnit}`);
             const activePromos = promoRes.data.filter(p => {
                 if (!p.dias_ativos || p.dias_ativos.length === 0) return true;
-                const todayCode = isHoliday ? 'HOLIDAY' : dayOfWeek;
-                return p.dias_ativos.some(d => String(d) === String(todayCode));
+                let dias = p.dias_ativos;
+                if (typeof dias === 'string') dias = JSON.parse(dias);
+                return dias.some(d => String(d) === String(dayOfWeek));
             });
             setPromotions(activePromos);
 
@@ -73,33 +111,118 @@ export default function PricesDisplay() {
 
     const updateActivePeriod = () => {
         const h = new Date().getHours();
-        if (h >= 6 && h < 14) setActivePeriod('p1');
-        else if (h >= 14 && h < 20) setActivePeriod('p2');
-        else setActivePeriod('p3');
+        if (h >= 6 && h < 14) setActivePeriod('manha');
+        else if (h >= 14 && h < 20) setActivePeriod('tarde');
+        else setActivePeriod('noite');
     };
 
     const getOrderedPeriods = () => {
-        const periods = {
-            p1: { key: 'preco_p1', title: 'MANHÃ/TARDE', time: '06H ÀS 13H59' },
-            p2: { key: 'preco_p2', title: 'TARDE/NOITE', time: '14H ÀS 19H59' },
-            p3: { key: 'preco_p3', title: 'NOITE/MADRUGADA', time: '20H ÀS 05H59' }
+        const periodsData = {
+            'manha': { key: 'manha', title: 'MANHÃ/TARDE', time: '06H ÀS 13H59' },
+            'tarde': { key: 'tarde', title: 'TARDE/NOITE', time: '14H ÀS 19H59' },
+            'noite': { key: 'noite', title: 'NOITE/MADRUGADA', time: '20H ÀS 05H59' }
         };
 
-        if (activePeriod === 'p1') return [periods.p3, periods.p1, periods.p2];
-        if (activePeriod === 'p2') return [periods.p1, periods.p2, periods.p3];
-        if (activePeriod === 'p3') return [periods.p2, periods.p3, periods.p1];
-
-        return [periods.p1, periods.p2, periods.p3];
+        if (activePeriod === 'manha') return [{ ...periodsData.noite, type: 'past' }, { ...periodsData.manha, type: 'current' }, { ...periodsData.tarde, type: 'future' }];
+        if (activePeriod === 'tarde') return [{ ...periodsData.manha, type: 'past' }, { ...periodsData.tarde, type: 'current' }, { ...periodsData.noite, type: 'future' }];
+        if (activePeriod === 'noite') return [{ ...periodsData.tarde, type: 'past' }, { ...periodsData.noite, type: 'current' }, { ...periodsData.manha, type: 'future' }];
+        return [{ ...periodsData.manha, type: 'past' }, { ...periodsData.tarde, type: 'current' }, { ...periodsData.noite, type: 'future' }];
     };
 
-    if (loading) return <div className="loading-screen">CARREGANDO TABELA...</div>;
-    if (!config) return <div className="loading-screen">TABELA NÃO CONFIGURADA</div>;
+    if (loading) return <div className="loading-screen">CARREGANDO...</div>;
+    if (!liveState) return <div className="loading-screen">AGUARDANDO CONFIGURAÇÃO...</div>;
 
     const orderedColumns = getOrderedPeriods();
-    const isTabletMode = config.modo_exibicao === 'tablet';
+    const isTabletMode = false;
 
+    // === MODO FESTA ===
+    if (liveState.modo_festa) {
+        return (
+            <div className="pricing-page-wrapper" style={{ paddingTop: 0, paddingBottom: 0 }}>
+                {/* Background Animado */}
+                <div className="multi">
+                    <div className="multichrome-background">
+                        <div className="multichrome-light"></div>
+                        <div className="multichrome-ambient-1 float-effect-1"></div>
+                        <div className="multichrome-ambient-2 float-effect-2"></div>
+                        <div className="multichrome-ambient-3 float-effect-3"></div>
+                    </div>
+                </div>
+
+                <section className="pricing-section" style={{ 
+                    paddingTop: '2vh', 
+                    height: '100vh', 
+                    justifyContent: 'flex-start', 
+                    alignItems: 'center', 
+                    flexDirection: 'column',
+                    gap: '1rem' 
+                }}>
+                    {/* 1. TOPO: PREÇOS (APENAS SINGLE) */}
+                    <div className="pricing-content" style={{ width: '100%', maxWidth: '1200px' }}>
+                        <div className="pricing-columns-container">
+                            {orderedColumns.map((colData, colIndex) => {
+                                const isColumnActive = colIndex === 1; // Meio = Destaque
+                                const positionClass = colIndex === 0 ? 'left-col' : colIndex === 1 ? 'active' : 'right-col';
+
+                                return (
+                                    <div key={colData.key} className={`price-column ${positionClass}`}>
+                                        <h3 className="column-title" style={{ fontSize: '0.9rem' }}>{colData.title}</h3>
+                                        <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`}>
+                                            {/* AQUI ESTÁ O TRUQUE: 
+                                                Reutilizamos o 'categoryMedia' da categoria 1 (Individual) 
+                                                para o card do meio no Modo Festa.
+                                            */}
+                                            <PriceCard
+                                                index={0} // Força estilo Single
+                                                qtdPessoas={1}
+                                                colData={colData}
+                                                liveState={liveState}
+                                                defaults={defaults}
+                                                mediaData={categoryMedia.find(m => m.qtd_pessoas === 1)} // Puxa mídia do Individual
+                                                isActive={isColumnActive}
+                                                isTablet={false}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* 2. MEIO: AVISOS IMPORTANTES */}
+                        <div className="price-notes" style={{ marginTop: '1rem', textAlign: 'center' }}>
+                            {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_1}</p>}
+                            {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_2}</p>}
+                            {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_3}</p>}
+                            {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_4}</p>}
+                        </div>
+                    </div>
+
+                    {/* 3. BASE: SLIDER DE FLYERS DA FESTA (3:4) */}
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px', overflow: 'hidden' }}>
+                        {liveState.party_banners && liveState.party_banners.length > 0 ? (
+                            <div className="relative h-full aspect-[3/4] max-h-[55vh] rounded-xl overflow-hidden shadow-2xl bg-black/40 border border-white/10">
+                                {liveState.party_banners.map((bannerUrl, idx) => (
+                                    <img 
+                                        key={idx}
+                                        src={`${API_URL}${bannerUrl}`} 
+                                        className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPartyBannerIndex ? 'opacity-100' : 'opacity-0'}`} 
+                                        alt="Festa" 
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-white/50 text-2xl font-bold uppercase tracking-widest animate-pulse">Sem Flyers Definidos</div>
+                        )}
+                    </div>
+                </section>
+            </div>
+        );
+    }
+
+    // === MODO PADRÃO (TABELA COMPLETA) ===
     return (
         <div className="pricing-page-wrapper" style={{ paddingTop: 0, paddingBottom: 0 }}>
+            {/* Background Animado */}
             <div className="multi">
                 <div className="multichrome-background">
                     <div className="multichrome-light"></div>
@@ -109,14 +232,16 @@ export default function PricesDisplay() {
                 </div>
             </div>
 
-            <section className="pricing-section" style={{
-                paddingTop: 0,
-                gap: isTabletMode ? '0.2rem' : '0.5rem',
-                height: '100vh',
-                justifyContent: 'center',
-                flexDirection: 'column'
+            <section className="pricing-section" style={{ 
+                paddingTop: '5vh', 
+                paddingBottom: '5vh',
+                gap: isTabletMode ? '0.2rem' : '1.5rem', 
+                height: '100vh', 
+                justifyContent: 'flex-start',
+                alignItems: 'center',
+                flexDirection: 'column' 
             }}>
-                <div className="pricing-content" style={isTabletMode ? { display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 } : {}}>
+                <div className="pricing-content" style={{ width: '100%', maxWidth: '1200px' }}>
                     <div className="pricing-columns-container">
                         {orderedColumns.map((colData, colIndex) => {
                             const isColumnActive = colIndex === 1;
@@ -129,12 +254,15 @@ export default function PricesDisplay() {
                                     </h3>
 
                                     <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`} style={{ gap: isTabletMode ? '0.5rem' : '1rem' }}>
-                                        {config.categorias.map((cat, idx) => (
+                                        {[1, 2, 3].map((qtdPessoas, idx) => (
                                             <PriceCard
-                                                key={idx}
+                                                key={qtdPessoas}
                                                 index={idx}
-                                                category={cat}
-                                                priceKey={colData.key}
+                                                qtdPessoas={qtdPessoas}
+                                                colData={colData}
+                                                liveState={liveState}
+                                                defaults={defaults}
+                                                mediaData={categoryMedia.find(m => m.qtd_pessoas === qtdPessoas)}
                                                 isActive={isColumnActive}
                                                 isTablet={isTabletMode}
                                             />
@@ -145,24 +273,37 @@ export default function PricesDisplay() {
                         })}
                     </div>
 
-                    <div className="price-notes" style={{ marginTop: isTabletMode ? '0.5rem' : '1rem' }}>
-                        {config.aviso_1 && <p style={{ margin: '0', fontSize: '0.8rem' }}>* {config.aviso_1}</p>}
-                        {config.aviso_2 && <p style={{ margin: '0', fontSize: '0.8rem' }}>* {config.aviso_2}</p>}
-                        {config.aviso_3 && <p style={{ margin: '0', fontSize: '0.8rem' }}>** {config.aviso_3}</p>}
-                        {config.aviso_4 && <p style={{ margin: '0', fontSize: '0.8rem' }}>** {config.aviso_4}</p>}
+                    <div className="price-notes" style={{ marginTop: isTabletMode ? '0.5rem' : '1rem', textAlign: 'center' }}>
+                        {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_1}</p>}
+                        {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_2}</p>}
+                        {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_3}</p>}
+                        {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_4}</p>}
+                        {liveState.texto_futuro && liveState.texto_futuro !== '???' && (
+                            <p style={{ margin: '1rem 0 0 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#fbbf24', textTransform: 'uppercase' }}>
+                                {liveState.texto_futuro}
+                            </p>
+                        )}
                     </div>
                 </div>
 
                 {!isTabletMode && promotions.length > 0 && (
-                    <div className="slider-container" style={{ aspectRatio: '16/9', height: 'auto', width: '100%', marginTop: '1rem', marginBottom: '1rem' }}>
-                        <div className="slider" style={{ height: '100%' }}>
+                    <div className="slider-container" style={{ 
+                        width: '90%', 
+                        maxWidth: '800px', 
+                        aspectRatio: '16/9', 
+                        margin: 'auto 0 0 0',
+                        borderRadius: '1rem', 
+                        overflow: 'hidden', 
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                        position: 'relative'
+                    }}>
+                        <div className="slider" style={{ height: '100%', width: '100%', position: 'relative' }}>
                             {promotions.map((promo, idx) => (
                                 <img
                                     key={idx}
                                     src={`${API_URL}${promo.image_url}`}
                                     alt="Promoção"
-                                    className={idx === currentPromoIndex ? 'active' : ''}
-                                    style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+                                    className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPromoIndex ? 'opacity-100' : 'opacity-0'}`}
                                 />
                             ))}
                         </div>
@@ -173,50 +314,72 @@ export default function PricesDisplay() {
     );
 }
 
-const PriceCard = ({ index, category, priceKey, isActive, isTablet }) => {
-    const isVideo = category.video && (category.video.endsWith('.mp4') || category.video.endsWith('.webm'));
-    const mediaUrl = category.video ? `${API_URL}${category.video}` : null;
+// ==================================================
+// COMPONENTE: CARTÃO DE PREÇO (LÓGICA HÍBRIDA)
+// ==================================================
+const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData, isActive, isTablet }) => {
+    // 1. Busca Padrões (Defaults)
+    const defSingle = defaults.find(d => d.tipo_dia === liveState.tipo_dia && d.periodo === colData.key && d.qtd_pessoas === 1);
+    const defCombo = defaults.find(d => d.tipo_dia === liveState.tipo_dia && d.periodo === colData.key && d.qtd_pessoas === qtdPessoas);
 
-    const priceStr = category[priceKey] || '';
-    const hasPrice = priceStr && priceStr !== '' && priceStr !== 'R$ 0,00';
+    let finalPrice = defCombo ? parseFloat(defCombo.valor) : 0;
+    let showQuestionMarks = false;
 
-    const parsePrice = (str) => {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[^\d,]/g, '').replace(',', '.'));
-    };
-
-    const formatPrice = (val) => {
-        return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace('R$', '').trim();
-    };
-
-    const fullPriceVal = parsePrice(priceStr);
-
-    let mainDisplayPrice = '--';
-    let subText = null;
-    let topText = null;
-
-    if (hasPrice) {
-        if (index === 0) {
-            mainDisplayPrice = `R$ ${formatPrice(fullPriceVal)}`;
-        } else if (index === 1) {
-            mainDisplayPrice = `R$ ${formatPrice(fullPriceVal / 2)}`;
-            topText = "cada um paga";
-            subText = `valor total da dupla R$ ${formatPrice(fullPriceVal)}`;
-        } else if (index === 2) {
-            mainDisplayPrice = `R$ ${formatPrice(fullPriceVal / 3)}`;
-            topText = "cada um paga";
-            subText = `valor total do trio R$ ${formatPrice(fullPriceVal)}`;
-        } else {
-            mainDisplayPrice = `R$ ${formatPrice(fullPriceVal)}`;
+    // 2. Lógica Híbrida (Substituição)
+    if (colData.type === 'current') {
+        const apiSingle = parseFloat(liveState.valor_atual);
+        if (qtdPessoas === 1) finalPrice = apiSingle;
+        else if (defSingle && defSingle.valor > 0) {
+            // Regra de Proporção: Se o Single subiu X%, o Combo sobe X%
+            finalPrice = finalPrice * (apiSingle / parseFloat(defSingle.valor));
+        }
+    } 
+    else if (colData.type === 'future') {
+        if (liveState.texto_futuro === '???' && !liveState.valor_futuro) showQuestionMarks = true;
+        else if (liveState.valor_futuro) {
+            const overrideSingle = parseFloat(liveState.valor_futuro);
+            if (qtdPessoas === 1) finalPrice = overrideSingle;
+            else if (defSingle && defSingle.valor > 0) {
+                finalPrice = finalPrice * (overrideSingle / parseFloat(defSingle.valor));
+            }
+        }
+    }
+    else if (colData.type === 'past') {
+        if (liveState.valor_passado) {
+            const overrideSingle = parseFloat(liveState.valor_passado);
+            if (qtdPessoas === 1) finalPrice = overrideSingle;
+            else if (defSingle && defSingle.valor > 0) {
+                finalPrice = finalPrice * (overrideSingle / parseFloat(defSingle.valor));
+            }
         }
     }
 
+    const formatPrice = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace('R$', '').trim();
+    
+    let mainDisplayPrice = showQuestionMarks ? '???' : `R$ ${formatPrice(finalPrice)}`;
+    let subText = null;
+    let topText = null;
+
+    if (qtdPessoas === 2) {
+        mainDisplayPrice = showQuestionMarks ? '???' : `R$ ${formatPrice(finalPrice / 2)}`;
+        topText = "cada um paga";
+        subText = showQuestionMarks ? '' : `valor total da dupla R$ ${formatPrice(finalPrice)}`;
+    } else if (qtdPessoas === 3) {
+        mainDisplayPrice = showQuestionMarks ? '???' : `R$ ${formatPrice(finalPrice / 3)}`;
+        topText = "cada um paga";
+        subText = showQuestionMarks ? '' : `valor total do trio R$ ${formatPrice(finalPrice)}`;
+    }
+
+    const title = mediaData?.titulo || (qtdPessoas === 1 ? 'Individual' : qtdPessoas === 2 ? 'Mão Amiga' : 'Marmita');
+    const mediaUrl = mediaData?.media_url ? `${API_URL}${mediaData.media_url}` : null;
+    const isVideo = mediaUrl && (mediaUrl.endsWith('.mp4') || mediaUrl.endsWith('.webm'));
+
+    // Cartão Inativo
     if (!isActive) {
         return (
             <div className="price-card inactive" style={isTablet ? { padding: '0.5rem' } : {}}>
-                <h3 style={isTablet ? { fontSize: '0.8rem', marginBottom: 0 } : {}}>{category.titulo}</h3>
-
-                {index === 0 ? (
+                <h3 style={isTablet ? { fontSize: '0.8rem', marginBottom: 0 } : {}}>{title}</h3>
+                {qtdPessoas === 1 ? (
                     <div className="price-value" style={isTablet ? { fontSize: '1.2rem', margin: '0.2rem 0' } : {}}>{mainDisplayPrice}</div>
                 ) : (
                     <div className="price-details-new" style={isTablet ? { minHeight: 'auto', margin: 0 } : {}}>
@@ -229,12 +392,8 @@ const PriceCard = ({ index, category, priceKey, isActive, isTablet }) => {
         );
     }
 
-    const cardStyle = isTablet ? {
-        padding: '0.8rem',
-        minHeight: '140px',
-        boxShadow: '0 0 15px rgba(255, 77, 0, 0.5)'
-    } : {};
-
+    // Cartão Ativo (Com Mídia e Aviso)
+    const cardStyle = isTablet ? { padding: '0.8rem', minHeight: '140px', boxShadow: '0 0 15px rgba(255, 77, 0, 0.5)' } : {};
     const titleStyle = isTablet ? { fontSize: '1.2rem', marginBottom: '0.2rem' } : {};
     const priceStyle = isTablet ? { fontSize: '1.8rem', margin: '0.2rem 0' } : {};
     const perPersonStyle = isTablet ? { fontSize: '1.8rem' } : {};
@@ -252,9 +411,9 @@ const PriceCard = ({ index, category, priceKey, isActive, isTablet }) => {
             )}
 
             <div className={`price-card-details ${index === 1 ? 'text-right' : 'text-left'}`}>
-                <h3 style={titleStyle}>{category.titulo}</h3>
+                <h3 style={titleStyle}>{title}</h3>
 
-                {index === 0 ? (
+                {qtdPessoas === 1 ? (
                     <div className="price-value" style={priceStyle}>{mainDisplayPrice}</div>
                 ) : (
                     <div className="price-details-new">
@@ -264,9 +423,10 @@ const PriceCard = ({ index, category, priceKey, isActive, isTablet }) => {
                     </div>
                 )}
 
-                {category.aviso_categoria && (
+                {/* [AQUI] Renderiza o aviso da categoria se existir */}
+                {mediaData?.aviso_categoria && (
                     <ul className="price-features">
-                        <li className="static-feature">{category.aviso_categoria}</li>
+                        <li className="static-feature">{mediaData.aviso_categoria}</li>
                     </ul>
                 )}
             </div>

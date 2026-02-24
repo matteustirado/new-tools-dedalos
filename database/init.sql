@@ -2,12 +2,14 @@ USE radio_dedalos;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- [NOVO] Limpa tabela de configuração do Quinta Premiada
+-- Limpeza de tabelas para recriar estrutura atualizada
 DROP TABLE IF EXISTS golden_card_config;
-
 DROP TABLE IF EXISTS price_promotions;
 DROP TABLE IF EXISTS holidays;
 DROP TABLE IF EXISTS prices_active;
+DROP TABLE IF EXISTS price_live_state; -- [ATUALIZADO]
+DROP TABLE IF EXISTS price_defaults;
+DROP TABLE IF EXISTS price_category_media;
 DROP TABLE IF EXISTS scoreboard_votes;
 DROP TABLE IF EXISTS scoreboard_presets;
 DROP TABLE IF EXISTS scoreboard_active;
@@ -88,7 +90,7 @@ CREATE TABLE radio_config (
 );
 
 -- =====================================================
--- FERRAMENTAS E PROMOÇÕES (Quinta Premiada, etc)
+-- FERRAMENTAS E PROMOÇÕES
 -- =====================================================
 
 CREATE TABLE historico_promocoes (
@@ -102,13 +104,12 @@ CREATE TABLE historico_promocoes (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- [NOVO] Tabela para configuração dos Cards da Quinta Premiada
 CREATE TABLE golden_card_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
     unidade VARCHAR(10) NOT NULL,
-    card_index INT NOT NULL, -- Índice do cartão (0 a 49)
-    prize_type VARCHAR(100) DEFAULT NULL, -- Ex: 'VIP', 'DRINK', 'OFF', null
-    prize_details TEXT DEFAULT NULL, -- JSON string com detalhes específicos
+    card_index INT NOT NULL, 
+    prize_type VARCHAR(100) DEFAULT NULL, 
+    prize_details TEXT DEFAULT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_card_unit (unidade, card_index)
 );
@@ -123,22 +124,55 @@ CREATE TABLE holidays (
 );
 
 -- =====================================================
--- PREÇOS E PLACARES
+-- PREÇOS E PLACARES (SISTEMA HÍBRIDO)
 -- =====================================================
 
-CREATE TABLE prices_active (
+-- 1. Regras de Preço Padrão (Semana/FDS, Manhã/Tarde/Noite)
+CREATE TABLE price_defaults (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tipo_dia ENUM('semana', 'fim_de_semana') NOT NULL,
+    periodo ENUM('manha', 'tarde', 'noite') NOT NULL,
+    qtd_pessoas INT NOT NULL, -- 1, 2 ou 3
+    valor DECIMAL(10, 2) NOT NULL,
+    horario_inicio TIME NOT NULL,
+    horario_fim TIME NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_price_rule (tipo_dia, periodo, qtd_pessoas)
+);
+
+-- 2. Identidade Visual das Categorias (Vídeos/Títulos e Avisos para 1, 2 e 3 pessoas)
+CREATE TABLE price_category_media (
+    id INT AUTO_INCREMENT PRIMARY KEY,
     unidade VARCHAR(10) NOT NULL,
-    tipo ENUM('padrao', 'fim_de_semana', 'feriado') NOT NULL DEFAULT 'padrao',
-    titulo_tabela VARCHAR(255) NOT NULL,
-    qtd_categorias INT NOT NULL DEFAULT 3,
-    modo_exibicao ENUM('tv', 'tablet') NOT NULL DEFAULT 'tv',
+    qtd_pessoas INT NOT NULL, -- 1, 2 ou 3
+    titulo VARCHAR(50), -- Ex: "Individual", "Mão Amiga"
+    media_url VARCHAR(512), -- URL do vídeo ou imagem
+    aviso_categoria TEXT, -- Aviso específico da coluna (Ex: "Obrigatório entrar junto")
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_cat_media (unidade, qtd_pessoas)
+);
+
+-- 3. Estado Ao Vivo da Tela de Preços
+CREATE TABLE price_live_state (
+    unidade VARCHAR(10) PRIMARY KEY,
+    modo_festa BOOLEAN DEFAULT FALSE, 
+    
+    -- [NOVO] Lista de URLs para o slider do Modo Festa (formato JSON array)
+    party_banners JSON, 
+    
+    valor_passado DECIMAL(10, 2) NULL, 
+    valor_atual DECIMAL(10, 2) NULL,   
+    valor_futuro DECIMAL(10, 2) NULL,  
+    
+    texto_futuro VARCHAR(50) DEFAULT '???',
+    
+    -- Campos de Aviso Importante da Tabela (Gerais)
     aviso_1 TEXT,
     aviso_2 TEXT,
     aviso_3 TEXT,
     aviso_4 TEXT,
-    categorias JSON,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (unidade, tipo)
+    
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE price_promotions (
@@ -213,13 +247,43 @@ INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status) VALUES
 ('SP', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO'),
 ('BH', 'Aguardando Configuração', 'landscape', '[{"nome":"Opção 1","tipo":"emoji","valor":"⏳"},{"nome":"Opção 2","tipo":"emoji","valor":"🔧"}]', 'PAUSADO');
 
-INSERT INTO prices_active (unidade, tipo, titulo_tabela, categorias) VALUES 
-('SP', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
-('SP', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
-('SP', 'feriado', 'Tabela Feriados', '[]'),
-('BH', 'padrao', 'Tabela Padrão (Seg-Qui)', '[]'),
-('BH', 'fim_de_semana', 'Tabela Fim de Semana (Sex-Dom)', '[]'),
-('BH', 'feriado', 'Tabela Feriados', '[]');
-
 INSERT IGNORE INTO badge_templates (role_name, config, is_default) 
 VALUES ('PADRAO', '{"headerHeight": 30, "photoShape": "circle", "nameSize": 24, "roleSize": 14, "texture": "geometric", "logoUrl": null, "logoSize": 80, "contentY": 0, "photoY": 0}', TRUE);
+
+-- SEED: PREÇOS PADRÃO
+INSERT IGNORE INTO price_defaults (tipo_dia, periodo, qtd_pessoas, valor, horario_inicio, horario_fim) VALUES
+-- SEMANA (Seg-Qui)
+('semana', 'manha', 1, 33.99, '06:00', '13:59'),
+('semana', 'manha', 2, 44.99, '06:00', '13:59'),
+('semana', 'manha', 3, 59.99, '06:00', '13:59'),
+('semana', 'tarde', 1, 36.99, '14:00', '19:59'),
+('semana', 'tarde', 2, 59.99, '14:00', '19:59'),
+('semana', 'tarde', 3, 79.99, '14:00', '19:59'),
+('semana', 'noite', 1, 39.99, '20:00', '05:59'),
+('semana', 'noite', 2, 69.99, '20:00', '05:59'),
+('semana', 'noite', 3, 89.99, '20:00', '05:59'),
+-- FIM DE SEMANA (Sex-Dom)
+('fim_de_semana', 'manha', 1, 39.99, '06:00', '13:59'),
+('fim_de_semana', 'manha', 2, 69.99, '06:00', '13:59'),
+('fim_de_semana', 'manha', 3, 91.99, '06:00', '13:59'),
+('fim_de_semana', 'tarde', 1, 53.99, '14:00', '19:59'),
+('fim_de_semana', 'tarde', 2, 87.99, '14:00', '19:59'),
+('fim_de_semana', 'tarde', 3, 121.99, '14:00', '19:59'),
+('fim_de_semana', 'noite', 1, 57.99, '20:00', '05:59'),
+('fim_de_semana', 'noite', 2, 103.99, '20:00', '05:59'),
+('fim_de_semana', 'noite', 3, 144.99, '20:00', '05:59');
+
+-- SEED: MÍDIA DAS CATEGORIAS (SP e BH)
+INSERT IGNORE INTO price_category_media (unidade, qtd_pessoas, titulo, aviso_categoria) VALUES 
+('SP', 1, 'Individual', ''), 
+('SP', 2, 'Mão Amiga', ''), 
+('SP', 3, 'Marmita', ''),
+('BH', 1, 'Individual', ''), 
+('BH', 2, 'Mão Amiga', ''), 
+('BH', 3, 'Marmita', '');
+
+-- SEED: ESTADO INICIAL
+-- Inicia party_banners como array vazio
+INSERT IGNORE INTO price_live_state (unidade, modo_festa, party_banners) VALUES 
+('SP', FALSE, '[]'), 
+('BH', FALSE, '[]');
