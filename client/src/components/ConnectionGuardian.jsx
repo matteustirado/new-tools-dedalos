@@ -19,6 +19,12 @@ const ConnectionGuardian = ({ children }) => {
     socket.on('connect', () => {
       setIsOffline(false);
       setRetryAttempt(0);
+      
+      window.dispatchEvent(new Event('trigger-sw-update'));
+    });
+
+    socket.on('system:forceUpdate', () => {
+      window.dispatchEvent(new Event('trigger-sw-update'));
     });
 
     socket.on('disconnect', (reason) => {

@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const CROSSFADE_DURATION_MS = 4000;
 const TARGET_LUFS = -14;
 
-const playerOptions = {
+const getPlayerOptions = () => ({
   height: '100%',
   width: '100%',
   playerVars: {
@@ -19,8 +19,10 @@ const playerOptions = {
     rel: 0,
     playsinline: 1,
     mute: 1,
+    enablejsapi: 1, 
+    origin: window.location.origin, 
   },
-};
+});
 
 const calculateTargetVolume = (lufsValue) => {
   if (lufsValue == null || isNaN(lufsValue)) return 100;
@@ -162,6 +164,7 @@ export default function WatchVideo() {
   const loadAndPlay = (player, musica, startSeconds = 0, isCrossfading = false) => {
     if (!player || !musica) return;
 
+    // Trava de segurança para ID inválido
     const videoId = musica.youtube_id;
     if (!videoId) {
       console.error("[Watch] ERRO FATAL: Música sem youtube_id válido. Solicitando pulo automático...", musica);
@@ -219,6 +222,7 @@ export default function WatchVideo() {
   };
 
   const onPlayerReady = (evt, id) => {
+    console.log(`[Watch] Player ${id} Pronto.`);
     if (id === 'A') playerARef.current = evt.target;
     else playerBRef.current = evt.target;
 
@@ -340,8 +344,8 @@ export default function WatchVideo() {
           style={{ opacity: opacityA, zIndex: opacityA > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId=""
-            opts={playerOptions}
+            videoId="M7lc1UVf-VE" // Dummy ID (Vídeo Oficial de Teste do Google) para aquecer o motor sem quebrar a API
+            opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'A')}
             onError={(e) => onPlayerError(e, 'A')}
             onStateChange={onStateChange}
@@ -354,8 +358,8 @@ export default function WatchVideo() {
           style={{ opacity: opacityB, zIndex: opacityB > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId=""
-            opts={playerOptions}
+            videoId="M7lc1UVf-VE" 
+            opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'B')}
             onError={(e) => onPlayerError(e, 'B')}
             onStateChange={onStateChange}
