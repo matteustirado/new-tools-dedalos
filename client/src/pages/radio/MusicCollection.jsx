@@ -409,7 +409,7 @@ export default function MusicCollection() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => navigate('/radio/history')}
+                onClick={() => navigate('/radio/requests-history')}
                 className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white px-4 py-2.5 rounded-lg border border-white/10 transition-colors font-semibold text-sm"
               >
                 <span className="material-symbols-outlined text-lg">history</span>

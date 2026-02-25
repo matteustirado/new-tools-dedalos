@@ -162,11 +162,19 @@ export default function WatchVideo() {
   const loadAndPlay = (player, musica, startSeconds = 0, isCrossfading = false) => {
     if (!player || !musica) return;
 
+    const videoId = musica.youtube_id;
+    if (!videoId) {
+      console.error("[Watch] ERRO FATAL: Música sem youtube_id válido. Solicitando pulo automático...", musica);
+      if (socketRef.current) {
+        socketRef.current.emit('dj:pularMusica');
+      }
+      return;
+    }
+
     if (!hasInteracted) {
       player.mute();
     }
 
-    const videoId = musica.youtube_id;
     const start = musica.start_segundos || startSeconds;
     const finalVolume = calculateTargetVolume(musica.loudness_lufs);
 
@@ -184,7 +192,7 @@ export default function WatchVideo() {
 
       player.playVideo();
     } catch (e) {
-      console.error(e);
+      console.error("[Watch] Erro ao comandar player:", e);
     }
   };
 
@@ -220,6 +228,7 @@ export default function WatchVideo() {
   };
 
   const onPlayerError = (evt, id) => {
+    console.error(`[Watch] ERRO CRÍTICO no Player ${id}. Código: ${evt.data}`);
     if (socketRef.current) {
       socketRef.current.emit('dj:pularMusica');
     }
@@ -331,7 +340,7 @@ export default function WatchVideo() {
           style={{ opacity: opacityA, zIndex: opacityA > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId={null}
+            videoId=""
             opts={playerOptions}
             onReady={(e) => onPlayerReady(e, 'A')}
             onError={(e) => onPlayerError(e, 'A')}
@@ -345,7 +354,7 @@ export default function WatchVideo() {
           style={{ opacity: opacityB, zIndex: opacityB > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId={null}
+            videoId=""
             opts={playerOptions}
             onReady={(e) => onPlayerReady(e, 'B')}
             onError={(e) => onPlayerError(e, 'B')}
