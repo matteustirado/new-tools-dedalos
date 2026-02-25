@@ -8,7 +8,6 @@ const ConnectionGuardian = ({ children }) => {
   const [retryAttempt, setRetryAttempt] = useState(0);
 
   useEffect(() => {
-    // Conecta um socket leve apenas para monitorar o heartbeat do servidor
     const socket = io(API_URL, {
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -19,21 +18,17 @@ const ConnectionGuardian = ({ children }) => {
     });
 
     socket.on('connect', () => {
-      console.log('[ConnectionGuardian] Conectado ao servidor.');
       setIsOffline(false);
       setRetryAttempt(0);
     });
 
     socket.on('disconnect', (reason) => {
-      console.warn(`[ConnectionGuardian] Desconectado: ${reason}`);
-      // Só bloqueia a tela se for uma desconexão real de rede ou queda do servidor
       if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'ping timeout') {
         setIsOffline(true);
       }
     });
 
-    socket.on('connect_error', (err) => {
-      console.error(`[ConnectionGuardian] Erro de conexão: ${err.message}`);
+    socket.on('connect_error', () => {
       setIsOffline(true);
       setRetryAttempt(prev => prev + 1);
     });
@@ -45,10 +40,8 @@ const ConnectionGuardian = ({ children }) => {
 
   return (
     <>
-      {/* Renderiza o conteúdo normal da aplicação */}
       {children}
       
-      {/* Overlay de Bloqueio (Só aparece se estiver offline) */}
       {isOffline && (
         <div style={styles.overlay}>
           <div style={styles.content}>

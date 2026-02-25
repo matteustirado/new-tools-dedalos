@@ -1,5 +1,9 @@
 import express from 'express';
-import { getTemplates, saveTemplate, deleteTemplate } from '../controllers/badgeController.js';
+import { 
+  getTemplates, 
+  saveTemplate, 
+  deleteTemplate 
+} from '../controllers/badgeController.js';
 
 const router = express.Router();
 

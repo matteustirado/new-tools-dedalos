@@ -3,7 +3,7 @@ import axios from 'axios';
 
 export const syncEmployees = async (req, res) => {
     try {
-        const API_URL = process.env.VITE_API_URL_SP; 
+        const API_URL = process.env.VITE_API_URL_SP;
         const API_TOKEN = process.env.VITE_API_TOKEN_SP;
 
         if (!API_URL || !API_TOKEN) {
@@ -14,9 +14,10 @@ export const syncEmployees = async (req, res) => {
         const endpoint = `${baseUrl}/colaborador/list/`;
 
         let externalList = [];
+
         try {
             const response = await axios.get(endpoint, {
-                headers: { 
+                headers: {
                     "Authorization": `Token ${API_TOKEN}`,
                     "Content-Type": "application/json"
                 }
@@ -30,11 +31,11 @@ export const syncEmployees = async (req, res) => {
 
         if (externalList.length > 0) {
             for (const ext of externalList) {
-                const cpfLimpo = ext.cpf; 
+                const cpfLimpo = ext.cpf;
                 const nomeFormatado = ext.nome ? ext.nome.toUpperCase() : "NOME DESCONHECIDO";
 
                 const [rows] = await pool.query('SELECT id FROM employees WHERE cpf = ?', [cpfLimpo]);
-                
+
                 if (rows.length > 0) {
                     await pool.query(
                         'UPDATE employees SET last_seen_at = ?, status = ?, unit = ? WHERE cpf = ?',
@@ -61,7 +62,7 @@ export const syncEmployees = async (req, res) => {
             WHERE status != 'archived' OR (status = 'archived' AND last_seen_at > DATE_SUB(NOW(), INTERVAL 30 DAY))
             ORDER BY is_new DESC, status ASC, name ASC
         `);
-        
+
         res.json(allEmployees);
 
     } catch (error) {
@@ -81,6 +82,7 @@ export const updateEmployee = async (req, res) => {
              WHERE id = ?`,
             [name, role, registration_code, admission_date, photo_url, id]
         );
+
         res.json({ success: true, message: "Dados atualizados!" });
     } catch (error) {
         console.error("Erro ao atualizar:", error);
@@ -89,8 +91,10 @@ export const updateEmployee = async (req, res) => {
 };
 
 export const uploadEmployeePhoto = async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "Nenhum arquivo enviado" });
-    
+    if (!req.file) {
+        return res.status(400).json({ error: "Nenhum arquivo enviado" });
+    }
+
     const photoUrl = `/uploads/${req.file.filename}`;
     res.json({ url: photoUrl });
 };

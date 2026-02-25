@@ -1,31 +1,35 @@
 import { getIO } from '../socket.js';
 import pool from '../config/db.js';
-import { adicionarPedidoNaFila, comporFilaVisual, verificarDisponibilidadeTrack } from './conductorController.js';
+import { 
+    adicionarPedidoNaFila, 
+    comporFilaVisual, 
+    verificarDisponibilidadeTrack 
+} from './conductorController.js';
 
 const LIMITE_PEDIDOS = 5;
 const LIMITE_TEMPO_MINUTOS = 10;
 
 export const getHistoricoPedidos = async (req, res) => {
+    const query = `
+        SELECT 
+            jp.id,
+            jp.pulseira_id,
+            jp.unidade,
+            jp.status,
+            jp.pedido_em as created_at, 
+            jp.tocado_em,
+            jp.termo_busca,
+            t.titulo,
+            t.artista,
+            t.thumbnail_url,
+            t.is_commercial
+        FROM jukebox_pedidos jp
+        LEFT JOIN tracks t ON jp.track_id = t.id
+        ORDER BY jp.pedido_em DESC
+        LIMIT 200
+    `;
+
     try {
-        const query = `
-            SELECT 
-                jp.id,
-                jp.pulseira_id,
-                jp.unidade,
-                jp.status,
-                jp.pedido_em as created_at, 
-                jp.tocado_em,
-                jp.termo_busca,
-                t.titulo,
-                t.artista,
-                t.thumbnail_url,
-                t.is_commercial
-            FROM jukebox_pedidos jp
-            LEFT JOIN tracks t ON jp.track_id = t.id
-            ORDER BY jp.pedido_em DESC
-            LIMIT 200
-        `;
-        
         const [rows] = await pool.query(query);
         res.json(rows);
     } catch (error) {
@@ -46,8 +50,8 @@ export const handleReceberSugestao = async (socket, data) => {
             'INSERT INTO jukebox_pedidos (pulseira_id, unidade, status, termo_busca, track_id) VALUES (?, ?, ?, ?, NULL)',
             [pulseiraId, unidade, 'SUGERIDA', termo]
         );
-        console.log(`[Jukebox] Sugestão salva: "${termo}" (${unidade})`);
         
+        console.log(`[Jukebox] Sugestão salva: "${termo}" (${unidade})`);
         socket.emit('jukebox:sugestaoAceita'); 
     } catch (err) {
         console.error("[Jukebox] Erro ao salvar sugestão:", err);
@@ -64,6 +68,7 @@ export const handleAdicionarPedido = async (socket, data) => {
     }
     
     const pulseiraLimpa = String(pulseiraId).trim();
+
     if (pulseiraLimpa.length === 0) {
         socket.emit('jukebox:erroPedido', { message: 'Número da pulseira inválido.' });
         return;
@@ -84,7 +89,9 @@ export const handleAdicionarPedido = async (socket, data) => {
         );
 
         if (rows[0].count >= LIMITE_PEDIDOS) {
-            socket.emit('jukebox:erroPedido', { message: `Limite de ${LIMITE_PEDIDOS} pedidos a cada ${LIMITE_TEMPO_MINUTOS} min atingido.` });
+            socket.emit('jukebox:erroPedido', { 
+                message: `Limite de ${LIMITE_PEDIDOS} pedidos a cada ${LIMITE_TEMPO_MINUTOS} min atingido.` 
+            });
             return;
         }
 
@@ -107,6 +114,7 @@ export const handleAdicionarPedido = async (socket, data) => {
         
         const filaVisual = await comporFilaVisual();
         getIO().emit('maestro:filaAtualizada', filaVisual);
+
     } catch (err) {
         console.error("[Jukebox] Erro:", err);
         socket.emit('jukebox:erroPedido', { message: 'Erro ao processar pedido.' });

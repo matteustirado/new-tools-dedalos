@@ -13,12 +13,15 @@ const ALL_DAYS_ARRAY = [0, 1, 2, 3, 4, 5, 6]
 const parseYoutubeUrl = (url) => {
   try {
     const videoUrl = new URL(url)
+    
     if (videoUrl.hostname === 'youtu.be') {
       return videoUrl.pathname.slice(1)
     }
+    
     if (videoUrl.hostname.includes('youtube.com')) {
       return videoUrl.searchParams.get('v')
     }
+    
     return null
   } catch (error) {
     return null
@@ -40,9 +43,11 @@ const safeJsonParse = (input) => {
   if (Array.isArray(input)) {
     return input
   }
+  
   if (!input || typeof input !== 'string') {
     return []
   }
+  
   try {
     const parsed = JSON.parse(input)
     return Array.isArray(parsed) ? parsed : []
@@ -112,18 +117,24 @@ const analyzeLoudness = async (trackId, youtubeId) => {
       'UPDATE tracks SET loudness_lufs = ?, status_processamento = "PROCESSADO" WHERE id = ?',
       [loudness, trackId]
     )
+    
     console.log(`[Loudness] Sucesso (Track ${trackId}): ${loudness} LUFS`)
 
-    try { getIO().emit('acervo:atualizado') } catch (e) {}
+    try { 
+      getIO().emit('acervo:atualizado') 
+    } catch (e) {}
 
   } catch (err) {
     console.error(`[Loudness] Falha (Track ${trackId}):`, err.message)
+    
     try {
       await pool.query(
         'UPDATE tracks SET status_processamento = "ERRO" WHERE id = ?',
         [trackId]
       )
-      try { getIO().emit('acervo:atualizado') } catch (e) {}
+      try { 
+        getIO().emit('acervo:atualizado') 
+      } catch (e) {}
     } catch (dbError) {
       console.error(`[Loudness] Falha ao marcar ERRO no DB (Track ${trackId}):`, dbError.message)
     }
@@ -140,6 +151,7 @@ export const fetchYoutubeData = async (req, res) => {
 
   try {
     const [existing] = await pool.query('SELECT id FROM tracks WHERE youtube_id = ?', [youtubeId])
+    
     if (existing.length > 0) {
       return res.status(409).json({ error: 'Esta música já existe no acervo.' })
     }
@@ -162,7 +174,10 @@ export const fetchYoutubeData = async (req, res) => {
 
     let thumbnailUrl = null
     if (snippet.thumbnails) {
-      thumbnailUrl = snippet.thumbnails.high?.url || snippet.thumbnails.medium?.url || snippet.thumbnails.default?.url || null
+      thumbnailUrl = snippet.thumbnails.high?.url || 
+                     snippet.thumbnails.medium?.url || 
+                     snippet.thumbnails.default?.url || 
+                     null
     }
 
     const videoData = {
@@ -208,7 +223,9 @@ export const addTrack = async (req, res) => {
   let processedAno = null
   if (ano !== '' && ano != null) {
     const anoInt = parseInt(ano, 10)
-    if (!isNaN(anoInt)) { processedAno = anoInt }
+    if (!isNaN(anoInt)) { 
+      processedAno = anoInt 
+    }
   }
 
   const diasSemanaArray = (Array.isArray(dias_semana) && dias_semana.length > 0)
@@ -233,7 +250,7 @@ export const addTrack = async (req, res) => {
       ano: processedAno,
       gravadora,
       diretor,
-      thumbnail_url: thumbnail_url || null,
+      thumbnail_url: thumbnailUrl || null,
       duracao_segundos,
       start_segundos,
       end_segundos,
@@ -246,7 +263,10 @@ export const addTrack = async (req, res) => {
 
     getIO().emit('acervo:atualizado')
 
-    res.status(201).json({ message: 'Música adicionada! Iniciando análise de áudio.', id: result.insertId })
+    res.status(201).json({ 
+      message: 'Música adicionada! Iniciando análise de áudio.', 
+      id: result.insertId 
+    })
 
     analyzeLoudness(result.insertId, youtube_id)
 
@@ -293,7 +313,9 @@ export const updateTrack = async (req, res) => {
   let processedAno = null
   if (ano !== '' && ano != null) {
     const anoInt = parseInt(ano, 10)
-    if (!isNaN(anoInt)) { processedAno = anoInt }
+    if (!isNaN(anoInt)) { 
+      processedAno = anoInt 
+    }
   }
 
   const diasSemanaArray = (Array.isArray(dias_semana) && dias_semana.length > 0)
@@ -317,7 +339,7 @@ export const updateTrack = async (req, res) => {
       ano: processedAno,
       gravadora,
       diretor,
-      thumbnail_url: thumbnail_url || null,
+      thumbnail_url: thumbnailUrl || null,
       start_segundos,
       end_segundos,
       is_commercial,
@@ -342,8 +364,10 @@ export const updateTrack = async (req, res) => {
 
 export const deleteTrack = async (req, res) => {
   const { id } = req.params
+  
   try {
     const [result] = await pool.query('DELETE FROM tracks WHERE id = ?', [id])
+    
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Música não encontrada para deletar.' })
     }
@@ -365,6 +389,7 @@ export const deleteMultipleTracks = async (req, res) => {
   }
 
   const connection = await pool.getConnection()
+  
   try {
     await connection.beginTransaction()
 
@@ -386,7 +411,6 @@ export const deleteMultipleTracks = async (req, res) => {
 
     getIO().emit('acervo:atualizado')
 
-    console.log(`Excluídas ${result.affectedRows} faixas.`)
     res.json({ message: `${result.affectedRows} mídias foram excluídas com sucesso!` })
 
   } catch (err) {

@@ -1,31 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Sidebar from '../../components/Sidebar';
-import BadgeTemplate from '../../components/BadgeTemplate';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
+import Sidebar from '../../components/Sidebar';
+import BadgeTemplate from '../../components/BadgeTemplate';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function NameTagGenerator() {
     const [employees, setEmployees] = useState([]);
+    const [templates, setTemplates] = useState([]);
     const [search, setSearch] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const [loading, setLoading] = useState(true);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [isWildcard, setIsWildcard] = useState(false);
-    const [templates, setTemplates] = useState([]);
     const [currentConfig, setCurrentConfig] = useState({});
+    
     const fileInputRef = useRef(null);
 
     const fetchData = async () => {
         setLoading(true);
+
         try {
             const [empRes, templRes] = await Promise.all([
                 axios.get(`${API_URL}/api/people/sync`),
                 axios.get(`${API_URL}/api/badges/templates`)
             ]);
+
             setEmployees(Array.isArray(empRes.data) ? empRes.data : []);
             setTemplates(Array.isArray(templRes.data) ? templRes.data : []);
         } catch (error) {
@@ -43,6 +47,7 @@ export default function NameTagGenerator() {
 
     useEffect(() => {
         if (!selectedEmployee) return;
+
         const role = selectedEmployee.role ? selectedEmployee.role.toUpperCase() : '';
         const template = templates.find(t => t.role_name === role) || templates.find(t => t.role_name === 'PADRAO');
         
@@ -61,8 +66,10 @@ export default function NameTagGenerator() {
 
     const fixDateForDisplay = (dateString) => {
         if (!dateString) return '';
+
         const date = new Date(dateString);
         const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+        
         return new Date(date.getTime() + userTimezoneOffset).toISOString();
     };
 
@@ -83,6 +90,7 @@ export default function NameTagGenerator() {
 
     const generatePDF = async (elementId, fileName) => {
         const element = document.getElementById(elementId);
+        
         if (!element) {
             toast.error("Erro: Elemento visual não encontrado.");
             return;
@@ -100,6 +108,7 @@ export default function NameTagGenerator() {
 
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('l', 'mm', [85.6, 54]);
+            
             pdf.addImage(imgData, 'PNG', 0, 0, 85.6, 54);
             pdf.save(`${fileName}.pdf`);
             
@@ -112,9 +121,11 @@ export default function NameTagGenerator() {
 
     const handleCardClick = (emp) => {
         let admissionDate = '';
+        
         if (emp.admission_date) {
              admissionDate = new Date(emp.admission_date).toISOString().split('T')[0];
         }
+        
         setSelectedEmployee({ ...emp, admission_date: admissionDate });
         setIsWildcard(false);
     };
@@ -130,6 +141,7 @@ export default function NameTagGenerator() {
             unit: "SP",
             status: 'active'
         });
+        
         setIsWildcard(true);
     };
 
@@ -139,9 +151,11 @@ export default function NameTagGenerator() {
 
         if (isWildcard) {
             const reader = new FileReader();
+            
             reader.onloadend = () => {
                 setSelectedEmployee(prev => ({ ...prev, photo_url: reader.result }));
             };
+            
             reader.readAsDataURL(file);
             return;
         }
@@ -162,9 +176,11 @@ export default function NameTagGenerator() {
             generatePDF('badge-modal-preview', `CRACHA_CORINGA`);
             return;
         }
+
         try {
             const statusToSave = selectedEmployee.status || 'active';
             await axios.post(`${API_URL}/api/people/update/${selectedEmployee.id}`, { ...selectedEmployee, status: statusToSave });
+            
             toast.success("Dados salvos!");
             fetchData();
         } catch (error) {
@@ -174,15 +190,18 @@ export default function NameTagGenerator() {
 
     const handleArchive = async (e, emp) => {
         e.stopPropagation();
+        
         const currentStatus = emp.status || 'active';
         const newStatus = currentStatus === 'active' ? 'archived' : 'active';
         
         try {
             await axios.post(`${API_URL}/api/people/update/${emp.id}`, { ...emp, status: newStatus });
+            
             toast.info(
                 <div><span className="font-bold">{emp.name}</span> foi {newStatus === 'archived' ? 'arquivado' : 'ativado'}.</div>,
                 { icon: newStatus === 'archived' ? '📁' : '✅', autoClose: 2000 }
             );
+            
             setEmployees(prev => prev.map(p => p.id === emp.id ? { ...p, status: newStatus } : p));
         } catch (error) {
             toast.error("Erro ao alterar status.");
@@ -191,6 +210,7 @@ export default function NameTagGenerator() {
 
     const handleQuickPrint = (e, emp) => {
         e.stopPropagation();
+        
         const safeName = emp.name.replace(/\s+/g, '_').toUpperCase();
         generatePDF(`badge-card-${emp.id}`, `CRACHA_${safeName}`);
     };
@@ -215,6 +235,7 @@ export default function NameTagGenerator() {
                         <h1 className="text-3xl font-bold text-white mb-1">Gerador de Crachá</h1>
                         <p className="text-white/50">Modelo Oficial Dédalos Bar</p>
                     </div>
+                    
                     <button 
                         onClick={() => setShowArchived(!showArchived)}
                         className={`px-4 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${showArchived ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
@@ -240,9 +261,11 @@ export default function NameTagGenerator() {
                         <span className="material-symbols-outlined text-6xl mb-4">
                             {showArchived ? 'folder_off' : 'search_off'}
                         </span>
+                        
                         <p className="text-xl font-medium">
                             {showArchived ? 'Nenhum colaborador arquivado.' : 'Nenhum colaborador encontrado.'}
                         </p>
+                        
                         {showArchived && (
                             <button onClick={() => setShowArchived(false)} className="mt-4 text-orange-400 hover:underline">
                                 Voltar para lista ativa
@@ -420,6 +443,7 @@ export default function NameTagGenerator() {
                                                 SALVAR DADOS
                                             </button>
                                         )}
+                                        
                                         <button onClick={handleModalPrint} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-[1.02]">
                                             <span className="material-symbols-outlined">download</span> BAIXAR PDF
                                         </button>

@@ -36,7 +36,10 @@ const EmojiPickerInline = ({ onSelect, onClose, recentEmojis }) => {
                         </button>
                     ))}
                 </div>
-                <button onClick={onClose} className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex-shrink-0 border border-red-500/20">
+                <button 
+                    onClick={onClose} 
+                    className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex-shrink-0 border border-red-500/20"
+                >
                     <span className="material-symbols-outlined text-base">close</span>
                 </button>
             </div>
@@ -49,7 +52,11 @@ const EmojiPickerInline = ({ onSelect, onClose, recentEmojis }) => {
                 ) : (
                     <div className="grid grid-cols-6 gap-1">
                         {currentEmojis.map((emoji, idx) => (
-                            <button key={idx} onClick={() => onSelect(emoji)} className="aspect-square hover:bg-white/10 rounded-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95">
+                            <button 
+                                key={idx} 
+                                onClick={() => onSelect(emoji)} 
+                                className="aspect-square hover:bg-white/10 rounded-lg flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95"
+                            >
                                 {emoji}
                             </button>
                         ))}
@@ -71,12 +78,16 @@ const ColorPicker = ({ onSelect, onClose }) => {
                         className="w-7 h-7 rounded-full border border-white/10 hover:scale-110 transition-transform shadow-sm relative group"
                         style={{ backgroundColor: colorHex }}
                         title={`Cor ${idx + 1}`}
-                    >
-                    </button>
+                    />
                 ))}
             </div>
             <div className="mt-2 pt-2 border-t border-white/10 text-center">
-                <button onClick={onClose} className="text-[10px] text-white/40 hover:text-white uppercase font-bold tracking-wider">Fechar</button>
+                <button 
+                    onClick={onClose} 
+                    className="text-[10px] text-white/40 hover:text-white uppercase font-bold tracking-wider"
+                >
+                    Fechar
+                </button>
             </div>
         </div>
     );
@@ -129,7 +140,7 @@ const OptionCard = ({
                         style={{ backgroundColor: opt.cor || COLOR_PALETTE[index % COLOR_PALETTE.length] }}
                         onClick={() => setActiveColorPickerIndex(activeColorPickerIndex === index ? null : index)}
                         title="Alterar cor"
-                    ></button>
+                    />
                     {activeColorPickerIndex === index && (
                         <ColorPicker 
                             onSelect={(color) => { handleOptionChange(index, 'cor', color); setActiveColorPickerIndex(null); }} 
@@ -141,15 +152,33 @@ const OptionCard = ({
 
             <div className="bg-black/20 rounded-lg p-2 border border-white/5 flex flex-col relative group/control h-72">
                 <div className="flex bg-black/40 rounded-lg p-1 mb-2 border border-white/5 shrink-0">
-                    <button onClick={() => setActiveTab('game')} className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold uppercase transition-all ${activeTab === 'game' ? 'bg-white/10 text-white shadow-sm' : 'text-white/30 hover:text-white'}`}><span className="material-symbols-outlined text-xs">sports_esports</span> Game</button>
-                    <button onClick={() => setActiveTab('display')} className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold uppercase transition-all ${activeTab === 'display' ? 'bg-white/10 text-white shadow-sm' : 'text-white/30 hover:text-white'}`}><span className="material-symbols-outlined text-xs">tv</span> Placar</button>
+                    <button 
+                        onClick={() => setActiveTab('game')} 
+                        className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold uppercase transition-all ${activeTab === 'game' ? 'bg-white/10 text-white shadow-sm' : 'text-white/30 hover:text-white'}`}
+                    >
+                        <span className="material-symbols-outlined text-xs">sports_esports</span> Game
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('display')} 
+                        className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold uppercase transition-all ${activeTab === 'display' ? 'bg-white/10 text-white shadow-sm' : 'text-white/30 hover:text-white'}`}
+                    >
+                        <span className="material-symbols-outlined text-xs">tv</span> Placar
+                    </button>
                 </div>
 
                 <div className="flex justify-between items-center mb-2 px-1 shrink-0">
-                    <span className="text-[9px] text-white/30 uppercase font-bold">{activeTab === 'game' ? 'Visual do Celular' : 'Visual da TV'}</span>
+                    <span className="text-[9px] text-white/30 uppercase font-bold">
+                        {activeTab === 'game' ? 'Visual do Celular' : 'Visual da TV'}
+                    </span>
                     <div className="flex gap-1">
                         {['emoji', 'image'].map(type => (
-                            <button key={type} onClick={() => handleOptionChange(index, tipoKey, type)} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase border transition-colors ${opt[tipoKey] === type ? 'bg-blue-600 border-blue-500 text-white' : 'bg-transparent border-white/10 text-white/30 hover:text-white'}`}>{type === 'emoji' ? 'Emoji' : 'Img'}</button>
+                            <button 
+                                key={type} 
+                                onClick={() => handleOptionChange(index, tipoKey, type)} 
+                                className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase border transition-colors ${opt[tipoKey] === type ? 'bg-blue-600 border-blue-500 text-white' : 'bg-transparent border-white/10 text-white/30 hover:text-white'}`}
+                            >
+                                {type === 'emoji' ? 'Emoji' : 'Img'}
+                            </button>
                         ))}
                     </div>
                 </div>
@@ -160,15 +189,33 @@ const OptionCard = ({
                     ) : opt[valorKey] ? (
                         <img src={`${API_URL}${opt[valorKey]}`} className="w-full h-full object-cover" alt="Preview" />
                     ) : (
-                        <div className="flex flex-col items-center justify-center text-white/20"><span className="material-symbols-outlined text-4xl">image</span><span className="text-[10px] uppercase font-bold mt-2">Vazio</span></div>
-                    )}
-                    <button onClick={() => { if(isEmoji) setShowEmojiPicker(true); else document.getElementById(`file-${context}-${index}`).click(); }} className="absolute inset-0 bg-black/60 opacity-0 group-hover/control:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-sm cursor-pointer z-10"><span className="material-symbols-outlined text-3xl">edit</span></button>
-                    {showEmojiPicker && isEmoji && (
-                        <div className="absolute inset-0 z-20">
-                            <EmojiPickerInline onSelect={(emoji) => { onEmojiSelect(index, context, emoji); setShowEmojiPicker(false); }} onClose={() => setShowEmojiPicker(false)} recentEmojis={recentEmojis} />
+                        <div className="flex flex-col items-center justify-center text-white/20">
+                            <span className="material-symbols-outlined text-4xl">image</span>
+                            <span className="text-[10px] uppercase font-bold mt-2">Vazio</span>
                         </div>
                     )}
-                    <input type="file" id={`file-${context}-${index}`} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(index, context, e.target.files[0])} />
+                    <button 
+                        onClick={() => { if(isEmoji) setShowEmojiPicker(true); else document.getElementById(`file-${context}-${index}`).click(); }} 
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover/control:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-sm cursor-pointer z-10"
+                    >
+                        <span className="material-symbols-outlined text-3xl">edit</span>
+                    </button>
+                    {showEmojiPicker && isEmoji && (
+                        <div className="absolute inset-0 z-20">
+                            <EmojiPickerInline 
+                                onSelect={(emoji) => { onEmojiSelect(index, context, emoji); setShowEmojiPicker(false); }} 
+                                onClose={() => setShowEmojiPicker(false)} 
+                                recentEmojis={recentEmojis} 
+                            />
+                        </div>
+                    )}
+                    <input 
+                        type="file" 
+                        id={`file-${context}-${index}`} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={(e) => handleImageUpload(index, context, e.target.files[0])} 
+                    />
                 </div>
             </div>
         </div>
@@ -182,18 +229,29 @@ export default function ScoreboardEdit() {
     const [loading, setLoading] = useState(false);
     const [config, setConfig] = useState({ titulo: '', layout: 'landscape', opcoes: [] });
     const [optionCount, setOptionCount] = useState(2);
-    
     const [activeColorPickerIndex, setActiveColorPickerIndex] = useState(null);
     const [recentEmojis, setRecentEmojis] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('dedalos_recent_emojis')) || []; } catch { return []; }
+        try { 
+            return JSON.parse(localStorage.getItem('dedalos_recent_emojis')) || []; 
+        } catch { 
+            return []; 
+        }
     });
 
     const [showPresetsModal, setShowPresetsModal] = useState(false);
     const [presets, setPresets] = useState([]);
     const [presetName, setPresetName] = useState('');
-    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {}, isDanger: false });
+    const [confirmModal, setConfirmModal] = useState({ 
+        isOpen: false, 
+        title: '', 
+        message: '', 
+        onConfirm: () => {}, 
+        isDanger: false 
+    });
 
-    useEffect(() => { loadActiveConfig(); }, [currentUnit]);
+    useEffect(() => { 
+        loadActiveConfig(); 
+    }, [currentUnit]);
 
     const loadActiveConfig = async () => {
         setLoading(true);
@@ -206,14 +264,30 @@ export default function ScoreboardEdit() {
                 display_tipo: opt.display_tipo || opt.tipo || 'emoji',
                 display_valor: opt.display_valor || opt.valor || '❓'
             }));
-            setConfig({ titulo: res.data.titulo || '', layout: res.data.layout || 'landscape', opcoes: adaptedOptions });
+            setConfig({ 
+                titulo: res.data.titulo || '', 
+                layout: res.data.layout || 'landscape', 
+                opcoes: adaptedOptions 
+            });
             setOptionCount(adaptedOptions.length || 2);
-        } catch (error) { toast.error("Erro ao carregar configuração."); } 
-        finally { setLoading(false); }
+        } catch (error) { 
+            toast.error("Erro ao carregar configuração."); 
+        } finally { 
+            setLoading(false); 
+        }
     };
 
     const openConfirm = (title, message, action, isDanger = false) => {
-        setConfirmModal({ isOpen: true, title, message, onConfirm: () => { action(); setConfirmModal(prev => ({...prev, isOpen: false})); }, isDanger });
+        setConfirmModal({ 
+            isOpen: true, 
+            title, 
+            message, 
+            onConfirm: () => { 
+                action(); 
+                setConfirmModal(prev => ({...prev, isOpen: false})); 
+            }, 
+            isDanger 
+        });
     };
 
     const handleEmojiSelectGlobal = (index, context, emoji) => {
@@ -231,21 +305,33 @@ export default function ScoreboardEdit() {
         formData.append('scoreboardImage', file);
         const toastId = toast.loading("Enviando...");
         try {
-            const res = await axios.post(`${API_URL}/api/scoreboard/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+            const res = await axios.post(`${API_URL}/api/scoreboard/upload`, formData, { 
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
             handleOptionChange(index, `${context}_valor`, res.data.url);
             toast.update(toastId, { render: "Sucesso!", type: "success", isLoading: false, autoClose: 2000 });
-        } catch (error) { toast.update(toastId, { render: "Erro no upload.", type: "error", isLoading: false, autoClose: 3000 }); }
+        } catch (error) { 
+            toast.update(toastId, { render: "Erro no upload.", type: "error", isLoading: false, autoClose: 3000 }); 
+        }
     };
 
     const handleCountChange = (e) => {
         let count = parseInt(e.target.value);
-        if (count < 1) count = 1; if (count > 10) count = 10;
+        if (count < 1) count = 1; 
+        if (count > 10) count = 10;
         setOptionCount(count);
         setConfig(prev => {
             const newOpcoes = [...prev.opcoes];
             while (newOpcoes.length < count) {
                 const colorIndex = newOpcoes.length % COLOR_PALETTE.length;
-                newOpcoes.push({ nome: '', cor: COLOR_PALETTE[colorIndex], game_tipo: 'emoji', game_valor: '❓', display_tipo: 'emoji', display_valor: '❓' });
+                newOpcoes.push({ 
+                    nome: '', 
+                    cor: COLOR_PALETTE[colorIndex], 
+                    game_tipo: 'emoji', 
+                    game_valor: '❓', 
+                    display_tipo: 'emoji', 
+                    display_valor: '❓' 
+                });
             }
             if (newOpcoes.length > count) newOpcoes.length = count;
             return { ...prev, opcoes: newOpcoes };
@@ -256,8 +342,12 @@ export default function ScoreboardEdit() {
         setConfig(prev => {
             const newOpcoes = [...prev.opcoes];
             newOpcoes[index] = { ...newOpcoes[index], [field]: value };
-            if (field === 'game_tipo' && value === 'image' && !newOpcoes[index].game_valor.includes('/')) newOpcoes[index].game_valor = '';
-            if (field === 'display_tipo' && value === 'image' && !newOpcoes[index].display_valor.includes('/')) newOpcoes[index].display_valor = '';
+            if (field === 'game_tipo' && value === 'image' && !newOpcoes[index].game_valor.includes('/')) {
+                newOpcoes[index].game_valor = '';
+            }
+            if (field === 'display_tipo' && value === 'image' && !newOpcoes[index].display_valor.includes('/')) {
+                newOpcoes[index].display_valor = '';
+            }
             return { ...prev, opcoes: newOpcoes };
         });
     };
@@ -274,17 +364,28 @@ export default function ScoreboardEdit() {
 
     const handleSaveActive = async () => {
         try {
-            await axios.post(`${API_URL}/api/scoreboard/active`, { unidade: currentUnit, ...config, status: 'ATIVO' });
+            await axios.post(`${API_URL}/api/scoreboard/active`, { 
+                unidade: currentUnit, 
+                ...config, 
+                status: 'ATIVO' 
+            });
             toast.success("Placar atualizado!");
-        } catch (error) { toast.error("Erro ao salvar."); }
+        } catch (error) { 
+            toast.error("Erro ao salvar."); 
+        }
     };
 
     const handleTestVote = async () => {
         try {
             const randomIndex = Math.floor(Math.random() * config.opcoes.length);
-            await axios.post(`${API_URL}/api/scoreboard/vote`, { unidade: currentUnit, optionIndex: randomIndex });
+            await axios.post(`${API_URL}/api/scoreboard/vote`, { 
+                unidade: currentUnit, 
+                optionIndex: randomIndex 
+            });
             toast.info(`Voto teste: Opção ${randomIndex + 1}`);
-        } catch (error) { toast.error("Erro no voto teste."); }
+        } catch (error) { 
+            toast.error("Erro no voto teste."); 
+        }
     };
 
     const requestResetVotes = () => {
@@ -292,23 +393,37 @@ export default function ScoreboardEdit() {
             try {
                 await axios.post(`${API_URL}/api/scoreboard/reset-votes`, { unidade: currentUnit });
                 toast.success("Zerado!");
-            } catch (error) { toast.error("Erro ao zerar."); }
+            } catch (error) { 
+                toast.error("Erro ao zerar."); 
+            }
         }, true);
     };
 
     const loadPresets = async () => {
-        try { const res = await axios.get(`${API_URL}/api/scoreboard/presets/${currentUnit}`); setPresets(res.data); } 
-        catch (e) { console.error("Erro presets:", e); }
+        try { 
+            const res = await axios.get(`${API_URL}/api/scoreboard/presets/${currentUnit}`); 
+            setPresets(res.data); 
+        } catch (e) { 
+            console.error("Erro presets:", e); 
+        }
     };
 
     const handleSavePreset = async () => {
         if (!presetName) return toast.warning("Dê um nome.");
         try {
             await axios.post(`${API_URL}/api/scoreboard/presets`, { 
-                unidade: currentUnit, titulo_preset: presetName, titulo_placar: config.titulo, layout: config.layout, opcoes: config.opcoes 
+                unidade: currentUnit, 
+                titulo_preset: presetName, 
+                titulo_placar: config.titulo, 
+                layout: config.layout, 
+                opcoes: config.opcoes 
             });
-            toast.success("Salvo!"); setPresetName(''); loadPresets();
-        } catch (e) { toast.error("Erro ao salvar predefinição."); }
+            toast.success("Salvo!"); 
+            setPresetName(''); 
+            loadPresets();
+        } catch (e) { 
+            toast.error("Erro ao salvar predefinição."); 
+        }
     };
 
     const requestApplyPreset = (preset) => {
@@ -331,16 +446,31 @@ export default function ScoreboardEdit() {
         openConfirm("Excluir Predefinição?", "Essa ação não pode ser desfeita.", async () => {
             try {
                 await axios.delete(`${API_URL}/api/scoreboard/presets/${id}`);
-                loadPresets(); toast.success("Excluído.");
-            } catch (e) { toast.error("Erro ao excluir."); }
+                loadPresets(); 
+                toast.success("Excluído.");
+            } catch (e) { 
+                toast.error("Erro ao excluir."); 
+            }
         }, true);
     };
 
-    if (loading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div></div>;
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gradient-warm flex">
-            <Sidebar activePage="scoreboard-maintenance" headerTitle="Manutenção Placar" headerIcon="settings_remote" group="maintenance" unit={currentUnit} />
+            <Sidebar 
+                activePage="scoreboard-maintenance" 
+                headerTitle="Manutenção Placar" 
+                headerIcon="settings_remote" 
+                group="maintenance" 
+                unit={currentUnit} 
+            />
 
             <main className="ml-64 flex-1 p-8 h-screen overflow-hidden flex flex-col">
                 <div className="flex justify-between items-center mb-6 flex-shrink-0">
@@ -348,7 +478,10 @@ export default function ScoreboardEdit() {
                         <h1 className="text-3xl font-bold text-white mb-1">Manutenção de Placar</h1>
                         <p className="text-white/50 text-sm">Configure o jogo de votação em tempo real</p>
                     </div>
-                    <button onClick={() => { setShowPresetsModal(true); loadPresets(); }} className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10">
+                    <button 
+                        onClick={() => { setShowPresetsModal(true); loadPresets(); }} 
+                        className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10"
+                    >
                         <span className="material-symbols-outlined text-lg">bookmarks</span> PREDEFINIÇÕES
                     </button>
                 </div>
@@ -357,18 +490,41 @@ export default function ScoreboardEdit() {
                     <div className="flex flex-col md:flex-row gap-4 items-end">
                         <div className="flex-1 w-full">
                             <label className="block text-[10px] text-white/40 uppercase font-bold mb-1 ml-1">Título do Placar</label>
-                            <input type="text" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-bold text-lg" placeholder="Ex: Quem é o melhor DJ?" value={config.titulo} onChange={(e) => setConfig({...config, titulo: e.target.value})} />
+                            <input 
+                                type="text" 
+                                className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-bold text-lg" 
+                                placeholder="Ex: Quem é o melhor DJ?" 
+                                value={config.titulo} 
+                                onChange={(e) => setConfig({...config, titulo: e.target.value})} 
+                            />
                         </div>
                         <div className="w-full md:w-auto">
                             <label className="block text-[10px] text-white/40 uppercase font-bold mb-1 ml-1">Layout</label>
                             <div className="flex bg-black/30 p-1 rounded-lg border border-white/10 items-center">
-                                <button onClick={() => setConfig({...config, layout: 'landscape'})} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${config.layout === 'landscape' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}><span className="material-symbols-outlined text-base">view_column</span> PAISAGEM</button>
-                                <button onClick={() => setConfig({...config, layout: 'portrait'})} className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${config.layout === 'portrait' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}><span className="material-symbols-outlined text-base">view_stream</span> RETRATO</button>
+                                <button 
+                                    onClick={() => setConfig({...config, layout: 'landscape'})} 
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${config.layout === 'landscape' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                                >
+                                    <span className="material-symbols-outlined text-base">view_column</span> PAISAGEM
+                                </button>
+                                <button 
+                                    onClick={() => setConfig({...config, layout: 'portrait'})} 
+                                    className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${config.layout === 'portrait' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+                                >
+                                    <span className="material-symbols-outlined text-base">view_stream</span> RETRATO
+                                </button>
                             </div>
                         </div>
                         <div className="w-full md:w-24">
                             <label className="block text-[10px] text-white/40 uppercase font-bold mb-1 ml-1">Opções</label>
-                            <input type="number" min="1" max="10" className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-bold text-lg text-center" value={optionCount} onChange={handleCountChange} />
+                            <input 
+                                type="number" 
+                                min="1" 
+                                max="10" 
+                                className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-bold text-lg text-center" 
+                                value={optionCount} 
+                                onChange={handleCountChange} 
+                            />
                         </div>
                     </div>
                 </div>
@@ -394,16 +550,42 @@ export default function ScoreboardEdit() {
 
                 <div className="flex justify-between items-center pt-4 border-t border-white/10 mt-auto flex-shrink-0">
                     <div className="flex gap-3">
-                        <button onClick={handleTestVote} className="bg-white/5 hover:bg-white/10 text-white px-4 py-3 rounded-xl text-sm font-bold border border-white/10 flex items-center gap-2"><span className="material-symbols-outlined text-yellow-400">science</span> TESTAR VOTO</button>
-                        <button onClick={requestResetVotes} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm font-bold border border-red-500/20 flex items-center gap-2"><span className="material-symbols-outlined">restart_alt</span> ZERAR</button>
+                        <button 
+                            onClick={handleTestVote} 
+                            className="bg-white/5 hover:bg-white/10 text-white px-4 py-3 rounded-xl text-sm font-bold border border-white/10 flex items-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-yellow-400">science</span> TESTAR VOTO
+                        </button>
+                        <button 
+                            onClick={requestResetVotes} 
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm font-bold border border-red-500/20 flex items-center gap-2"
+                        >
+                            <span className="material-symbols-outlined">restart_alt</span> ZERAR
+                        </button>
                     </div>
                     
                     <div className="flex gap-4 items-center">
                         <div className="flex gap-2 items-center bg-black/30 p-1 rounded-xl border border-white/5 pr-1 pl-3">
-                            <input type="text" placeholder="Nome para salvar..." className="bg-transparent border-none text-white text-sm outline-none w-40 placeholder-white/30" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
-                            <button onClick={handleSavePreset} className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors"><span className="material-symbols-outlined text-sm">save</span></button>
+                            <input 
+                                type="text" 
+                                placeholder="Nome para salvar..." 
+                                className="bg-transparent border-none text-white text-sm outline-none w-40 placeholder-white/30" 
+                                value={presetName} 
+                                onChange={(e) => setPresetName(e.target.value)} 
+                            />
+                            <button 
+                                onClick={handleSavePreset} 
+                                className="bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors"
+                            >
+                                <span className="material-symbols-outlined text-sm">save</span>
+                            </button>
                         </div>
-                        <button onClick={handleSaveActive} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-3 shadow-lg shadow-blue-900/30 transition-all hover:scale-[1.02]"><span className="material-symbols-outlined">rocket_launch</span> ATIVAR PLACAR</button>
+                        <button 
+                            onClick={handleSaveActive} 
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-3 shadow-lg shadow-blue-900/30 transition-all hover:scale-[1.02]"
+                        >
+                            <span className="material-symbols-outlined">rocket_launch</span> ATIVAR PLACAR
+                        </button>
                     </div>
                 </div>
             </main>
@@ -412,8 +594,15 @@ export default function ScoreboardEdit() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
                     <div className="bg-[#121212] border border-white/10 rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col h-[70vh]">
                         <div className="flex justify-between items-center p-6 border-b border-white/10 bg-[#1a1a1a] rounded-t-3xl">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-3"><span className="material-symbols-outlined text-blue-500">bookmarks</span> Predefinições Salvas</h2>
-                            <button onClick={() => setShowPresetsModal(false)} className="text-white/50 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"><span className="material-symbols-outlined">close</span></button>
+                            <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                                <span className="material-symbols-outlined text-blue-500">bookmarks</span> Predefinições Salvas
+                            </h2>
+                            <button 
+                                onClick={() => setShowPresetsModal(false)} 
+                                className="text-white/50 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"
+                            >
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-black/20">
                             {presets.length === 0 ? (
@@ -424,7 +613,10 @@ export default function ScoreboardEdit() {
                             ) : (
                                 <div className="space-y-3">
                                     {presets.map(preset => (
-                                        <div key={preset.id} className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 hover:border-blue-500/50 transition-colors flex items-center gap-4 group">
+                                        <div 
+                                            key={preset.id} 
+                                            className="bg-[#1a1a1a] p-4 rounded-xl border border-white/5 hover:border-blue-500/50 transition-colors flex items-center gap-4 group"
+                                        >
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="text-white font-bold truncate">{preset.titulo_preset}</h3>
                                                 <p className="text-white/40 text-[10px] uppercase tracking-wider font-bold mt-1 truncate">
@@ -437,7 +629,11 @@ export default function ScoreboardEdit() {
                                                     const tipo = opt.game_tipo || opt.tipo;
                                                     const valor = opt.game_valor || opt.valor;
                                                     return (
-                                                        <div key={i} className="w-8 h-8 flex-shrink-0 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-sm relative" style={{borderColor: opt.cor}}>
+                                                        <div 
+                                                            key={i} 
+                                                            className="w-8 h-8 flex-shrink-0 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center text-sm relative" 
+                                                            style={{borderColor: opt.cor}}
+                                                        >
                                                             {tipo === 'emoji' ? valor : <span className="material-symbols-outlined text-[10px] text-blue-400">image</span>}
                                                         </div>
                                                     );
@@ -445,8 +641,18 @@ export default function ScoreboardEdit() {
                                             </div>
 
                                             <div className="flex gap-2 pl-4 border-l border-white/5 shrink-0">
-                                                <button onClick={() => requestApplyPreset(preset)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold text-[10px] shadow-lg tracking-wider flex items-center gap-1"><span className="material-symbols-outlined text-sm">upload</span> CARREGAR</button>
-                                                <button onClick={() => requestDeletePreset(preset.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-1.5 rounded-lg border border-red-500/20 flex items-center justify-center"><span className="material-symbols-outlined text-sm">delete</span></button>
+                                                <button 
+                                                    onClick={() => requestApplyPreset(preset)} 
+                                                    className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-bold text-[10px] shadow-lg tracking-wider flex items-center gap-1"
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">upload</span> CARREGAR
+                                                </button>
+                                                <button 
+                                                    onClick={() => requestDeletePreset(preset.id)} 
+                                                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-1.5 rounded-lg border border-red-500/20 flex items-center justify-center"
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
@@ -461,13 +667,25 @@ export default function ScoreboardEdit() {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
                     <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
                         <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${confirmModal.isDanger ? 'bg-red-600/20' : 'bg-blue-600/20'}`}>
-                            <span className={`material-symbols-outlined text-4xl ${confirmModal.isDanger ? 'text-red-500' : 'text-blue-500'}`}>{confirmModal.isDanger ? 'warning' : 'info'}</span>
+                            <span className={`material-symbols-outlined text-4xl ${confirmModal.isDanger ? 'text-red-500' : 'text-blue-500'}`}>
+                                {confirmModal.isDanger ? 'warning' : 'info'}
+                            </span>
                         </div>
                         <h2 className="text-xl font-bold text-white mb-2">{confirmModal.title}</h2>
                         <p className="text-white/60 mb-6 text-sm">{confirmModal.message}</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setConfirmModal(prev => ({...prev, isOpen: false}))} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold text-sm">CANCELAR</button>
-                            <button onClick={confirmModal.onConfirm} className={`flex-1 py-3 rounded-xl font-bold text-sm shadow-lg ${confirmModal.isDanger ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>CONFIRMAR</button>
+                            <button 
+                                onClick={() => setConfirmModal(prev => ({...prev, isOpen: false}))} 
+                                className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold text-sm"
+                            >
+                                CANCELAR
+                            </button>
+                            <button 
+                                onClick={confirmModal.onConfirm} 
+                                className={`flex-1 py-3 rounded-xl font-bold text-sm shadow-lg ${confirmModal.isDanger ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                            >
+                                CONFIRMAR
+                            </button>
                         </div>
                     </div>
                 </div>

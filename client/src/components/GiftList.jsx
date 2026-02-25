@@ -4,414 +4,556 @@ import axios from 'axios';
 import LogoDedalos from '../assets/SVG/logoDedalos';
 
 const API_CONFIG = {
-    sp: {
-        baseUrl: import.meta.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/",
-        couponsUrl: (import.meta.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/") + "api/cupons/",
-        token: import.meta.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552",
-        local: "SP"
-    },
-    bh: {
-        baseUrl: import.meta.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/",
-        couponsUrl: (import.meta.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/") + "api/cupons/",
-        token: import.meta.env.VITE_API_TOKEN_BH || "919d97d7df39ecbd0036631caba657221acab99d",
-        local: "BH"
-    }
+  sp: {
+    baseUrl: import.meta.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/",
+    couponsUrl: (import.meta.env.VITE_API_URL_SP || "https://dedalosadm2-3dab78314381.herokuapp.com/") + "api/cupons/",
+    token: import.meta.env.VITE_API_TOKEN_SP || "7a9e64071564f6fee8d96cd209ed3a4e86801552",
+    local: "SP"
+  },
+  bh: {
+    baseUrl: import.meta.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/",
+    couponsUrl: (import.meta.env.VITE_API_URL_BH || "https://dedalosadm2bh-09d55dca461e.herokuapp.com/") + "api/cupons/",
+    token: import.meta.env.VITE_API_TOKEN_BH || "919d97d7df39ecbd0036631caba657221acab99d",
+    local: "BH"
+  }
 };
 
-// EXPORTANDO PARA USO NO CONFIGURADOR DO GOLDEN THURSDAY
 export const PRIZE_CATEGORIES = [
-    { id: 'rodada_dupla', label: 'Rodada Dupla', icon: 'local_bar' },
-    { id: 'uma_vida', label: 'Uma Vida', icon: 'confirmation_number' },
-    { id: 'drink_especial', label: 'Drink Especial', icon: 'wine_bar' },
-    { id: 'premio_surpresa', label: 'Prêmio Surpresa', icon: 'redeem' },
-    { id: 'consumo', label: 'R$ Consumo', icon: 'attach_money' },
+  { id: 'rodada_dupla', label: 'Rodada Dupla', icon: 'local_bar' },
+  { id: 'uma_vida', label: 'Uma Vida', icon: 'confirmation_number' },
+  { id: 'drink_especial', label: 'Drink Especial', icon: 'wine_bar' },
+  { id: 'premio_surpresa', label: 'Prêmio Surpresa', icon: 'redeem' },
+  { id: 'consumo', label: 'R$ Consumo', icon: 'attach_money' },
 ];
 
-export const SURPRISE_OPTIONS = ['Halls', 'RedBull', 'Salgadinho', 'Caipinossa', 'Double Tequila'];
+export const SURPRISE_OPTIONS = [
+  'Halls', 
+  'RedBull', 
+  'Salgadinho', 
+  'Caipinossa', 
+  'Double Tequila'
+];
+
 const SORTEADOR_QUINTA_PREMIADA = 11;
 
-export default function GiftList({ lockerNumber, onCancel, onConfirm, unit = 'sp', preselectedPrize = null, preselectedDetails = null, clientData = null }) {
-    const [selectedCategory, setSelectedCategory] = useState(null);
-    const [umaVidaTab, setUmaVidaTab] = useState('com_cadastro'); // Padrão agora é Com Cadastro (VIP)
-    const [loadingName, setLoadingName] = useState(false);
-    const [generatingCoupon, setGeneratingCoupon] = useState(false);
-    const [generatedCouponData, setGeneratedCouponData] = useState(null);
+export default function GiftList({ 
+  lockerNumber, 
+  onCancel, 
+  onConfirm, 
+  unit = 'sp', 
+  preselectedPrize = null, 
+  preselectedDetails = null, 
+  clientData = null 
+}) {
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [umaVidaTab, setUmaVidaTab] = useState('com_cadastro');
+  const [loadingName, setLoadingName] = useState(false);
+  const [generatingCoupon, setGeneratingCoupon] = useState(false);
+  const [generatedCouponData, setGeneratedCouponData] = useState(null);
 
-    const [formData, setFormData] = useState({
-        pulseira: '',
-        nomeCliente: '',
-        bebida: '',
-        recusado: false,
-        diaPreferencia: new Date().toISOString().split('T')[0], // Data de hoje como padrão
-        email: '',
-        surpresaEscolhida: '',
-        cupomGeradoLink: ''
-    });
+  const [formData, setFormData] = useState({
+    pulseira: '',
+    nomeCliente: '',
+    bebida: '',
+    recusado: false,
+    diaPreferencia: new Date().toISOString().split('T')[0],
+    email: '',
+    surpresaEscolhida: '',
+    cupomGeradoLink: ''
+  });
 
-    const currentConfig = API_CONFIG[unit.toLowerCase()] || API_CONFIG.sp;
+  const currentConfig = API_CONFIG[unit.toLowerCase()] || API_CONFIG.sp;
 
-    // ===================================================================================
-    // AUTO-PREENCHIMENTO E BLOQUEIO DE CAMPOS
-    // ===================================================================================
-    useEffect(() => {
-        // 1. Define o Prêmio vindo da Configuração do Card
-        if (preselectedPrize) {
-            setSelectedCategory(preselectedPrize);
-            
-            // Preenche detalhes extras se houver (Ex: Sabor do Halls configurado)
-            if (preselectedDetails?.info) {
-                if (preselectedPrize === 'premio_surpresa') {
-                    setFormData(prev => ({ ...prev, surpresaEscolhida: preselectedDetails.info }));
-                }
-                if (preselectedPrize === 'drink_especial') {
-                    setFormData(prev => ({ ...prev, bebida: preselectedDetails.info }));
-                }
-            }
+  useEffect(() => {
+    if (preselectedPrize) {
+      setSelectedCategory(preselectedPrize);
+      
+      if (preselectedDetails?.info) {
+        if (preselectedPrize === 'premio_surpresa') {
+          setFormData(prev => ({ ...prev, surpresaEscolhida: preselectedDetails.info }));
         }
-
-        // 2. Define o Cliente vindo do Polling (API)
-        if (clientData) {
-            // Tenta extrair o número da pulseira de vários campos possíveis da API
-            const pulseiraNum = clientData.id || clientData.id_locker || clientData.pulseira || '';
-            const nomeCli = clientData.nome || clientData.cliente || "Cliente Identificado";
-            
-            setFormData(prev => ({
-                ...prev,
-                pulseira: pulseiraNum,
-                nomeCliente: nomeCli
-            }));
+        
+        if (preselectedPrize === 'drink_especial') {
+          setFormData(prev => ({ ...prev, bebida: preselectedDetails.info }));
         }
-    }, [preselectedPrize, preselectedDetails, clientData]);
+      }
+    }
 
-    const fetchNomeCliente = async (pulseira) => {
-        // Se já temos dados automáticos, não faz busca manual
-        if (!pulseira || clientData) return;
+    if (clientData) {
+      const pulseiraNum = clientData.id || clientData.id_locker || clientData.pulseira || '';
+      const nomeCli = clientData.nome || clientData.cliente || "Cliente Identificado";
+      
+      setFormData(prev => ({
+        ...prev,
+        pulseira: pulseiraNum,
+        nomeCliente: nomeCli
+      }));
+    }
+  }, [preselectedPrize, preselectedDetails, clientData]);
 
-        setLoadingName(true);
-        setFormData(prev => ({ ...prev, nomeCliente: "Buscando..." }));
+  const fetchNomeCliente = async (pulseira) => {
+    if (!pulseira || clientData) return;
 
-        try {
-            const baseUrl = currentConfig.baseUrl.endsWith('/') ? currentConfig.baseUrl : `${currentConfig.baseUrl}/`;
-            const endpoint = `${baseUrl}api/entradasOne/${pulseira}/`;
+    setLoadingName(true);
+    setFormData(prev => ({ ...prev, nomeCliente: "Buscando..." }));
 
-            const response = await axios.get(endpoint, {
-                headers: {
-                    "Authorization": `Token ${currentConfig.token}`,
-                    "Content-Type": "application/json"
-                }
-            });
+    try {
+      const baseUrl = currentConfig.baseUrl.endsWith('/') ? currentConfig.baseUrl : `${currentConfig.baseUrl}/`;
+      const endpoint = `${baseUrl}api/entradasOne/${pulseira}/`;
 
-            const data = response.data;
-            const nomeEncontrado = data.nome || data.name || data.nome_cliente || data.cliente || "Nome não identificado";
-            setFormData(prev => ({ ...prev, nomeCliente: nomeEncontrado }));
-
-        } catch (error) {
-            console.error("Erro ao buscar cliente:", error);
-            if (error.response && error.response.status === 404) {
-                setFormData(prev => ({ ...prev, nomeCliente: "Não encontrado" }));
-                toast.warning("Pulseira não encontrada.");
-            } else {
-                setFormData(prev => ({ ...prev, nomeCliente: "Erro na busca" }));
-            }
-        } finally {
-            setLoadingName(false);
+      const response = await axios.get(endpoint, {
+        headers: {
+          "Authorization": `Token ${currentConfig.token}`,
+          "Content-Type": "application/json"
         }
+      });
+
+      const data = response.data;
+      const nomeEncontrado = data.nome || data.name || data.nome_cliente || data.cliente || "Nome não identificado";
+      
+      setFormData(prev => ({ ...prev, nomeCliente: nomeEncontrado }));
+
+    } catch (error) {
+      console.error("Erro ao buscar cliente:", error);
+      
+      if (error.response && error.response.status === 404) {
+        setFormData(prev => ({ ...prev, nomeCliente: "Não encontrado" }));
+        toast.warning("Pulseira não encontrada.");
+      } else {
+        setFormData(prev => ({ ...prev, nomeCliente: "Erro na busca" }));
+      }
+    } finally {
+      setLoadingName(false);
+    }
+  };
+
+  const handleGerarCupom = async () => {
+    if (!formData.diaPreferencia) {
+      return toast.warning("Selecione a Data de Preferência.");
+    }
+    
+    if (!formData.nomeCliente || formData.nomeCliente === "Buscando..." || formData.nomeCliente === "Não encontrado") {
+      return toast.warning("É necessário identificar o cliente pela pulseira primeiro.");
+    }
+
+    setGeneratingCoupon(true);
+    const dataFormatada = `${formData.diaPreferencia}T00:00:00`;
+
+    const payload = {
+      "tipoCupom": SORTEADOR_QUINTA_PREMIADA,
+      "nome": formData.nomeCliente,
+      "idUser": 1,
+      "local": currentConfig.local,
+      "tipo": "Quinta Premiada",
+      "descontos": "Cupom Premiado",
+      "regra1": "Uso único", 
+      "desconto1": "0.00",
+      "regra2": "das 00:00 às 23:59", 
+      "desconto2": "",
+      "regra3": "Cupom intransferível", 
+      "desconto3": "",
+      "regra4": "", 
+      "desconto4": "",
+      "regra5": "", 
+      "desconto5": "",
+      "regra6": null, 
+      "desconto6": null,
+      "agendado": dataFormatada,
+      "dia": [1, 2, 3, 4, 5, 6, 7],
+      "ativo": true, 
+      "novo": true,
+      "codigo": "", 
+      "nome_amigo": "", 
+      "nome_amigo2": "",
+      "valor": 0, 
+      "homenageado": false, 
+      "quarta_top": false,
+      "mao_amiga": false, 
+      "signo": false
     };
 
-    const handleGerarCupom = async () => {
+    try {
+      const response = await axios.post(currentConfig.couponsUrl, payload, {
+        headers: {
+          "Authorization": `Token ${currentConfig.token}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (response.status === 201 || response.status === 200) {
+        const link = `https://dedalosbar.com.br/vips/${response.data.id}`;
+        
+        setFormData(prev => ({ ...prev, cupomGeradoLink: link }));
+        setGeneratedCouponData({
+          id: response.data.id,
+          nome: formData.nomeCliente,
+          data: formData.diaPreferencia,
+          link: link
+        });
+
+        toast.success("Cupom Quinta Premiada gerado!");
+      }
+    } catch (error) {
+      console.error("Erro ao gerar cupom:", error);
+      const msgErro = error.response?.data?.detail || "Falha ao gerar cupom.";
+      toast.error(msgErro);
+    } finally {
+      setGeneratingCoupon(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!selectedCategory) return;
+    
+    let prizeLabel = PRIZE_CATEGORIES.find(c => c.id === selectedCategory)?.label || selectedCategory;
+    let detailsString = '';
+
+    switch (selectedCategory) {
+      case 'rodada_dupla':
+        if (formData.recusado) {
+          detailsString = `Recusado pelo cliente ${formData.nomeCliente || '(Sem Nome)'} (Pulseira: ${formData.pulseira})`;
+        } else {
+          if (!formData.bebida) return toast.warning("Informe a bebida escolhida.");
+          detailsString = `Bebida: ${formData.bebida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
+        }
+        break;
+
+      case 'uma_vida':
         if (!formData.diaPreferencia) return toast.warning("Selecione a Data de Preferência.");
-        if (!formData.nomeCliente || formData.nomeCliente === "Buscando..." || formData.nomeCliente === "Não encontrado") {
-            return toast.warning("É necessário identificar o cliente pela pulseira primeiro.");
+        
+        const dataPtBr = new Date(formData.diaPreferencia).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+
+        if (umaVidaTab === 'sem_cadastro') {
+          if (!formData.nomeCliente) return toast.warning("Preencha o nome.");
+          detailsString = `Uma Vida (Sem Cadastro) | Nome: ${formData.nomeCliente} | Data: ${dataPtBr} | Email: ${formData.email}`;
+        } else {
+          if (!generatedCouponData) {
+            if (!window.confirm("O cupom VIP ainda não foi gerado. Deseja salvar apenas o registro?")) return;
+            detailsString = `Uma Vida (Pendente) | Cliente: ${formData.nomeCliente} | Data: ${dataPtBr} | (Cupom não gerado)`;
+          } else {
+            detailsString = `Uma Vida (VIP Gerado) | Cliente: ${formData.nomeCliente} | Data: ${dataPtBr} | Link: ${generatedCouponData.link}`;
+          }
         }
+        break;
 
-        setGeneratingCoupon(true);
-        const dataFormatada = `${formData.diaPreferencia}T00:00:00`;
+      case 'drink_especial':
+        if (!formData.bebida) return toast.warning("Informe o drink.");
+        detailsString = `Drink: ${formData.bebida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
+        break;
 
-        const payload = {
-            "tipoCupom": SORTEADOR_QUINTA_PREMIADA,
-            "nome": formData.nomeCliente,
-            "idUser": 1,
-            "local": currentConfig.local,
-            "tipo": "Quinta Premiada",
-            "descontos": "Cupom Premiado",
-            "regra1": "Uso único", "desconto1": "0.00",
-            "regra2": "das 00:00 às 23:59", "desconto2": "", // Simplificado
-            "regra3": "Cupom intransferível", "desconto3": "",
-            "regra4": "", "desconto4": "",
-            "regra5": "", "desconto5": "",
-            "regra6": null, "desconto6": null,
-            "agendado": dataFormatada,
-            "dia": [1, 2, 3, 4, 5, 6, 7],
-            "ativo": true, "novo": true,
-            "codigo": "", "nome_amigo": "", "nome_amigo2": "",
-            "valor": 0, "homenageado": false, "quarta_top": false,
-            "mao_amiga": false, "signo": false
-        };
+      case 'premio_surpresa':
+        if (!formData.surpresaEscolhida) return toast.warning("Selecione o prêmio.");
+        prizeLabel = `Surpresa: ${formData.surpresaEscolhida}`;
+        detailsString = `Ganhou: ${formData.surpresaEscolhida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
+        break;
 
-        try {
-            const response = await axios.post(currentConfig.couponsUrl, payload, {
-                headers: {
-                    "Authorization": `Token ${currentConfig.token}`,
-                    "Content-Type": "application/json"
-                }
-            });
+      case 'consumo':
+        detailsString = `R$50 Consumo | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
+        break;
 
-            if (response.status === 201 || response.status === 200) {
-                const link = `https://dedalosbar.com.br/vips/${response.data.id}`;
-                setFormData(prev => ({ ...prev, cupomGeradoLink: link }));
+      default: 
+        return;
+    }
 
-                setGeneratedCouponData({
-                    id: response.data.id,
-                    nome: formData.nomeCliente,
-                    data: formData.diaPreferencia,
-                    link: link
-                });
+    onConfirm(prizeLabel, detailsString);
+  };
 
-                toast.success("Cupom Quinta Premiada gerado!");
-            }
-        } catch (error) {
-            console.error("Erro ao gerar cupom:", error);
-            const msgErro = error.response?.data?.detail || "Falha ao gerar cupom.";
-            toast.error(msgErro);
-        } finally {
-            setGeneratingCoupon(false);
-        }
-    };
+  const resetForm = () => {
+    setSelectedCategory(null);
+    setGeneratedCouponData(null);
+    setFormData({ 
+      pulseira: '', 
+      nomeCliente: '', 
+      bebida: '', 
+      recusado: false, 
+      diaPreferencia: new Date().toISOString().split('T')[0], 
+      email: '', 
+      surpresaEscolhida: '', 
+      cupomGeradoLink: '' 
+    });
+  };
 
-    const handleSave = () => {
-        if (!selectedCategory) return;
-        let prizeLabel = PRIZE_CATEGORIES.find(c => c.id === selectedCategory)?.label || selectedCategory;
-        let detailsString = '';
-
-        switch (selectedCategory) {
-            case 'rodada_dupla':
-                if (formData.recusado) {
-                    detailsString = `Recusado pelo cliente ${formData.nomeCliente || '(Sem Nome)'} (Pulseira: ${formData.pulseira})`;
-                } else {
-                    if (!formData.bebida) return toast.warning("Informe a bebida escolhida.");
-                    detailsString = `Bebida: ${formData.bebida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
-                }
-                break;
-            case 'uma_vida':
-                if (!formData.diaPreferencia) return toast.warning("Selecione a Data de Preferência.");
-                const dataPtBr = new Date(formData.diaPreferencia).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
-
-                if (umaVidaTab === 'sem_cadastro') {
-                    if (!formData.nomeCliente) return toast.warning("Preencha o nome.");
-                    detailsString = `Uma Vida (Sem Cadastro) | Nome: ${formData.nomeCliente} | Data: ${dataPtBr} | Email: ${formData.email}`;
-                } else {
-                    if (!generatedCouponData) {
-                        if (!window.confirm("O cupom VIP ainda não foi gerado. Deseja salvar apenas o registro?")) return;
-                        detailsString = `Uma Vida (Pendente) | Cliente: ${formData.nomeCliente} | Data: ${dataPtBr} | (Cupom não gerado)`;
-                    } else {
-                        detailsString = `Uma Vida (VIP Gerado) | Cliente: ${formData.nomeCliente} | Data: ${dataPtBr} | Link: ${generatedCouponData.link}`;
-                    }
-                }
-                break;
-            case 'drink_especial':
-                if (!formData.bebida) return toast.warning("Informe o drink.");
-                detailsString = `Drink: ${formData.bebida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
-                break;
-            case 'premio_surpresa':
-                if (!formData.surpresaEscolhida) return toast.warning("Selecione o prêmio.");
-                prizeLabel = `Surpresa: ${formData.surpresaEscolhida}`;
-                detailsString = `Ganhou: ${formData.surpresaEscolhida} | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
-                break;
-            case 'consumo':
-                detailsString = `R$50 Consumo | Cliente: ${formData.nomeCliente} (Pulseira: ${formData.pulseira})`;
-                break;
-            default: return;
-        }
-
-        onConfirm(prizeLabel, detailsString);
-    };
-
-    const resetForm = () => {
-        setSelectedCategory(null);
-        setGeneratedCouponData(null);
-        setFormData({ pulseira: '', nomeCliente: '', bebida: '', recusado: false, diaPreferencia: new Date().toISOString().split('T')[0], email: '', surpresaEscolhida: '', cupomGeradoLink: '' });
-    };
-
-    return (
-        <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col max-h-[90vh] animate-fade-in">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
-                <div>
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                        <span className="bg-green-600 text-white text-sm px-3 py-1 rounded-full">Ocupado</span>
-                        Armário {lockerNumber}
-                    </h2>
-                    <p className="text-text-muted text-sm mt-1">
-                        {preselectedPrize ? "Confira os dados para confirmar o resgate." : "Selecione o prêmio para liberar o resgate."}
-                    </p>
-                </div>
-                {/* Só permite alterar categoria se NÃO veio pré-selecionado do card configurado */}
-                {!preselectedPrize && selectedCategory && (
-                    <button onClick={resetForm} className="text-sm text-blue-400 hover:text-blue-300 font-bold">
-                        ALTERAR CATEGORIA
-                    </button>
-                )}
-            </div>
-
-            {!selectedCategory ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {PRIZE_CATEGORIES.map(cat => (
-                        <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className="bg-white/5 hover:bg-blue-600 hover:scale-105 transition-all p-6 rounded-2xl border border-white/10 flex flex-col items-center gap-3 group">
-                            <span className="material-symbols-outlined text-4xl text-white/70 group-hover:text-white">{cat.icon}</span>
-                            <span className="text-white font-bold uppercase tracking-wide text-sm">{cat.label}</span>
-                        </button>
-                    ))}
-                </div>
-            ) : (
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    {/* DADOS DO CLIENTE - READ ONLY SE VIER AUTOMÁTICO */}
-                    <div className="space-y-4 mb-4">
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Pulseira / ID</label>
-                                <input
-                                    type="text"
-                                    className={`w-full border rounded-lg p-3 text-white outline-none font-mono ${clientData ? 'bg-white/5 border-white/5 text-white/50 cursor-not-allowed' : 'bg-black/30 border-white/20 focus:border-blue-500'}`}
-                                    value={formData.pulseira}
-                                    onChange={(e) => setFormData({ ...formData, pulseira: e.target.value })}
-                                    onBlur={(e) => fetchNomeCliente(e.target.value)}
-                                    placeholder="Nº"
-                                    disabled={formData.recusado || loadingName || !!clientData} // Trava se vier do sistema
-                                />
-                            </div>
-                            <div className="flex-[2]">
-                                <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Nome do Cliente</label>
-                                <input 
-                                    type="text" 
-                                    className={`w-full border rounded-lg p-3 text-white outline-none ${clientData ? 'bg-white/5 border-white/5 text-white/50 cursor-not-allowed' : 'bg-black/30 border-white/20 cursor-not-allowed'}`}
-                                    value={loadingName ? "Buscando..." : formData.nomeCliente} 
-                                    readOnly 
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {selectedCategory === 'rodada_dupla' && (
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 py-2">
-                                <input type="checkbox" id="recusado" className="w-5 h-5 rounded border-white/20 bg-black/30 text-red-600 focus:ring-0" checked={formData.recusado} onChange={(e) => setFormData({ ...formData, recusado: e.target.checked })} />
-                                <label htmlFor="recusado" className="text-white font-bold cursor-pointer select-none">PRÊMIO RECUSADO PELO CLIENTE</label>
-                            </div>
-                            {!formData.recusado && (
-                                <div>
-                                    <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Bebida Escolhida</label>
-                                    <input type="text" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" placeholder="Ex: Gin Tônica" value={formData.bebida} onChange={(e) => setFormData({ ...formData, bebida: e.target.value })} />
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {selectedCategory === 'uma_vida' && (
-                        <div>
-                            <div className="flex bg-black/30 p-1 rounded-lg mb-4">
-                                <button onClick={() => setUmaVidaTab('sem_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'sem_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>SEM CADASTRO</button>
-                                <button onClick={() => setUmaVidaTab('com_cadastro')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'com_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}>GERAR CUPOM VIP</button>
-                            </div>
-
-                            {umaVidaTab === 'sem_cadastro' ? (
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Nome Completo</label>
-                                        <input type="text" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" value={formData.nomeCliente} onChange={(e) => setFormData({ ...formData, nomeCliente: e.target.value })} />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Data de Preferência</label>
-                                            <input type="date" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" value={formData.diaPreferencia} onChange={(e) => setFormData({ ...formData, diaPreferencia: e.target.value })} />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Email</label>
-                                            <input type="email" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    {generatedCouponData ? (
-                                        <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-black border border-yellow-600/50 rounded-2xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] text-center">
-                                            <div className="w-12 h-1 bg-yellow-600 rounded-full mb-2 mx-auto"></div>
-                                            <h3 className="text-yellow-500 font-bold tracking-[0.2em] text-sm uppercase">Quinta Premiada</h3>
-                                            <div className="py-2">
-                                                <h2 className="text-4xl font-black text-white tracking-wider font-mono">#{generatedCouponData.id}</h2>
-                                                <p className="text-xs text-yellow-600/70 mt-1 uppercase font-bold">Código VIP Gerado</p>
-                                            </div>
-                                            <div className="w-full border-t border-white/10 my-2"></div>
-                                            <p className="text-white font-bold truncate text-sm">{generatedCouponData.nome}</p>
-                                            <a href={generatedCouponData.link} target="_blank" rel="noopener noreferrer" className="mt-4 block w-full bg-yellow-600 hover:bg-yellow-500 text-black font-black py-3 rounded-lg uppercase tracking-wider text-xs transition-colors shadow-lg shadow-yellow-900/20">
-                                                Abrir Cupom Digital
-                                            </a>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div>
-                                                <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Data do Cupom</label>
-                                                <input
-                                                    type="date"
-                                                    className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                                                    value={formData.diaPreferencia}
-                                                    onChange={(e) => setFormData({ ...formData, diaPreferencia: e.target.value })}
-                                                />
-                                            </div>
-
-                                            <button
-                                                onClick={handleGerarCupom}
-                                                disabled={generatingCoupon || !formData.diaPreferencia}
-                                                className="w-full bg-blue-600/20 border border-blue-500/50 hover:bg-blue-600 text-blue-100 py-3 rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                                            >
-                                                {generatingCoupon ? <span className="material-symbols-outlined animate-spin">refresh</span> : <span className="material-symbols-outlined">confirmation_number</span>}
-                                                GERAR CUPOM QUINTA PREMIADA
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {selectedCategory === 'drink_especial' && (
-                        <div>
-                            <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Drink Escolhido</label>
-                            <input type="text" className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" value={formData.bebida} onChange={(e) => setFormData({ ...formData, bebida: e.target.value })} />
-                        </div>
-                    )}
-
-                    {selectedCategory === 'premio_surpresa' && (
-                        <div>
-                            <label className="block text-xs text-text-muted mb-1 uppercase font-bold">Prêmio Sorteado/Escolhido</label>
-                            <select
-                                className="w-full bg-black border border-white/30 rounded-xl p-3 text-white focus:border-blue-500 outline-none cursor-pointer"
-                                value={formData.surpresaEscolhida}
-                                onChange={(e) => setFormData({ ...formData, surpresaEscolhida: e.target.value })}
-                            >
-                                <option value="" className="bg-black text-gray-400">Selecione...</option>
-                                {SURPRISE_OPTIONS.map(opt => (
-                                    <option key={opt} value={opt} className="bg-black text-white">{opt}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {selectedCategory === 'consumo' && (
-                        <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-6 text-center">
-                            <h3 className="text-2xl font-bold text-green-400">R$ 50,00</h3>
-                            <p className="text-white text-sm mt-1">Crédito em consumo liberado</p>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            <div className="mt-6 pt-4 border-t border-white/10 flex gap-4">
-                <button onClick={onCancel} className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-colors">CANCELAR</button>
-                {selectedCategory && (
-                    <button onClick={handleSave} className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-blue-900/30">
-                        SALVAR RESGATE
-                    </button>
-                )}
-            </div>
+  return (
+    <div className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col max-h-[90vh] animate-fade-in">
+      <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+            <span className="bg-green-600 text-white text-sm px-3 py-1 rounded-full">
+              Ocupado
+            </span>
+            Armário {lockerNumber}
+          </h2>
+          <p className="text-text-muted text-sm mt-1">
+            {preselectedPrize 
+              ? "Confira os dados para confirmar o resgate." 
+              : "Selecione o prêmio para liberar o resgate."}
+          </p>
         </div>
-    );
+        
+        {!preselectedPrize && selectedCategory && (
+          <button 
+            onClick={resetForm} 
+            className="text-sm text-blue-400 hover:text-blue-300 font-bold"
+          >
+            ALTERAR CATEGORIA
+          </button>
+        )}
+      </div>
+
+      {!selectedCategory ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {PRIZE_CATEGORIES.map(cat => (
+            <button 
+              key={cat.id} 
+              onClick={() => setSelectedCategory(cat.id)} 
+              className="bg-white/5 hover:bg-blue-600 hover:scale-105 transition-all p-6 rounded-2xl border border-white/10 flex flex-col items-center gap-3 group"
+            >
+              <span className="material-symbols-outlined text-4xl text-white/70 group-hover:text-white">
+                {cat.icon}
+              </span>
+              <span className="text-white font-bold uppercase tracking-wide text-sm">
+                {cat.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+          <div className="space-y-4 mb-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                  Pulseira / ID
+                </label>
+                <input
+                  type="text"
+                  className={`w-full border rounded-lg p-3 text-white outline-none font-mono ${clientData ? 'bg-white/5 border-white/5 text-white/50 cursor-not-allowed' : 'bg-black/30 border-white/20 focus:border-blue-500'}`}
+                  value={formData.pulseira}
+                  onChange={(e) => setFormData({ ...formData, pulseira: e.target.value })}
+                  onBlur={(e) => fetchNomeCliente(e.target.value)}
+                  placeholder="Nº"
+                  disabled={formData.recusado || loadingName || !!clientData}
+                />
+              </div>
+              <div className="flex-[2]">
+                <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                  Nome do Cliente
+                </label>
+                <input 
+                  type="text" 
+                  className={`w-full border rounded-lg p-3 text-white outline-none ${clientData ? 'bg-white/5 border-white/5 text-white/50 cursor-not-allowed' : 'bg-black/30 border-white/20 cursor-not-allowed'}`}
+                  value={loadingName ? "Buscando..." : formData.nomeCliente} 
+                  readOnly 
+                />
+              </div>
+            </div>
+          </div>
+
+          {selectedCategory === 'rodada_dupla' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 py-2">
+                <input 
+                  type="checkbox" 
+                  id="recusado" 
+                  className="w-5 h-5 rounded border-white/20 bg-black/30 text-red-600 focus:ring-0" 
+                  checked={formData.recusado} 
+                  onChange={(e) => setFormData({ ...formData, recusado: e.target.checked })} 
+                />
+                <label htmlFor="recusado" className="text-white font-bold cursor-pointer select-none">
+                  PRÊMIO RECUSADO PELO CLIENTE
+                </label>
+              </div>
+              {!formData.recusado && (
+                <div>
+                  <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                    Bebida Escolhida
+                  </label>
+                  <input 
+                    type="text" 
+                    className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" 
+                    placeholder="Ex: Gin Tônica" 
+                    value={formData.bebida} 
+                    onChange={(e) => setFormData({ ...formData, bebida: e.target.value })} 
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedCategory === 'uma_vida' && (
+            <div>
+              <div className="flex bg-black/30 p-1 rounded-lg mb-4">
+                <button 
+                  onClick={() => setUmaVidaTab('sem_cadastro')} 
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'sem_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}
+                >
+                  SEM CADASTRO
+                </button>
+                <button 
+                  onClick={() => setUmaVidaTab('com_cadastro')} 
+                  className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${umaVidaTab === 'com_cadastro' ? 'bg-blue-600 text-white shadow' : 'text-text-muted hover:text-white'}`}
+                >
+                  GERAR CUPOM VIP
+                </button>
+              </div>
+
+              {umaVidaTab === 'sem_cadastro' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                      Nome Completo
+                    </label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" 
+                      value={formData.nomeCliente} 
+                      onChange={(e) => setFormData({ ...formData, nomeCliente: e.target.value })} 
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                        Data de Preferência
+                      </label>
+                      <input 
+                        type="date" 
+                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" 
+                        value={formData.diaPreferencia} 
+                        onChange={(e) => setFormData({ ...formData, diaPreferencia: e.target.value })} 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                        Email
+                      </label>
+                      <input 
+                        type="email" 
+                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" 
+                        value={formData.email} 
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {generatedCouponData ? (
+                    <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a1a] to-black border border-yellow-600/50 rounded-2xl p-6 shadow-[0_0_30px_rgba(234,179,8,0.1)] text-center">
+                      <div className="w-12 h-1 bg-yellow-600 rounded-full mb-2 mx-auto"></div>
+                      <h3 className="text-yellow-500 font-bold tracking-[0.2em] text-sm uppercase">
+                        Quinta Premiada
+                      </h3>
+                      <div className="py-2">
+                        <h2 className="text-4xl font-black text-white tracking-wider font-mono">
+                          #{generatedCouponData.id}
+                        </h2>
+                        <p className="text-xs text-yellow-600/70 mt-1 uppercase font-bold">
+                          Código VIP Gerado
+                        </p>
+                      </div>
+                      <div className="w-full border-t border-white/10 my-2"></div>
+                      <p className="text-white font-bold truncate text-sm">
+                        {generatedCouponData.nome}
+                      </p>
+                      <a 
+                        href={generatedCouponData.link} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="mt-4 block w-full bg-yellow-600 hover:bg-yellow-500 text-black font-black py-3 rounded-lg uppercase tracking-wider text-xs transition-colors shadow-lg shadow-yellow-900/20"
+                      >
+                        Abrir Cupom Digital
+                      </a>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                          Data do Cupom
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                          value={formData.diaPreferencia}
+                          onChange={(e) => setFormData({ ...formData, diaPreferencia: e.target.value })}
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleGerarCupom}
+                        disabled={generatingCoupon || !formData.diaPreferencia}
+                        className="w-full bg-blue-600/20 border border-blue-500/50 hover:bg-blue-600 text-blue-100 py-3 rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {generatingCoupon ? (
+                          <span className="material-symbols-outlined animate-spin">refresh</span>
+                        ) : (
+                          <span className="material-symbols-outlined">confirmation_number</span>
+                        )}
+                        GERAR CUPOM QUINTA PREMIADA
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedCategory === 'drink_especial' && (
+            <div>
+              <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                Drink Escolhido
+              </label>
+              <input 
+                type="text" 
+                className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-white focus:border-blue-500 outline-none" 
+                value={formData.bebida} 
+                onChange={(e) => setFormData({ ...formData, bebida: e.target.value })} 
+              />
+            </div>
+          )}
+
+          {selectedCategory === 'premio_surpresa' && (
+            <div>
+              <label className="block text-xs text-text-muted mb-1 uppercase font-bold">
+                Prêmio Sorteado/Escolhido
+              </label>
+              <select
+                className="w-full bg-black border border-white/30 rounded-xl p-3 text-white focus:border-blue-500 outline-none cursor-pointer"
+                value={formData.surpresaEscolhida}
+                onChange={(e) => setFormData({ ...formData, surpresaEscolhida: e.target.value })}
+              >
+                <option value="" className="bg-black text-gray-400">Selecione...</option>
+                {SURPRISE_OPTIONS.map(opt => (
+                  <option key={opt} value={opt} className="bg-black text-white">{opt}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedCategory === 'consumo' && (
+            <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-6 text-center">
+              <h3 className="text-2xl font-bold text-green-400">R$ 50,00</h3>
+              <p className="text-white text-sm mt-1">Crédito em consumo liberado</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-6 pt-4 border-t border-white/10 flex gap-4">
+        <button 
+          onClick={onCancel} 
+          className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-colors"
+        >
+          CANCELAR
+        </button>
+        {selectedCategory && (
+          <button 
+            onClick={handleSave} 
+            className="flex-[2] bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-blue-900/30"
+          >
+            SALVAR RESGATE
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }

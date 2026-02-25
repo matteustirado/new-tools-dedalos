@@ -5,8 +5,8 @@ export default function Home({ unit = 'sp' }) {
   const navigate = useNavigate()
   
   useEffect(() => {
-    localStorage.setItem('dedalos_active_unit', unit);
-  }, [unit]);
+    localStorage.setItem('dedalos_active_unit', unit)
+  }, [unit])
   
   const [expandedSections, setExpandedSections] = useState({ 
     radio: false, 
@@ -47,15 +47,15 @@ export default function Home({ unit = 'sp' }) {
 
   const handleToolClick = (path) => {
     if (path === 'EXTERNAL_WATCH') {
-        window.open('/radio/watch', '_blank');
+        window.open('/radio/watch', '_blank')
     } else if (path) {
       navigate(path)
     }
   }
 
-  const isBH = unit === 'bh';
-  const unitLabel = isBH ? 'BELO HORIZONTE' : 'SÃO PAULO';
-  const unitTextColor = isBH ? 'text-yellow-400' : 'text-green-500';
+  const isBH = unit === 'bh'
+  const unitLabel = isBH ? 'BELO HORIZONTE' : 'SÃO PAULO'
+  const unitTextColor = isBH ? 'text-yellow-400' : 'text-green-500'
 
   return (
     <div className="min-h-screen bg-gradient-warm">

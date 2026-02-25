@@ -28,13 +28,17 @@ const getDatesForDayOfWeekInMonth = (year, month, dayOfWeek) => {
 
 const safeJsonParse = (jsonString) => {
     if (!jsonString || typeof jsonString !== 'string') {
-        return Array.isArray(jsonString) ? jsonString.map(id => Number(id)).filter(id => !isNaN(id)) : [];
+        return Array.isArray(jsonString) 
+            ? jsonString.map(id => Number(id)).filter(id => !isNaN(id)) 
+            : [];
     }
+
     try {
         const cleanedString = jsonString
             .replace(/\s+/g, '')
             .replace(/,\s*]/, ']');
         const parsed = JSON.parse(cleanedString);
+        
         return Array.isArray(parsed)
             ? parsed.map(id => Number(id)).filter(id => !isNaN(id))
             : [];
@@ -46,6 +50,7 @@ const safeJsonParse = (jsonString) => {
 
 const calculatePlaylistDuration = (playlistId, allPlaylists, allTracks) => {
     const playlist = allPlaylists.find(p => p.id === playlistId);
+
     if (!playlist || !allTracks || allTracks.length === 0) {
         return 0;
     }
@@ -62,6 +67,7 @@ const calculatePlaylistDuration = (playlistId, allPlaylists, allTracks) => {
             totalDurationSeconds += duration;
         }
     });
+
     return totalDurationSeconds;
 };
 
@@ -69,6 +75,7 @@ const slotToTime = (slotIndex) => {
     const totalMinutes = slotIndex * 10;
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
+
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
@@ -95,7 +102,6 @@ export const getScheduleSummaryByMonth = async (req, res) => {
 
         const scheduledDates = rows.map(row => row.scheduled_date);
         res.json(scheduledDates);
-
     } catch (err) {
         console.error(`Erro ao buscar resumo de agendamentos:`, err);
         res.status(500).json({ error: 'Erro ao buscar resumo de agendamentos.' });
@@ -104,8 +110,8 @@ export const getScheduleSummaryByMonth = async (req, res) => {
 
 export const getScheduleByDate = async (req, res) => {
     const { data } = req.params;
-
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
     if (!dateRegex.test(data)) {
         return res.status(400).json({ error: 'Formato de data inválido. Use YYYY-MM-DD.' });
     }
@@ -132,6 +138,7 @@ export const getScheduleByDate = async (req, res) => {
                 `SELECT id, nome, tracks_ids FROM playlists WHERE id IN (${placeholders})`,
                 playlistIds
             );
+            
             playlistsInfo = playlistsInfo.map(p => ({
                 ...p,
                 tracks_ids: safeJsonParse(p.tracks_ids)
@@ -168,7 +175,6 @@ export const getScheduleByDate = async (req, res) => {
         });
 
         res.json(schedule);
-
     } catch (err) {
         console.error(`Erro ao buscar agendamento:`, err);
         res.status(500).json({ error: 'Erro ao buscar agendamento.' });
@@ -177,8 +183,8 @@ export const getScheduleByDate = async (req, res) => {
 
 export const saveSchedule = async (req, res) => {
     const { dates, schedule, regra_repeticao } = req.body;
-
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
     if (!dates || !Array.isArray(dates) || dates.length === 0) {
         return res.status(400).json({ error: 'Datas inválidas, ausentes ou formato incorreto.' });
     }
@@ -218,7 +224,6 @@ export const saveSchedule = async (req, res) => {
 
             const allOccurrences = getDatesForDayOfWeekInMonth(year, month, dayOfWeek);
             datesToProcess = allOccurrences.filter(dateStr => dateStr >= singleDate);
-
         } else {
             datesToProcess = dates;
         }
@@ -258,10 +263,10 @@ export const saveSchedule = async (req, res) => {
 
         await connection.commit();
         res.status(201).json({ message: 'Agendamento salvo com sucesso!' });
-
     } catch (err) {
         await connection.rollback();
         console.error('Erro ao salvar agendamento:', err);
+        
         if (err.code === 'ER_DUP_ENTRY') {
             res.status(409).json({ error: 'Conflito: Já existe um agendamento para um dos horários/datas especificados.' });
         } else if (err.code === 'ER_NO_REFERENCED_ROW_2') {
@@ -276,8 +281,8 @@ export const saveSchedule = async (req, res) => {
 
 export const getScheduleReport = async (req, res) => {
     const { data } = req.params;
-
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
     if (!dateRegex.test(data)) {
         return res.status(400).json({ error: 'Formato de data inválido. Use YYYY-MM-DD.' });
     }
@@ -293,6 +298,7 @@ export const getScheduleReport = async (req, res) => {
         );
 
         let report = `Relatório de Agendamento - ${data}\n\n`;
+        
         if (rows.length === 0) {
             report += "Nenhuma playlist agendada para este dia.";
         } else {
@@ -300,6 +306,7 @@ export const getScheduleReport = async (req, res) => {
             for (let i = 0; i < SLOTS_PER_DAY; i++) {
                 scheduleMap[i] = 'Tempo Vazio';
             }
+            
             rows.forEach(row => {
                 scheduleMap[row.slot_index] = row.playlist_id
                     ? `Playlist: ${row.playlist_nome || 'N/A'} (ID: ${row.playlist_id})`
@@ -314,7 +321,6 @@ export const getScheduleReport = async (req, res) => {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename=agendamento_${data}.txt`);
         res.send(report);
-
     } catch (err) {
         console.error(`Erro ao gerar relatório para ${data}:`, err);
         res.status(500).json({ error: 'Erro ao gerar relatório de agendamento.' });

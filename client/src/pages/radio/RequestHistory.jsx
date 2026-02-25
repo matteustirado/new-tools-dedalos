@@ -23,18 +23,23 @@ export default function RequestHistory() {
         setLoading(false);
       }
     };
+
     fetchHistory();
     const interval = setInterval(fetchHistory, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const filteredHistory = useMemo(() => {
+    if (!history) return [];
+
+    const term = filterTerm.trim().toLowerCase();
+
     return history.filter(item => {
-      const matchesTerm =
-        (item.titulo && item.titulo.toLowerCase().includes(filterTerm.toLowerCase())) ||
-        (item.artista && item.artista.toLowerCase().includes(filterTerm.toLowerCase())) ||
-        (item.termo_busca && item.termo_busca.toLowerCase().includes(filterTerm.toLowerCase())) ||
-        item.pulseira_id?.toLowerCase().includes(filterTerm.toLowerCase());
+      const matchesTerm = term === '' || 
+        (item.titulo && item.titulo.toLowerCase().includes(term)) ||
+        (item.artista && item.artista.toLowerCase().includes(term)) ||
+        (item.termo_busca && item.termo_busca.toLowerCase().includes(term)) ||
+        (item.pulseira_id && String(item.pulseira_id).toLowerCase().includes(term));
 
       let matchesStatus = true;
       if (filterStatus === 'TOCADAS') {
@@ -57,11 +62,16 @@ export default function RequestHistory() {
 
   const getStatusBadge = (status) => {
     switch (status) {
-      case 'PENDENTE': return <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30">NA FILA</span>;
-      case 'TOCADO': return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30">TOCADA</span>;
-      case 'VETADO': return <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30">VETADA</span>;
-      case 'SUGERIDA': return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/30">SUGESTÃO</span>;
-      default: return <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 text-xs font-bold">{status}</span>;
+      case 'PENDENTE': 
+        return <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30">NA FILA</span>;
+      case 'TOCADO': 
+        return <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30">TOCADA</span>;
+      case 'VETADO': 
+        return <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30">VETADA</span>;
+      case 'SUGERIDA': 
+        return <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs font-bold border border-yellow-500/30">SUGESTÃO</span>;
+      default: 
+        return <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 text-xs font-bold">{status}</span>;
     }
   };
 
@@ -130,9 +140,13 @@ export default function RequestHistory() {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {loading ? (
-                    <tr><td colSpan="5" className="p-8 text-center text-white/30">Carregando histórico...</td></tr>
+                    <tr>
+                      <td colSpan="5" className="p-8 text-center text-white/30">Carregando histórico...</td>
+                    </tr>
                   ) : filteredHistory.length === 0 ? (
-                    <tr><td colSpan="5" className="p-8 text-center text-white/30">Nenhum registro encontrado nesta categoria.</td></tr>
+                    <tr>
+                      <td colSpan="5" className="p-8 text-center text-white/30">Nenhum registro encontrado nesta categoria.</td>
+                    </tr>
                   ) : (
                     filteredHistory.map((item) => (
                       <tr key={item.id} className="hover:bg-white/5 transition-colors group">
@@ -170,10 +184,11 @@ export default function RequestHistory() {
                           </div>
                         </td>
                         <td className="p-4 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${item.unidade === 'SP' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            item.unidade === 'SP' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                             item.unidade === 'BH' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                              'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                            }`}>
+                            'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                          }`}>
                             {item.unidade}
                           </span>
                         </td>

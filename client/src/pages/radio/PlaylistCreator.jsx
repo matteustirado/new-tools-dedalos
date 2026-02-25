@@ -19,9 +19,13 @@ export default function PlaylistCreator() {
     name: '',
     description: '',
     cover: null,
-    coverFile: null
+    coverFile: null,
+    overlay: null,
+    overlayFile: null
   })
+
   const [originalCover, setOriginalCover] = useState(null)
+  const [originalOverlay, setOriginalOverlay] = useState(null)
   const [acervoTracks, setAcervoTracks] = useState([])
   const [playlistTracks, setPlaylistTracks] = useState([])
   const [allTracksForLookup, setAllTracksForLookup] = useState([])
@@ -36,6 +40,7 @@ export default function PlaylistCreator() {
       try {
         const tracksResponse = await axios.get(`${API_URL}/api/tracks`)
         const processedTracks = tracksResponse.data.filter(t => t.status_processamento === 'PROCESSADO')
+        
         setAcervoTracks(processedTracks)
         setAllTracksForLookup(processedTracks)
 
@@ -47,24 +52,31 @@ export default function PlaylistCreator() {
             name: playlistData.nome || '',
             description: playlistData.descricao || '',
             cover: playlistData.imagem || null,
-            coverFile: null
+            coverFile: null,
+            overlay: playlistData.overlay || null,
+            overlayFile: null
           })
+
           setOriginalCover(playlistData.imagem || null)
+          setOriginalOverlay(playlistData.overlay || null)
 
           const trackIdsInPlaylist = playlistData.tracks_ids || []
           const tracksForPlaylist = trackIdsInPlaylist
             .map(id => processedTracks.find(track => track.id === Number(id)))
             .filter(Boolean)
+          
           setPlaylistTracks(tracksForPlaylist)
         } else {
-          setNewPlaylist({ name: '', description: '', cover: null, coverFile: null })
+          setNewPlaylist({ name: '', description: '', cover: null, coverFile: null, overlay: null, overlayFile: null })
           setOriginalCover(null)
+          setOriginalOverlay(null)
           setPlaylistTracks([])
         }
       } catch (err) {
         console.error("Erro ao buscar dados iniciais:", err)
         const errorMsg = isEditMode ? "Não foi possível carregar a playlist para edição." : "Não foi possível carregar as músicas do acervo."
         toast.error(errorMsg)
+        
         if (isEditMode && err.response?.status === 404) {
           toast.error("Playlist não encontrada.")
           navigate('/radio/playlist-creator')
@@ -73,28 +85,38 @@ export default function PlaylistCreator() {
         setLoading(false)
       }
     }
+
     fetchInitialData()
   }, [playlistId, isEditMode, navigate])
 
-  const handleCoverUpload = (e) => {
+  const handleImageUpload = (e, type) => {
     const file = e.target.files[0]
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        toast.warn("A imagem da capa não pode exceder 2MB.")
-        return
-      }
-      const previewUrl = URL.createObjectURL(file)
-      setNewPlaylist(prev => ({ ...prev, cover: previewUrl, coverFile: file }))
-      e.target.value = null
+    if (!file) return
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.warn("A imagem não pode exceder 5MB.")
+      return
     }
+
+    const previewUrl = URL.createObjectURL(file)
+    
+    if (type === 'cover') {
+      setNewPlaylist(prev => ({ ...prev, cover: previewUrl, coverFile: file }))
+    } else if (type === 'overlay') {
+      setNewPlaylist(prev => ({ ...prev, overlay: previewUrl, overlayFile: file }))
+    }
+    
+    e.target.value = null
   }
 
   const addTrack = (track) => {
     const recentTracks = playlistTracks.slice(-5)
     const isRecentDuplicate = recentTracks.some(t => t.id === track.id)
+    
     if (isRecentDuplicate) {
       toast.info(`"${track.titulo}" foi adicionada recentemente.`)
     }
+    
     setPlaylistTracks([...playlistTracks, track])
   }
 
@@ -104,6 +126,7 @@ export default function PlaylistCreator() {
 
   const handleShuffle = () => {
     if (playlistTracks.length < 2) return
+    
     setPlaylistTracks(prevTracks => {
       const newArr = [...prevTracks]
       for (let i = newArr.length - 1; i > 0; i--) {
@@ -112,6 +135,7 @@ export default function PlaylistCreator() {
       }
       return newArr
     })
+    
     toast.success("Ordem da playlist embaralhada!")
   }
 
@@ -128,13 +152,14 @@ export default function PlaylistCreator() {
       toast.warn("Limpe o filtro para reordenar músicas.")
       return
     }
+
     if (!draggedTrack || draggedTrack.originalIndex === targetIndex) {
       setDraggedTrack(null)
       return
     }
 
     const newTracks = [...playlistTracks]
-    const itemToMove = newTracks.splice(draggedTrack.originalIndex, 1)[0]
+    const [itemToMove] = newTracks.splice(draggedTrack.originalIndex, 1)
     newTracks.splice(targetIndex, 0, itemToMove)
 
     setPlaylistTracks(newTracks)
@@ -143,21 +168,24 @@ export default function PlaylistCreator() {
 
   const formatDuration = (totalSeconds) => {
     if (typeof totalSeconds !== 'number' || totalSeconds < 0) return '0:00'
+    
     const minutes = Math.floor(totalSeconds / 60)
     const seconds = Math.floor(totalSeconds % 60)
+    
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
   const formatTotalDuration = (totalSeconds) => {
     if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '0s'
+    
     const hours = Math.floor(totalSeconds / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
 
     let result = ''
     if (hours > 0) result += `${hours}h `
     if (minutes > 0) result += `${minutes}m `
-    if (result === '') result = '0m'
-    return result.trim()
+    
+    return result.trim() || '0m'
   }
 
   const getTotalDurationSeconds = useMemo(() => {
@@ -168,6 +196,7 @@ export default function PlaylistCreator() {
       const end = fullTrackData.end_segundos ?? fullTrackData.duracao_segundos
       const start = fullTrackData.start_segundos ?? 0
       const duration = (end > start) ? (end - start) : 0
+      
       return acc + duration
     }, 0)
   }, [playlistTracks, allTracksForLookup])
@@ -177,46 +206,63 @@ export default function PlaylistCreator() {
       toast.warn("A playlist precisa de um nome e pelo menos uma música.")
       return
     }
+
     setLoading(true)
     const formData = new FormData()
     formData.append('name', newPlaylist.name)
     formData.append('description', newPlaylist.description)
     formData.append('tracks_ids', JSON.stringify(playlistTracks.map(t => t.id)))
-    if (newPlaylist.coverFile) {
-      formData.append('cover', newPlaylist.coverFile)
-    }
+    
+    if (newPlaylist.coverFile) formData.append('cover', newPlaylist.coverFile)
+    if (newPlaylist.overlayFile) formData.append('overlay', newPlaylist.overlayFile)
+
     if (isEditMode) {
-      if ((newPlaylist.cover === null || newPlaylist.cover?.startsWith('blob:')) && originalCover) {
-        formData.append('existingImagePath', originalCover)
-      } else if (typeof newPlaylist.cover === 'string' && !newPlaylist.cover.startsWith('blob:') && newPlaylist.cover === originalCover) {
-        formData.append('existingImagePath', newPlaylist.cover)
-      } else if (newPlaylist.cover === null && !originalCover) {
-        formData.append('existingImagePath', '')
+      const processImagePath = (current, original, key) => {
+        if ((current === null || current?.startsWith('blob:')) && original) {
+          formData.append(key, original)
+        } else if (typeof current === 'string' && !current.startsWith('blob:') && current === original) {
+          formData.append(key, current)
+        } else if (current === null && !original) {
+          formData.append(key, '')
+        }
       }
+
+      processImagePath(newPlaylist.cover, originalCover, 'existingImagePath')
+      processImagePath(newPlaylist.overlay, originalOverlay, 'existingOverlayPath')
     }
+
     try {
       const config = { headers: { 'Content-Type': 'multipart/form-data' } }
       let newId = playlistId
       let newCoverUrl = null
+      let newOverlayUrl = null
+
       if (isEditMode) {
         const response = await axios.put(`${API_URL}/api/playlists/${playlistId}`, formData, config)
         newCoverUrl = response.data.imagePath
+        newOverlayUrl = response.data.overlayPath
         toast.success("Playlist atualizada com sucesso!")
       } else {
         const response = await axios.post(`${API_URL}/api/playlists`, formData, config)
         newId = response.data.id
         newCoverUrl = response.data.imagePath
+        newOverlayUrl = response.data.overlayPath
         toast.success("Playlist salva com sucesso!")
       }
+
       if (exitOnSave) {
         navigate('/radio/library')
-      } else if (!isEditMode && newId) {
-        navigate(`/radio/playlist-creator/${newId}`, { replace: true })
+      } else {
         setOriginalCover(newCoverUrl || null)
-        setNewPlaylist(prev => ({ ...prev, cover: newCoverUrl || null, coverFile: null }))
-      } else if (isEditMode) {
-        setOriginalCover(newCoverUrl || null)
-        setNewPlaylist(prev => ({ ...prev, cover: newCoverUrl || null, coverFile: null }))
+        setOriginalOverlay(newOverlayUrl || null)
+        setNewPlaylist(prev => ({ 
+          ...prev, 
+          cover: newCoverUrl || null, coverFile: null,
+          overlay: newOverlayUrl || null, overlayFile: null 
+        }))
+        if (!isEditMode && newId) {
+          navigate(`/radio/playlist-creator/${newId}`, { replace: true })
+        }
       }
     } catch (err) {
       console.error("Erro ao salvar/atualizar playlist", err)
@@ -235,10 +281,9 @@ export default function PlaylistCreator() {
     if (playlistTracks.length < 2) return false
     const currentId = playlistTracks[index].id
     const startIndex = Math.max(0, index - 5)
+    
     for (let i = startIndex; i < index; i++) {
-      if (playlistTracks[i].id === currentId) {
-        return true
-      }
+      if (playlistTracks[i].id === currentId) return true
     }
     return false
   }
@@ -246,14 +291,12 @@ export default function PlaylistCreator() {
   const filteredAcervo = useMemo(() => {
     const lowerSearchTerm = searchTerm.toLowerCase()
     const dayFilterValue = selectedDayFilter === ALL_DAYS_CODE ? null : selectedDayFilter
+    
     return allTracksForLookup.filter(track => {
-      let dayMatch = dayFilterValue === null || (Array.isArray(track.dias_semana) && track.dias_semana.includes(dayFilterValue))
-      if (!dayMatch) {
-        return false
-      }
-      if (!searchTerm) {
-        return true
-      }
+      const dayMatch = dayFilterValue === null || (Array.isArray(track.dias_semana) && track.dias_semana.includes(dayFilterValue))
+      if (!dayMatch) return false
+      if (!searchTerm) return true
+      
       const titleMatch = track.titulo.toLowerCase().includes(lowerSearchTerm)
       const artistMatch = track.artista && track.artista.toLowerCase().includes(lowerSearchTerm)
       return titleMatch || artistMatch
@@ -263,6 +306,7 @@ export default function PlaylistCreator() {
   const filteredPlaylistTracks = useMemo(() => {
     const tracksWithIndex = playlistTracks.map((t, i) => ({ ...t, _origIndex: i }))
     if (!playlistFilter) return tracksWithIndex
+    
     const lower = playlistFilter.toLowerCase()
     return tracksWithIndex.filter(track =>
       track.titulo.toLowerCase().includes(lower) ||
@@ -270,16 +314,17 @@ export default function PlaylistCreator() {
     )
   }, [playlistTracks, playlistFilter])
 
-  const getCoverImageUrl = () => {
-    if (newPlaylist.coverFile && newPlaylist.cover?.startsWith('blob:')) {
-      return newPlaylist.cover
-    }
-    if (!newPlaylist.coverFile && typeof newPlaylist.cover === 'string' && newPlaylist.cover) {
-      return `${API_URL}${newPlaylist.cover}`
-    }
-    return null
+  const getPreviewUrl = (type) => {
+    const path = type === 'cover' ? newPlaylist.cover : newPlaylist.overlay;
+    const file = type === 'cover' ? newPlaylist.coverFile : newPlaylist.overlayFile;
+
+    if (file && path?.startsWith('blob:')) return path;
+    if (!file && typeof path === 'string' && path) return `${API_URL}${path}`;
+    return null;
   }
-  const coverImageUrl = getCoverImageUrl()
+
+  const coverImageUrl = getPreviewUrl('cover');
+  const overlayImageUrl = getPreviewUrl('overlay');
 
   return (
     <div className="min-h-screen bg-gradient-warm flex">
@@ -301,46 +346,94 @@ export default function PlaylistCreator() {
               Voltar para Criação de Playlists
             </button>
           )}
+
           <div className="mb-6">
-            <h1 className="text-3xl font-bold text-white mb-1">{isEditMode ? 'Editar Playlist' : 'Nova Playlist'}</h1>
-            <p className="text-text-muted text-sm">{isEditMode ? 'Modifique os detalhes da sua playlist' : 'Crie sua playlist personalizada'}</p>
+            <h1 className="text-3xl font-bold text-white mb-1">
+              {isEditMode ? 'Editar Playlist' : 'Nova Playlist'}
+            </h1>
+            <p className="text-text-muted text-sm">
+              {isEditMode ? 'Modifique os detalhes da sua playlist' : 'Crie sua playlist personalizada'}
+            </p>
           </div>
 
           <div className="liquid-glass rounded-xl p-6 mb-6">
             <h2 className="text-xl font-bold text-white mb-4">Informações da Playlist</h2>
-            <div className="flex gap-6">
+            
+            <div className="flex flex-col lg:flex-row gap-6">
               <div className="flex-1 space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-text-muted mb-1">Nome da Playlist</label>
-                  <input type="text" value={newPlaylist.name} onChange={(e) => setNewPlaylist({ ...newPlaylist, name: e.target.value })} className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary" placeholder="Ex: Summer Hits 2025" />
+                  <input 
+                    type="text" 
+                    value={newPlaylist.name} 
+                    onChange={(e) => setNewPlaylist({ ...newPlaylist, name: e.target.value })} 
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary" 
+                    placeholder="Ex: Summer Hits 2025" 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-muted mb-1">Descrição</label>
-                  <textarea rows="2" value={newPlaylist.description} onChange={(e) => setNewPlaylist({ ...newPlaylist, description: e.target.value })} className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary resize-none" placeholder="Descreva sua playlist..."></textarea>
+                  <textarea 
+                    rows="4" 
+                    value={newPlaylist.description} 
+                    onChange={(e) => setNewPlaylist({ ...newPlaylist, description: e.target.value })} 
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary resize-none" 
+                    placeholder="Descreva sua playlist..."
+                  />
                 </div>
               </div>
-              <div className="flex flex-col items-center gap-3">
-                <label className="block text-xs font-medium text-text-muted">Capa</label>
-                <div className="w-32 h-32 rounded-lg bg-white/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-white/20 relative">
-                  {coverImageUrl ? (
-                    <img src={coverImageUrl} alt="Cover Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="material-symbols-outlined text-5xl text-text-muted">add_photo_alternate</span>
-                  )}
-                  {coverImageUrl && (
-                    <button
-                      onClick={() => setNewPlaylist(prev => ({ ...prev, cover: null, coverFile: null }))}
-                      className="absolute top-1 right-1 z-10 p-0.5 bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors"
-                      title="Remover Imagem"
-                    >
-                      <span className="material-symbols-outlined text-base">close</span>
-                    </button>
-                  )}
+
+              <div className="flex flex-wrap lg:flex-nowrap gap-6 items-start justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <label className="block text-xs font-medium text-text-muted">Capa da Playlist</label>
+                  <div className="w-32 h-32 rounded-lg bg-white/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-white/20 relative shrink-0">
+                    {coverImageUrl ? (
+                      <img src={coverImageUrl} alt="Cover Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="material-symbols-outlined text-5xl text-text-muted">add_photo_alternate</span>
+                    )}
+                    {coverImageUrl && (
+                      <button
+                        onClick={() => setNewPlaylist(prev => ({ ...prev, cover: null, coverFile: null }))}
+                        className="absolute top-1 right-1 z-10 p-0.5 bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors"
+                        title="Remover Capa"
+                      >
+                        <span className="material-symbols-outlined text-base">close</span>
+                      </button>
+                    )}
+                  </div>
+                  <label className="cursor-pointer bg-primary/20 text-primary px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/30 transition-colors w-full text-center">
+                    <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'cover')} className="hidden" />
+                    {coverImageUrl ? 'Alterar Capa' : 'Carregar Capa'}
+                  </label>
                 </div>
-                <label className="cursor-pointer bg-primary/20 text-primary px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/30 transition-colors w-full text-center">
-                  <input type="file" accept="image/*" onChange={handleCoverUpload} className="hidden" />
-                  {coverImageUrl ? 'Alterar' : 'Carregar'}
-                </label>
+
+                <div className="flex flex-col items-center gap-3">
+                  <label className="block text-xs font-medium text-text-muted">Overlay TV (16:9)</label>
+                  <div className="h-32 aspect-video rounded-lg bg-white/10 flex items-center justify-center overflow-hidden border-2 border-dashed border-white/20 relative shrink-0">
+                    {overlayImageUrl ? (
+                      <img src={overlayImageUrl} alt="Overlay Preview" className="w-full h-full object-contain" />
+                    ) : (
+                      <div className="flex flex-col items-center text-text-muted opacity-50">
+                        <span className="material-symbols-outlined text-4xl mb-1">branding_watermark</span>
+                        <span className="text-[10px] uppercase font-bold tracking-wider">Marca D'água</span>
+                      </div>
+                    )}
+                    {overlayImageUrl && (
+                      <button
+                        onClick={() => setNewPlaylist(prev => ({ ...prev, overlay: null, overlayFile: null }))}
+                        className="absolute top-1 right-1 z-10 p-0.5 bg-black/60 rounded-full text-white hover:bg-black/80 transition-colors"
+                        title="Remover Overlay"
+                      >
+                        <span className="material-symbols-outlined text-base">close</span>
+                      </button>
+                    )}
+                  </div>
+                  <label className="cursor-pointer bg-white/10 text-white border border-white/20 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors w-full text-center">
+                    <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'overlay')} className="hidden" />
+                    {overlayImageUrl ? 'Alterar Overlay' : 'Carregar Overlay'}
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -380,8 +473,9 @@ export default function PlaylistCreator() {
                     />
                   </div>
                   <div className="flex-1 overflow-y-auto space-y-2 pr-2 -mr-2 max-h-[500px]">
-                    {loading && <p className="text-text-muted text-center text-sm">Carregando...</p>}
-                    {!loading && filteredAcervo.length === 0 && <p className="text-text-muted text-center text-sm">Nenhuma música encontrada com o filtro atual.</p>}
+                    {!loading && filteredAcervo.length === 0 && (
+                      <p className="text-text-muted text-center text-sm">Nenhuma música encontrada com o filtro atual.</p>
+                    )}
                     {filteredAcervo.map((track) => (
                       <div
                         key={track.id}
@@ -462,7 +556,9 @@ export default function PlaylistCreator() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto space-y-2 pr-2 -mr-2 max-h-[500px]">
-                    {playlistTracks.length === 0 && <p className="text-text-muted text-center text-sm">Arraste ou clique nas músicas à esquerda para adicionar.</p>}
+                    {playlistTracks.length === 0 && (
+                      <p className="text-text-muted text-center text-sm">Arraste ou clique nas músicas à esquerda para adicionar.</p>
+                    )}
 
                     {playlistTracks.length > 0 && filteredPlaylistTracks.length === 0 && (
                       <p className="text-text-muted text-center text-sm py-4">Nenhuma música encontrada com este filtro.</p>
@@ -534,11 +630,25 @@ export default function PlaylistCreator() {
               </div>
 
               <div className="flex justify-end gap-4">
-                <button onClick={() => navigate('/radio/library')} disabled={loading} className=" bg-white/10 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/20 transition-colors disabled:opacity-50">Cancelar</button>
-                <button onClick={() => savePlaylist(false)} disabled={loading || playlistTracks.length === 0} className=" bg-primary/70 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button 
+                  onClick={() => navigate('/radio/library')} 
+                  disabled={loading} 
+                  className="bg-white/10 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/20 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => savePlaylist(false)} 
+                  disabled={loading || playlistTracks.length === 0} 
+                  className="bg-primary/70 text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   {loading ? 'Salvando...' : (isEditMode ? 'Atualizar' : 'Salvar')}
                 </button>
-                <button onClick={() => savePlaylist(true)} disabled={loading || playlistTracks.length === 0} className=" bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <button 
+                  onClick={() => savePlaylist(true)} 
+                  disabled={loading || playlistTracks.length === 0} 
+                  className="bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   {loading ? 'Salvando...' : (isEditMode ? 'Atualizar e Sair' : 'Salvar e Sair')}
                 </button>
               </div>

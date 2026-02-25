@@ -1,15 +1,16 @@
 import pool from '../config/db.js';
 import axios from 'axios';
 
-// Configuração da API Legada
 const LEGACY_API = {
-    SP: { url: 'https://dedalosadm2-3dab78314381.herokuapp.com', token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' },
-    BH: { url: 'https://dedalosadm2-3dab78314381.herokuapp.com', token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' }
+    SP: { 
+        url: 'https://dedalosadm2-3dab78314381.herokuapp.com', 
+        token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' 
+    },
+    BH: { 
+        url: 'https://dedalosadm2-3dab78314381.herokuapp.com', 
+        token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' 
+    }
 };
-
-// =====================================================================
-// UTILS: Lógica de Tempo
-// =====================================================================
 
 const getHoraBrasil = () => {
     const date = new Date();
@@ -40,11 +41,6 @@ const getProximoPeriodo = (periodoAtual, tipoDiaAtual, diaSemanaAtual) => {
     return { periodo: 'manha', tipo: proximoTipo };
 };
 
-// =====================================================================
-// CONTROLLERS
-// =====================================================================
-
-// GET /api/prices/state/:unidade
 export const getPricesState = async (req, res) => {
     const { unidade } = req.params;
     const unidadeUpper = unidade.toUpperCase();
@@ -53,14 +49,13 @@ export const getPricesState = async (req, res) => {
         const [stateRows] = await pool.query('SELECT * FROM price_live_state WHERE unidade = ?', [unidadeUpper]);
         let state = stateRows[0];
         
-        // Se não existir, cria o estado inicial
         if (!state) {
             await pool.query('INSERT IGNORE INTO price_live_state (unidade, party_banners) VALUES (?, ?)', [unidadeUpper, '[]']);
             state = { unidade: unidadeUpper, valor_atual: 0, modo_festa: 0, party_banners: [] };
         }
 
-        // Consultar API Legada (Valor Real)
         let valorRealApi = state.valor_atual;
+
         try {
             const apiConfig = LEGACY_API[unidadeUpper];
             if (apiConfig) {
@@ -80,7 +75,6 @@ export const getPricesState = async (req, res) => {
             console.error(`[Prices] Erro API Legada (${unidade}):`, error.message);
         }
 
-        // Determinar Valor Padrão
         const agora = getHoraBrasil();
         const tipoDia = getTipoDia(agora);
         const periodo = getPeriodo(agora.getHours());
@@ -89,6 +83,7 @@ export const getPricesState = async (req, res) => {
             'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1',
             [tipoDia, periodo]
         );
+
         const valorPadraoAgora = regrasAtuais[0]?.valor || 0;
         const isPadrao = Math.abs(valorRealApi - valorPadraoAgora) < 0.50;
 
@@ -118,12 +113,11 @@ export const getPricesState = async (req, res) => {
     }
 };
 
-// PUT /api/prices/state/:unidade
 export const updatePriceState = async (req, res) => {
     const { unidade } = req.params;
     const { 
         modo_festa, 
-        party_banners, // Array de URLs
+        party_banners, 
         valor_futuro, 
         texto_futuro, 
         valor_passado,
@@ -131,7 +125,6 @@ export const updatePriceState = async (req, res) => {
     } = req.body;
 
     try {
-        // Converte o array para JSON string
         const bannersJson = party_banners ? JSON.stringify(party_banners) : '[]';
 
         await pool.query(`
@@ -154,7 +147,6 @@ export const updatePriceState = async (req, res) => {
             unidade.toUpperCase()
         ]);
 
-        // === SOCKET: NOTIFICA ATUALIZAÇÃO ===
         if (req.io) {
             req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
         }
@@ -165,7 +157,6 @@ export const updatePriceState = async (req, res) => {
     }
 };
 
-// GET /api/prices/defaults
 export const getDefaults = async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM price_defaults ORDER BY tipo_dia DESC, periodo, qtd_pessoas');
@@ -175,13 +166,11 @@ export const getDefaults = async (req, res) => {
     }
 };
 
-// PUT /api/prices/defaults
 export const updateDefault = async (req, res) => {
     const { id, valor } = req.body;
     try {
         await pool.query('UPDATE price_defaults SET valor = ? WHERE id = ?', [valor, id]);
         
-        // === SOCKET: NOTIFICA TODAS AS UNIDADES (Regra Global) ===
         if (req.io) {
             req.io.emit('prices:updated', { unidade: 'SP' });
             req.io.emit('prices:updated', { unidade: 'BH' });
@@ -193,7 +182,6 @@ export const updateDefault = async (req, res) => {
     }
 };
 
-// GET /api/prices/media/:unidade
 export const getCategoryMedia = async (req, res) => {
     const { unidade } = req.params;
     try {
@@ -204,7 +192,6 @@ export const getCategoryMedia = async (req, res) => {
     }
 };
 
-// PUT /api/prices/media
 export const updateCategoryMedia = async (req, res) => {
     const { id, media_url, titulo, aviso_categoria } = req.body;
     try {
@@ -212,7 +199,6 @@ export const updateCategoryMedia = async (req, res) => {
         if (titulo !== undefined) await pool.query('UPDATE price_category_media SET titulo = ? WHERE id = ?', [titulo, id]);
         if (aviso_categoria !== undefined) await pool.query('UPDATE price_category_media SET aviso_categoria = ? WHERE id = ?', [aviso_categoria, id]);
         
-        // === SOCKET: IDENTIFICA A UNIDADE E NOTIFICA ===
         if (req.io) {
             const [rows] = await pool.query('SELECT unidade FROM price_category_media WHERE id = ?', [id]);
             if (rows.length > 0) {
@@ -225,10 +211,6 @@ export const updateCategoryMedia = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
-
-// =====================================================================
-// LÓGICA LEGADA (FERIADOS E PROMOÇÕES)
-// =====================================================================
 
 export const getHolidays = async (req, res) => {
     const { unidade } = req.params;
@@ -254,7 +236,6 @@ export const addHoliday = async (req, res) => {
 export const deleteHoliday = async (req, res) => {
     const { id } = req.params;
     try {
-        // Recupera unidade antes de deletar para notificar
         const [rows] = await pool.query('SELECT unidade FROM holidays WHERE id = ?', [id]);
         await pool.query('DELETE FROM holidays WHERE id = ?', [id]);
         

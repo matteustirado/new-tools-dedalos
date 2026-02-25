@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { toast } from 'react-toastify';
@@ -9,14 +9,16 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const formatDuration = (totalSeconds) => {
   if (typeof totalSeconds !== 'number' || totalSeconds < 0) return '0:00';
+
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.floor(totalSeconds % 60);
+
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
 const AlbumArtVinyl = ({ musicaAtual }) => {
   const thumbnailUrl = musicaAtual?.thumbnail_url || 'https://placehold.co/300x300/1e1e1e/333333?text=Rádio+Dedalos';
-  
+
   return (
     <div className="relative w-72 h-40 flex-shrink-0">
       <div
@@ -35,12 +37,14 @@ const AlbumArtVinyl = ({ musicaAtual }) => {
           <div className="w-1.5 h-1.5 bg-black rounded-full"></div>
         </div>
       </div>
+
       <img
         key={thumbnailUrl}
         src={thumbnailUrl}
         alt="Capa do Álbum"
         className="relative z-10 w-full h-full object-cover rounded-lg shadow-lg animate-fade-in"
       />
+
       <style>{`
         @keyframes spin { from { transform: translate(50%, -50%) rotate(0deg); } to { transform: translate(50%, -50%) rotate(360deg); } }
         @keyframes fade-in { from { opacity: 0.5; } to { opacity: 1; } }
@@ -53,8 +57,8 @@ const AlbumArtVinyl = ({ musicaAtual }) => {
 const ProgressBar = ({ progresso, crossfadeInfo }) => {
   const { tempoAtual, tempoTotal } = progresso;
   const progressPercent = tempoTotal > 0 ? (tempoAtual / tempoTotal) * 100 : 0;
-  let crossfadeProgressPercent = 0;
   const crossfadeDuration = 4;
+  let crossfadeProgressPercent = 0;
 
   if (crossfadeInfo && tempoTotal > 0) {
     const tempoInicioCrossfade = tempoTotal - crossfadeDuration;
@@ -77,6 +81,7 @@ const ProgressBar = ({ progresso, crossfadeInfo }) => {
           className="absolute top-0 left-0 h-1.5 rounded-full bg-gradient-to-r from-primary to-orange-500"
           style={{ width: `${progressPercent}%`, transition: 'width 250ms linear' }}
         ></div>
+
         <div
           className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full border-2 border-primary shadow"
           style={{ left: `${progressPercent}%`, transition: 'left 250ms linear' }}
@@ -95,6 +100,7 @@ const ProgressBar = ({ progresso, crossfadeInfo }) => {
           </>
         )}
       </div>
+
       <div className="flex justify-between text-xs text-text-muted mt-1">
         <span>{formatTime(tempoAtual)}</span>
         <span>{formatTime(tempoTotal)}</span>
@@ -105,14 +111,12 @@ const ProgressBar = ({ progresso, crossfadeInfo }) => {
 
 export default function DJController() {
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
 
   const [socket, setSocket] = useState(null);
   const [musicaAtual, setMusicaAtual] = useState(null);
   const [fila, setFila] = useState([]);
   const [progresso, setProgresso] = useState({ tempoAtual: 0, tempoTotal: 0 });
   const [isConnected, setIsConnected] = useState(false);
-  const [activeOverlay, setActiveOverlay] = useState(null);
   const [crossfadeInfo, setCrossfadeInfo] = useState(null);
   const [playlists, setPlaylists] = useState([]);
   const [acervo, setAcervo] = useState([]);
@@ -126,7 +130,6 @@ export default function DJController() {
   useEffect(() => {
     const newSocket = io(API_URL);
     setSocket(newSocket);
-    console.log("[DJController] Conectando ao Maestro...");
 
     newSocket.on('connect', () => { setIsConnected(true); });
     newSocket.on('disconnect', () => { setIsConnected(false); });
@@ -138,14 +141,10 @@ export default function DJController() {
         tempoTotal: estado.musicaAtual ? (estado.musicaAtual.end_segundos ?? estado.musicaAtual.duracao_segundos) : 0
       });
       setCrossfadeInfo(null);
-      setActiveOverlay(estado.overlayUrl);
     });
 
     newSocket.on('maestro:filaAtualizada', (novaFila) => { setFila(novaFila || []); });
-
-    newSocket.on('maestro:progresso', (info) => {
-      setProgresso(info);
-    });
+    newSocket.on('maestro:progresso', (info) => { setProgresso(info); });
 
     newSocket.on('maestro:iniciarCrossfade', ({ playerAtivo, proximoPlayer, proximaMusica }) => {
       setCrossfadeInfo({ playerAtivo, proximoPlayer, proximaMusica });
@@ -163,25 +162,23 @@ export default function DJController() {
       setCrossfadeInfo(null);
     });
 
-    newSocket.on('maestro:overlayAtualizado', (url) => {
-      setActiveOverlay(url);
-    });
-
     axios.get(`${API_URL}/api/playlists`)
       .then(res => setPlaylists(res.data || []))
-      .catch(err => toast.error("Falha ao carregar playlists."));
+      .catch(() => toast.error("Falha ao carregar playlists."));
 
     axios.get(`${API_URL}/api/tracks`)
       .then(res => {
         setAcervo(res.data.filter(t => !t.is_commercial) || []);
         setComerciais(res.data.filter(t => t.is_commercial) || []);
       })
-      .catch(err => toast.error("Falha ao carregar acervo/comerciais."));
+      .catch(() => toast.error("Falha ao carregar acervo/comerciais."));
 
     return () => { newSocket.disconnect(); };
   }, []);
 
-  const handlePularMusica = () => { if (socket) socket.emit('dj:pularMusica'); };
+  const handlePularMusica = () => {
+    if (socket) socket.emit('dj:pularMusica');
+  };
 
   const handleTocarComercialAgora = (trackId = null) => {
     if (socket) socket.emit('dj:tocarComercialAgora', trackId);
@@ -194,42 +191,6 @@ export default function DJController() {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const handleOverlayClick = () => {
-    fileInputRef.current.click();
-  };
-
-  const handleOverlayUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('overlay', file);
-
-    try {
-      await axios.post(`${API_URL}/api/overlay`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      toast.success("Marca d'água atualizada!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Erro ao enviar marca d'água.");
-    }
-    e.target.value = null;
-  };
-
-  const handleRemoveOverlay = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (window.confirm("Remover marca d'água da tela?")) {
-      try {
-        await axios.delete(`${API_URL}/api/overlay`);
-        toast.info("Marca d'água removida.");
-      } catch (err) {
-        toast.error("Erro ao remover.");
-      }
-    }
-  };
-
   const handleCarregarPlaylist = (playlistId) => {
     if (socket) socket.emit('dj:carregarPlaylistManual', playlistId);
   };
@@ -239,7 +200,9 @@ export default function DJController() {
     setBuscaAcervo("");
   };
 
-  const handleVeto = (itemId) => { if (socket && itemId) { socket.emit('dj:vetarPedido', itemId); } };
+  const handleVeto = (itemId) => {
+    if (socket && itemId) socket.emit('dj:vetarPedido', itemId);
+  };
 
   const getTagInfo = (item) => {
     if (item.tipo === 'COMERCIAL_MANUAL' || item.is_commercial) {
@@ -276,14 +239,6 @@ export default function DJController() {
         headerExtra={
           <span className={`absolute bottom-0 right-0 block h-3.5 w-3.5 rounded-full border-2 border-bg-dark-primary ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></span>
         }
-      />
-
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleOverlayUpload}
-        accept="image/png"
-        className="hidden"
       />
 
       <main className="ml-64 flex-1 p-8 overflow-y-auto">
@@ -325,17 +280,6 @@ export default function DJController() {
                     >
                       <span className="material-symbols-outlined text-2xl">skip_next</span>
                     </button>
-
-                    <div className="h-8 w-px bg-white/10 mx-1"></div>
-
-                    <button
-                      onClick={handleOverlayClick}
-                      onContextMenu={handleRemoveOverlay}
-                      className={`flex shrink-0 items-center justify-center rounded-full w-10 h-10 transition-colors ${activeOverlay ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-white hover:text-blue-400'}`}
-                      title="Adicionar Marca D'água (Overlay) - Clique Direito para remover"
-                    >
-                      <span className="material-symbols-outlined text-2xl">branding_watermark</span>
-                    </button>
                   </div>
 
                   <ProgressBar progresso={progresso} crossfadeInfo={crossfadeInfo} />
@@ -354,6 +298,7 @@ export default function DJController() {
                     value={buscaAcervo}
                     onChange={(e) => setBuscaAcervo(e.target.value)}
                   />
+
                   {buscaAcervo && acervoFiltrado.length > 0 && (
                     <div className="absolute top-full right-0 w-64 mt-2 bg-bg-dark-secondary border border-white/10 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
                       {acervoFiltrado.map(track => (
@@ -372,7 +317,9 @@ export default function DJController() {
               </div>
 
               <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                {fila.length === 0 && <p className="text-text-muted text-sm text-center py-4">Fila de pedidos vazia.</p>}
+                {fila.length === 0 && (
+                  <p className="text-text-muted text-sm text-center py-4">Fila de pedidos vazia.</p>
+                )}
 
                 {fila.map((item, index) => {
                   const tag = getTagInfo(item);
@@ -406,21 +353,25 @@ export default function DJController() {
                 {playlists.length === 0 && <p className="text-text-muted text-sm">Carregando playlists...</p>}
                 {playlists.map((playlist) => (
                   <div key={playlist.id} className="bg-white/5 p-4 rounded-lg flex items-center justify-between hover:bg-white/10 transition-colors">
-                    <div>
+                    <div className="flex-1 min-w-0 pr-2">
                       <p className="font-semibold text-white text-sm truncate" title={playlist.nome}>{playlist.nome}</p>
                       <p className="text-xs text-text-muted">{playlist.tracks_ids.length} músicas</p>
                     </div>
                     <button
                       onClick={() => handleCarregarPlaylist(playlist.id)}
-                      className="bg-primary/20 text-primary px-3 py-1 rounded-md text-xs font-semibold hover:bg-primary/30 transition-colors"
-                      title="Carregar esta playlist (modo manual)"
+                      className="bg-primary/20 text-primary px-3 py-1 rounded-md text-xs font-semibold hover:bg-primary/30 transition-colors shrink-0"
                     >
                       Carregar
                     </button>
                   </div>
                 ))}
               </div>
-              <button onClick={() => navigate('/radio/library')} className="w-full bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors mb-2">Ver Mais</button>
+              <button
+                onClick={() => navigate('/radio/library')}
+                className="w-full bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors mb-2"
+              >
+                Ver Mais
+              </button>
             </div>
 
             <div className="liquid-glass rounded-xl p-6">
@@ -436,14 +387,18 @@ export default function DJController() {
                     <button
                       onClick={() => handleTocarComercialAgora(commercial.id)}
                       className="text-primary hover:text-primary/80 transition-colors"
-                      title="Tocar este comercial agora (Prioridade)"
                     >
                       <span className="material-symbols-outlined">play_circle</span>
                     </button>
                   </div>
                 ))}
               </div>
-              <button onClick={() => navigate('/radio/collection')} className="w-full bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors">Gerenciar Comerciais</button>
+              <button
+                onClick={() => navigate('/radio/collection')}
+                className="w-full bg-white/10 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors"
+              >
+                Gerenciar Comerciais
+              </button>
             </div>
           </div>
         </div>

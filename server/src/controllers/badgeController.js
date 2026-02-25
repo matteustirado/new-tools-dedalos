@@ -22,8 +22,13 @@ export const saveTemplate = async (req, res) => {
             VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE config = VALUES(config), is_default = VALUES(is_default)
         `;
-        
-        await pool.query(query, [role_name.toUpperCase(), JSON.stringify(config), is_default]);
+
+        await pool.query(query, [
+            role_name.toUpperCase(),
+            JSON.stringify(config),
+            is_default
+        ]);
+
         res.json({ message: 'Modelo salvo com sucesso!' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -36,7 +41,7 @@ export const deleteTemplate = async (req, res) => {
     if (role_name === 'DEFAULT') {
         return res.status(400).json({ error: 'Não pode deletar o padrão' });
     }
-    
+
     try {
         await pool.query('DELETE FROM badge_templates WHERE role_name = ?', [role_name]);
         res.json({ message: 'Modelo deletado' });

@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import Calendar from 'react-calendar';
-import 'react-calendar/dist/Calendar.css';
 import { toast } from 'react-toastify';
 import Sidebar from '../../components/Sidebar';
+import 'react-calendar/dist/Calendar.css';
 
 const SLOTS_PER_DAY = 144;
 const SLOT_DURATION_SECONDS = 600;
+const SLOT_HEIGHT = 20;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, loadingSchedule }) => {
   const slots = Array.from({ length: SLOTS_PER_DAY }, (_, i) => i);
   const [dragOverSlot, setDragOverSlot] = useState(null);
-  const SLOT_HEIGHT = 20;
 
   const handleDragOver = (e, slot) => {
     e.preventDefault();
@@ -34,7 +35,7 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-  }
+  };
 
   const formatDuration = (totalSeconds) => {
     if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '';
@@ -44,7 +45,7 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
     if (hours > 0) result += `${hours}h `;
     if (minutes > 0) result += `${minutes}m `;
     return result.trim();
-  }
+  };
 
   if (loadingSchedule) {
     return (
@@ -128,18 +129,15 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
   );
 };
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
 const formatTotalDuration = (totalSeconds) => {
-  if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '0s';
+  if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '0m';
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   let result = '';
   if (hours > 0) result += `${hours}h `;
   if (minutes > 0) result += `${minutes}m `;
-  if (result === '') result = '0m';
-  return result.trim();
-}
+  return result.trim() || '0m';
+};
 
 const formatDateToYYYYMMDD = (date) => {
   if (!date) return null;
@@ -147,7 +145,7 @@ const formatDateToYYYYMMDD = (date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
+};
 
 const calculateDurationStringToSeconds = (durationString) => {
   if (!durationString || typeof durationString !== 'string') return 0;
@@ -185,10 +183,10 @@ const getDatesForDayOfWeekInMonth = (year, month, dayOfWeek) => {
 };
 
 export default function Schedule() {
-  const navigate = useNavigate()
-  const [playlists, setPlaylists] = useState([])
-  const [allTracks, setAllTracks] = useState([])
-  const [searchTerm, setSearchTerm] = useState('')
+  const navigate = useNavigate();
+  const [playlists, setPlaylists] = useState([]);
+  const [allTracks, setAllTracks] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);
   const [originalClickedDate, setOriginalClickedDate] = useState(getTodayAtMidnightLocal());
   const [viewMode, setViewMode] = useState('selectingDays');
@@ -244,21 +242,23 @@ export default function Schedule() {
   }, [activeStartDate]);
 
   const getPlaylistDetails = (playlist) => {
-    if (!allTracks || allTracks.length === 0) { return { count: 0, duration: '0m' }; }
+    if (!allTracks || allTracks.length === 0) {
+      return { count: 0, duration: '0m' };
+    }
     const trackIds = Array.isArray(playlist.tracks_ids) ? playlist.tracks_ids : [];
-    const trackCount = trackIds.length;
     let totalDurationSeconds = 0;
+    
     trackIds.forEach(id => {
       const track = allTracks.find(t => t.id === Number(id));
       if (track) {
         const end = track.end_segundos ?? track.duracao_segundos;
         const start = track.start_segundos ?? 0;
-        const duration = (end > start) ? (end - start) : 0;
-        totalDurationSeconds += duration;
+        totalDurationSeconds += Math.max(0, end - start);
       }
     });
+
     return {
-      count: trackCount,
+      count: trackIds.length,
       duration: formatTotalDuration(totalDurationSeconds)
     };
   };
@@ -267,12 +267,11 @@ export default function Schedule() {
     if (!searchTerm) return playlists;
     const lowerQuery = searchTerm.toLowerCase();
     return playlists.filter(p => p.nome.toLowerCase().includes(lowerQuery));
-  }, [playlists, searchTerm, allTracks]);
+  }, [playlists, searchTerm]);
 
   const handleDateSelect = (value) => {
     const newDate = new Date(value);
     newDate.setHours(0, 0, 0, 0);
-
     setSelectedDates([newDate]);
     setOriginalClickedDate(newDate);
     setRepeatRule('NENHUMA');
@@ -280,21 +279,17 @@ export default function Schedule() {
 
   const handleRepeatToggle = (e) => {
     const isChecking = e.target.checked;
-
     if (isChecking && originalClickedDate) {
       setRepeatRule('DIA_SEMANA_MES');
-
-      const firstDate = originalClickedDate;
-      const dates = getDatesForDayOfWeekInMonth(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDay());
-
-      const futureDates = dates.filter(d => d.getDate() >= firstDate.getDate());
-
-      setSelectedDates(futureDates);
+      const dates = getDatesForDayOfWeekInMonth(
+        originalClickedDate.getFullYear(), 
+        originalClickedDate.getMonth(), 
+        originalClickedDate.getDay()
+      );
+      setSelectedDates(dates.filter(d => d.getDate() >= originalClickedDate.getDate()));
     } else {
       setRepeatRule('NENHUMA');
-      if (originalClickedDate) {
-        setSelectedDates([originalClickedDate]);
-      }
+      if (originalClickedDate) setSelectedDates([originalClickedDate]);
     }
   };
 
@@ -311,7 +306,6 @@ export default function Schedule() {
         const response = await axios.get(`${API_URL}/api/agendamentos/${dateString}`);
         setCurrentSchedule(response.data || {});
       } catch (err) {
-        console.error(`Erro ao buscar agendamento para ${dateString}:`, err);
         toast.error(`Não foi possível carregar o agendamento.`);
         setCurrentSchedule({});
       } finally {
@@ -320,7 +314,6 @@ export default function Schedule() {
     } else {
       setCurrentSchedule({});
     }
-
     setViewMode('editingGrade');
   };
 
@@ -333,19 +326,17 @@ export default function Schedule() {
     if (selectedDates.length === 0) return;
     try {
       const playlistData = JSON.parse(playlistDataString);
-      if (!playlistData?.playlist_id) throw new Error("Dados inválidos.");
       const droppedPlaylist = playlists.find(p => p.id === playlistData.playlist_id);
-      if (!droppedPlaylist) throw new Error("Playlist não encontrada.");
+      if (!droppedPlaylist) return;
 
       const details = getPlaylistDetails(droppedPlaylist);
       const durationSeconds = calculateDurationStringToSeconds(details.duration);
-      if (durationSeconds <= 0) { toast.warn("Duração inválida."); return; }
+      if (durationSeconds <= 0) return;
 
       const slotsNeeded = Math.ceil(durationSeconds / SLOT_DURATION_SECONDS);
       const endSlot = targetSlot + slotsNeeded;
 
       let isOverlapping = false;
-
       for (let i = targetSlot; i < endSlot; i++) {
         if (i >= SLOTS_PER_DAY) {
           isOverlapping = true;
@@ -375,31 +366,25 @@ export default function Schedule() {
 
       if (isOverlapping) return;
 
-      const previousSlotKey = Object.keys(currentSchedule).find(key => currentSchedule[key]?.playlist_id === playlistData.playlist_id);
-      const previousSlot = previousSlotKey !== undefined ? Number(previousSlotKey) : null;
-
-      setCurrentSchedule(prev => {
-        const newSchedule = { ...prev };
-        newSchedule[targetSlot] = {
+      setCurrentSchedule(prev => ({
+        ...prev,
+        [targetSlot]: {
           playlist_id: playlistData.playlist_id,
           playlist_nome: playlistData.playlist_nome,
           duration_seconds: durationSeconds
-        };
-        return newSchedule;
-      });
+        }
+      }));
     } catch (e) {
-      console.error("Erro no drop:", e);
       toast.error(`Erro: ${e.message}`);
     }
   };
 
-  const handleRemovePlaylistFromSlot = (slot) => { setCurrentSchedule(prev => ({ ...prev, [slot]: null })); };
+  const handleRemovePlaylistFromSlot = (slot) => {
+    setCurrentSchedule(prev => ({ ...prev, [slot]: null }));
+  };
 
   const handleSaveSchedule = async (exitOnSave = true) => {
-    if (selectedDates.length === 0) {
-      toast.warn("Erro: Nenhum dia selecionado.");
-      return;
-    }
+    if (selectedDates.length === 0) return;
 
     setSavingSchedule(true);
     try {
@@ -410,34 +395,27 @@ export default function Schedule() {
         }
       });
 
-      const formattedDates = (repeatRule === 'DIA_SEMANA_MES' && selectedDates.length > 0)
+      const formattedDates = (repeatRule === 'DIA_SEMANA_MES')
         ? [formatDateToYYYYMMDD(selectedDates[0])]
         : selectedDates.map(date => formatDateToYYYYMMDD(date));
-
-      const finalRepeatRule = (repeatRule === 'DIA_SEMANA_MES') ? 'DIA_SEMANA_MES' : 'NENHUMA';
 
       await axios.post(`${API_URL}/api/agendamentos`, {
         dates: formattedDates,
         schedule: scheduleToSend,
-        regra_repeticao: finalRepeatRule
+        regra_repeticao: repeatRule === 'DIA_SEMANA_MES' ? 'DIA_SEMANA_MES' : 'NENHUMA'
       });
 
-      toast.success('Agendamento salvo com sucesso!');
-
-      const year = activeStartDate.getFullYear();
-      const month = activeStartDate.getMonth() + 1;
-      const summaryResponse = await axios.get(`${API_URL}/api/agendamentos/summary/${year}/${month}`);
+      toast.success('Agendamento salvo!');
+      
+      const summaryResponse = await axios.get(`${API_URL}/api/agendamentos/summary/${activeStartDate.getFullYear()}/${activeStartDate.getMonth() + 1}`);
       setScheduledDatesInMonth(summaryResponse.data || []);
 
       if (exitOnSave) {
         setViewMode('selectingDays');
-        setSelectedDates([getTodayAtMidnightLocal()]);
-        setOriginalClickedDate(getTodayAtMidnightLocal());
         setCurrentSchedule({});
         setRepeatRule('NENHUMA');
       }
     } catch (err) {
-      console.error("Erro ao salvar:", err);
       toast.error(err.response?.data?.error || "Falha ao salvar.");
     } finally {
       setSavingSchedule(false);
@@ -445,60 +423,43 @@ export default function Schedule() {
   };
 
   const handleDownloadReport = () => {
-    if (selectedDates.length !== 1) {
-      toast.warn("Gere relatórios para um único dia.");
-      return;
-    }
+    if (selectedDates.length !== 1) return;
     const dateString = formatDateToYYYYMMDD(selectedDates[0]);
     window.open(`${API_URL}/api/agendamentos/relatorio/${dateString}`, '_blank');
   };
 
-  const handleClearSchedule = () => { if (window.confirm("Limpar grade?")) { setCurrentSchedule({}); } };
-  const handleActiveStartDateChange = ({ activeStartDate }) => { setActiveStartDate(activeStartDate); };
+  const handleClearSchedule = () => {
+    if (window.confirm("Limpar grade?")) setCurrentSchedule({});
+  };
+
+  const handleActiveStartDateChange = ({ activeStartDate }) => setActiveStartDate(activeStartDate);
 
   const tileClassName = ({ date, view }) => {
-    if (view === 'month') {
-      const dateString = formatDateToYYYYMMDD(date);
-      let classes = [];
-      if (scheduledDatesInMonth.includes(dateString)) { classes.push('scheduled-day'); }
-      const isSelected = selectedDates.some(selectedDate => formatDateToYYYYMMDD(selectedDate) === dateString);
-      if (isSelected) { classes.push('react-calendar__tile--active'); }
-      return classes.length > 0 ? classes.join(' ') : null;
-    }
-    return null;
+    if (view !== 'month') return null;
+    const dateString = formatDateToYYYYMMDD(date);
+    const classes = [];
+    if (scheduledDatesInMonth.includes(dateString)) classes.push('scheduled-day');
+    if (selectedDates.some(d => formatDateToYYYYMMDD(d) === dateString)) classes.push('react-calendar__tile--active');
+    return classes.join(' ');
   };
 
   const showRepeatCheckbox = viewMode === 'selectingDays' && (selectedDates.length === 1 || repeatRule === 'DIA_SEMANA_MES');
   const showScheduleButton = viewMode === 'selectingDays' && selectedDates.length > 0;
-  const isSingleDateSelected = selectedDates.length === 1;
-  const isPastDateSelected = isSingleDateSelected && selectedDates[0] < getTodayAtMidnightLocal();
+  const isPastDateSelected = selectedDates.length === 1 && selectedDates[0] < getTodayAtMidnightLocal();
 
   const repeatLabel = useMemo(() => {
-    if (!showRepeatCheckbox) { return ""; }
-    try {
-      const date = originalClickedDate;
-      if (!date) return "Repetir dia da semana no mês";
-
-      const diaSemana = date.toLocaleDateString('pt-BR', { weekday: 'long' });
-      const mes = date.toLocaleDateString('pt-BR', { month: 'long' });
-      const diaSemanaCapitalized = diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1);
-      return `Repetir nas próximas ${diaSemanaCapitalized}s do mês de ${mes}`;
-    } catch (e) {
-      return "Repetir dia da semana no mês";
-    }
+    if (!showRepeatCheckbox || !originalClickedDate) return "Repetir dia da semana no mês";
+    const diaSemana = originalClickedDate.toLocaleDateString('pt-BR', { weekday: 'long' });
+    const mes = originalClickedDate.toLocaleDateString('pt-BR', { month: 'long' });
+    return `Repetir nas próximas ${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)}s do mês de ${mes}`;
   }, [originalClickedDate, showRepeatCheckbox]);
 
   return (
     <div className="min-h-screen bg-gradient-warm flex">
-      <Sidebar
-        activePage="schedule"
-        headerTitle="Agendamento"
-        headerIcon="calendar_month"
-      />
+      <Sidebar activePage="schedule" headerTitle="Agendamento" headerIcon="calendar_month" />
 
       <main className="ml-64 flex-1 p-8">
         <div className="max-w-7xl mx-auto w-full">
-
           <div className="flex justify-between items-center mb-6">
             <div>
               <h1 className="text-3xl font-bold text-white mb-1">Agendamento</h1>
@@ -546,7 +507,6 @@ export default function Schedule() {
             </div>
 
             <div className="col-span-2 space-y-6">
-
               {viewMode === 'selectingDays' && (
                 <div className="liquid-glass rounded-xl p-6">
                   <div className="mb-4 calendar-container max-w-md mx-auto">
@@ -579,19 +539,13 @@ export default function Schedule() {
                       </div>
                     )}
                     {isPastDateSelected && (
-                      <button
-                        onClick={handleDownloadReport}
-                        className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
-                      >
+                      <button onClick={handleDownloadReport} className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300">
                         <span className="material-symbols-outlined text-base">download</span>
                         Baixar Relatório do dia {selectedDates[0].toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                       </button>
                     )}
                     {showScheduleButton && (
-                      <button
-                        onClick={handleConfirmSelection}
-                        className="bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors"
-                      >
+                      <button onClick={handleConfirmSelection} className="bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors">
                         Gerenciar Agendamento
                       </button>
                     )}
@@ -627,14 +581,14 @@ export default function Schedule() {
                   <div className="flex justify-end gap-4 mb-4">
                     <button
                       onClick={handleClearSchedule}
-                      disabled={loadingSchedule || savingSchedule || Object.keys(currentSchedule).length === 0 || Object.values(currentSchedule).every(v => v === null)}
+                      disabled={loadingSchedule || savingSchedule || Object.keys(currentSchedule).length === 0}
                       className="bg-white/10 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-white/20 transition-colors disabled:opacity-50"
                     >
                       Limpar Grade
                     </button>
                     <button
                       onClick={() => handleSaveSchedule(false)}
-                      disabled={savingSchedule || savingSchedule}
+                      disabled={savingSchedule}
                       className="bg-primary/70 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50"
                     >
                       {savingSchedule ? 'Salvando...' : 'Salvar'}
@@ -663,5 +617,5 @@ export default function Schedule() {
         </div>
       </main>
     </div>
-  )
+  );
 }

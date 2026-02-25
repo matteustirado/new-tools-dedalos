@@ -3,6 +3,15 @@ import { getIO } from '../socket.js';
 import { io as ioClient } from 'socket.io-client';
 import axios from 'axios';
 
+const CHECKIN_INTERVAL = 30000;
+
+const EXTERNAL_SOCKETS = {
+    SP: 'https://placar-80b3f72889ba.herokuapp.com/',
+    BH: 'https://placarbh-cf51a4a5b78a.herokuapp.com/'
+};
+
+let lastCheckinCount = { SP: null, BH: null };
+
 const log = (tag, msg, data = null) => {
     const time = new Date().toISOString().split('T')[1].slice(0, 8);
     const dataStr = data ? ` | DADOS: ${JSON.stringify(data).substring(0, 200)}...` : '';
@@ -50,11 +59,17 @@ const fetchFromDedalos = async (unidade) => {
         if (Array.isArray(data)) {
             if (data.length > 0 && data[0].contador !== undefined) return data[0].contador;
             return data.length;
-        } else if (data.results) {
+        } 
+        
+        if (data.results) {
             return data.results.length;
-        } else if (data.contador !== undefined) {
+        } 
+        
+        if (data.contador !== undefined) {
             return data.contador;
-        } else if (data.count !== undefined) {
+        } 
+        
+        if (data.count !== undefined) {
             return data.count;
         }
 
@@ -65,11 +80,6 @@ const fetchFromDedalos = async (unidade) => {
         log('PROXY_ERR', `Erro na comunicação com API externa`, error.message);
         return null;
     }
-};
-
-const EXTERNAL_SOCKETS = {
-    SP: 'https://placar-80b3f72889ba.herokuapp.com/',
-    BH: 'https://placarbh-cf51a4a5b78a.herokuapp.com/'
 };
 
 const iniciarPonteRealTime = () => {
@@ -105,9 +115,6 @@ const iniciarPonteRealTime = () => {
         }
     });
 };
-
-const CHECKIN_INTERVAL = 30000;
-let lastCheckinCount = { SP: null, BH: null };
 
 const iniciarSentinela = () => {
     log('SENTINELA', "Serviço de Backup HTTP iniciado.");
@@ -148,25 +155,28 @@ export const getCrowdCount = async (req, res) => {
     const count = await fetchFromDedalos(unidade);
     
     if (count !== null) {
-        res.json({ count });
-    } else {
-        log('API_ERR', `Falha ao obter contagem para ${unidade}`);
-        res.status(502).json({ error: "Falha na comunicação com API Dedalos Externa" });
+        return res.json({ count });
     }
+
+    log('API_ERR', `Falha ao obter contagem para ${unidade}`);
+    res.status(502).json({ error: "Falha na comunicação com API Dedalos Externa" });
 };
 
 export const testarTrigger = (req, res) => {
     const { unidade } = req.params;
     const unidadeUpper = unidade ? unidade.toUpperCase() : 'SP';
+
     try {
         const io = getIO();
         log('TESTE', `Disparo manual para ${unidadeUpper}`);
+        
         io.emit('checkin:novo', { 
             unidade: unidadeUpper,
             total: 999, 
             novos: 1,
             timestamp: new Date()
         });
+
         res.json({ message: `Teste enviado para ${unidadeUpper}` });
     } catch (error) {
         res.status(500).json({ error: "Erro interno." });
@@ -175,12 +185,19 @@ export const testarTrigger = (req, res) => {
 
 export const getActiveConfig = async (req, res) => {
     const { unidade } = req.params;
+
     try {
         const [rows] = await pool.query('SELECT * FROM scoreboard_active WHERE unidade = ?', [unidade.toUpperCase()]);
-        if (rows.length === 0) return res.status(404).json({ error: 'Configuração não encontrada.' });
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Configuração não encontrada.' });
+        }
         
         const config = rows[0];
-        if (typeof config.opcoes === 'string') config.opcoes = JSON.parse(config.opcoes);
+        if (typeof config.opcoes === 'string') {
+            config.opcoes = JSON.parse(config.opcoes);
+        }
+
         res.json(config);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -189,11 +206,16 @@ export const getActiveConfig = async (req, res) => {
 
 export const updateActiveConfig = async (req, res) => {
     const { unidade, titulo, layout, opcoes, status } = req.body;
-    if (!unidade || !titulo || !opcoes) return res.status(400).json({ error: "Dados incompletos." });
+    
+    if (!unidade || !titulo || !opcoes) {
+        return res.status(400).json({ error: "Dados incompletos." });
+    }
 
     const connection = await pool.getConnection();
+
     try {
         await connection.beginTransaction();
+
         const opcoesString = JSON.stringify(opcoes);
         const unidadeUpper = unidade.toUpperCase();
 
@@ -224,13 +246,22 @@ export const updateActiveConfig = async (req, res) => {
 
 export const castVote = async (req, res) => {
     const { unidade, optionIndex } = req.body;
-    if (!unidade || optionIndex === undefined) return res.status(400).json({ error: "Voto inválido." });
+    
+    if (!unidade || optionIndex === undefined) {
+        return res.status(400).json({ error: "Voto inválido." });
+    }
 
     try {
-        await pool.query('INSERT INTO scoreboard_votes (unidade, option_index) VALUES (?, ?)', [unidade.toUpperCase(), optionIndex]);
+        const unidadeUpper = unidade.toUpperCase();
+        await pool.query('INSERT INTO scoreboard_votes (unidade, option_index) VALUES (?, ?)', [unidadeUpper, optionIndex]);
+        
         const io = getIO();
-        const [rows] = await pool.query('SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', [unidade.toUpperCase()]);
-        io.emit('scoreboard:vote_updated', { unidade: unidade.toUpperCase(), votes: rows });
+        const [rows] = await pool.query(
+            'SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', 
+            [unidadeUpper]
+        );
+
+        io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: rows });
         res.json({ message: "Voto computado." });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -239,8 +270,12 @@ export const castVote = async (req, res) => {
 
 export const getVotes = async (req, res) => {
     const { unidade } = req.params;
+
     try {
-        const [rows] = await pool.query('SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', [unidade.toUpperCase()]);
+        const [rows] = await pool.query(
+            'SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', 
+            [unidade.toUpperCase()]
+        );
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -249,10 +284,14 @@ export const getVotes = async (req, res) => {
 
 export const resetVotes = async (req, res) => {
     const { unidade } = req.body;
+
     try {
-        await pool.query('DELETE FROM scoreboard_votes WHERE unidade = ?', [unidade.toUpperCase()]);
+        const unidadeUpper = unidade.toUpperCase();
+        await pool.query('DELETE FROM scoreboard_votes WHERE unidade = ?', [unidadeUpper]);
+        
         const io = getIO();
-        io.emit('scoreboard:vote_updated', { unidade: unidade.toUpperCase(), votes: [] });
+        io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: [] });
+        
         res.json({ message: "Votos zerados." });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -262,35 +301,46 @@ export const resetVotes = async (req, res) => {
 export const savePreset = async (req, res) => {
     const { unidade, titulo_preset, titulo_placar, layout, opcoes } = req.body;
     const unidadeUpper = unidade ? unidade.toUpperCase() : 'SP';
+
     try {
         await pool.query(
             'INSERT INTO scoreboard_presets (unidade, titulo_preset, titulo_placar, layout, opcoes) VALUES (?, ?, ?, ?, ?)',
             [unidadeUpper, titulo_preset, titulo_placar, layout, JSON.stringify(opcoes)]
         );
         res.json({ message: "Preset salvo." });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 };
 
 export const getPresets = async (req, res) => {
     const { unidade } = req.params;
     const unidadeUpper = unidade ? unidade.toUpperCase() : 'SP';
+
     try {
         const [rows] = await pool.query(
             'SELECT * FROM scoreboard_presets WHERE unidade = ? ORDER BY id DESC', 
             [unidadeUpper]
         );
+
         const formatted = rows.map(r => ({ 
             ...r, 
             opcoes: (typeof r.opcoes === 'string') ? JSON.parse(r.opcoes) : r.opcoes 
         }));
+
         res.json(formatted);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 };
 
 export const deletePreset = async (req, res) => {
     const { id } = req.params;
+
     try {
         await pool.query('DELETE FROM scoreboard_presets WHERE id = ?', [id]);
         res.json({ message: "Preset excluído." });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        res.status(500).json({ error: err.message }); 
+    }
 };

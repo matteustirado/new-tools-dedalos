@@ -32,8 +32,11 @@ export default function ScoreboardDisplay() {
         link.href = 'https://fonts.googleapis.com/css2?family=Noto+Emoji:wght@300..700&display=swap';
         link.rel = 'stylesheet';
         document.head.appendChild(link);
+
         return () => {
-            if (document.head.contains(link)) document.head.removeChild(link);
+            if (document.head.contains(link)) {
+                document.head.removeChild(link);
+            }
         };
     }, []);
 
@@ -44,7 +47,7 @@ export default function ScoreboardDisplay() {
         const localSocket = io(API_URL);
 
         localSocket.on('scoreboard:vote_updated', (data) => {
-            if (data && data.unidade && data.unidade.toLowerCase() === currentUnit) {
+            if (data?.unidade?.toLowerCase() === currentUnit) {
                 setVotes(data.votes);
             }
         });
@@ -109,15 +112,16 @@ export default function ScoreboardDisplay() {
     };
 
     const processedOptions = useMemo(() => {
-        if (!config || !config.opcoes) return [];
+        if (!config?.opcoes) return [];
 
         const votesMap = {};
         if (Array.isArray(votes)) {
-            votes.forEach(v => { votesMap[v.option_index] = v.count; });
+            votes.forEach(v => {
+                votesMap[v.option_index] = v.count;
+            });
         }
 
-        let totalVotes = 0;
-        Object.values(votesMap).forEach(c => totalVotes += Number(c));
+        const totalVotes = Object.values(votesMap).reduce((acc, curr) => acc + Number(curr), 0);
 
         const options = config.opcoes.map((opt, idx) => {
             const count = Number(votesMap[idx]) || 0;
@@ -134,13 +138,20 @@ export default function ScoreboardDisplay() {
     const getMovementMessage = (pct) => {
         const rounded = Math.floor(pct / 5) * 5;
         const keys = Object.keys(MOVEMENT_MESSAGES).map(Number).sort((a, b) => b - a);
+
         for (const key of keys) {
             if (rounded >= key) return MOVEMENT_MESSAGES[key];
         }
         return MOVEMENT_MESSAGES[0];
     };
 
-    if (loading) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-bold tracking-widest">CARREGANDO SISTEMA...</div>;
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-black text-white flex items-center justify-center font-bold tracking-widest">
+                CARREGANDO SISTEMA...
+            </div>
+        );
+    }
 
     const isLandscape = config?.layout === 'landscape';
 
@@ -168,43 +179,28 @@ export default function ScoreboardDisplay() {
         if (tipo !== 'image' || !valor) return null;
 
         const imageUrl = `${API_URL}${valor}`;
+        const maskStyle = {
+            maskImage: isLandscape ? 'linear-gradient(to top, black 70%, transparent 100%)' : 'linear-gradient(to right, black 60%, transparent 100%)',
+            WebkitMaskImage: isLandscape ? 'linear-gradient(to top, black 70%, transparent 100%)' : 'linear-gradient(to right, black 60%, transparent 100%)'
+        };
 
-        if (isLandscape) {
-            return (
-                <div className="absolute bottom-0 left-0 w-full h-full z-1 pointer-events-none">
-                    <img
-                        src={imageUrl}
-                        alt=""
-                        className="w-full h-full object-cover object-bottom"
-                        style={{
-                            maskImage: 'linear-gradient(to top, black 70%, transparent 100%)',
-                            WebkitMaskImage: 'linear-gradient(to top, black 70%, transparent 100%)'
-                        }}
-                    />
-                </div>
-            );
-        } else {
-            return (
-                <div className="absolute top-0 left-0 h-full w-[55%] z-1 pointer-events-none">
-                    <img
-                        src={imageUrl}
-                        alt=""
-                        className="w-full h-full object-cover object-left"
-                        style={{
-                            maskImage: 'linear-gradient(to right, black 60%, transparent 100%)',
-                            WebkitMaskImage: 'linear-gradient(to right, black 60%, transparent 100%)'
-                        }}
-                    />
-                </div>
-            );
-        }
+        return (
+            <div className={`absolute z-1 pointer-events-none ${isLandscape ? 'bottom-0 left-0 w-full h-full' : 'top-0 left-0 h-full w-[55%]'}`}>
+                <img
+                    src={imageUrl}
+                    alt=""
+                    className={`w-full h-full object-cover ${isLandscape ? 'object-bottom' : 'object-left'}`}
+                    style={maskStyle}
+                />
+            </div>
+        );
     };
 
     return (
         <div className="min-h-screen bg-[#050505] text-white font-sans overflow-hidden relative selection:bg-none p-4 md:p-8 flex flex-col justify-center items-center">
             <div className="fixed inset-0 z-0 pointer-events-none opacity-40">
-                <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] bg-orange-900/20 rounded-full blur-[120px] animate-float-slow"></div>
-                <div className="absolute bottom-[-20%] right-[-20%] w-[80%] h-[80%] bg-red-900/20 rounded-full blur-[100px] animate-float-reverse"></div>
+                <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] bg-orange-900/20 rounded-full blur-[120px] animate-float-slow" />
+                <div className="absolute bottom-[-20%] right-[-20%] w-[80%] h-[80%] bg-red-900/20 rounded-full blur-[100px] animate-float-reverse" />
             </div>
 
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[60%] max-w-[500px] opacity-[0.08] pointer-events-none z-0">
@@ -216,30 +212,25 @@ export default function ScoreboardDisplay() {
                 </svg>
             </div>
 
-            <div className={`relative z-10 bg-black/60 backdrop-blur-md rounded-3xl border-4 border-transparent bg-clip-padding shadow-2xl p-8 flex flex-col w-full max-w-[1400px] transition-all duration-500
-                ${isLandscape ? 'h-[85vh]' : 'min-h-[85vh] h-auto'}
-            `} style={{ borderImage: 'linear-gradient(135deg, #ff4d00, #ffcc00) 1' }}>
-
+            <div 
+                className={`relative z-10 bg-black/60 backdrop-blur-md rounded-3xl border-4 border-transparent bg-clip-padding shadow-2xl p-8 flex flex-col w-full max-w-[1400px] transition-all duration-500 ${isLandscape ? 'h-[85vh]' : 'min-h-[85vh] h-auto'}`} 
+                style={{ borderImage: 'linear-gradient(135deg, #ff4d00, #ffcc00) 1' }}
+            >
                 <h1 className="text-5xl md:text-6xl font-black italic text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-yellow-400 drop-shadow-[0_0_20px_rgba(255,77,0,0.5)] uppercase tracking-wider shrink-0">
                     {config?.titulo || 'PLACAR DEDALOS'}
                 </h1>
 
-                <div className={`flex-1 flex w-full gap-4 md:gap-8 justify-center items-end ${isLandscape ? 'flex-row items-end' : 'flex-col justify-start'
-                    }`}>
-
+                <div className={`flex-1 flex w-full gap-4 md:gap-8 justify-center items-end ${isLandscape ? 'flex-row items-end' : 'flex-col justify-start'}`}>
                     {processedOptions.map((opt, idx) => {
                         const displayTipo = opt.display_tipo || opt.tipo;
                         const displayValor = opt.display_valor || opt.valor;
 
                         return (
-                            <div key={idx} className={`relative rounded-2xl border border-white/10 bg-black/40 shadow-lg overflow-hidden transition-all duration-500
-                                ${isLandscape
-                                    ? 'flex-1 h-full flex flex-col justify-end max-w-[250px]'
-                                    : 'w-full h-28 flex flex-row items-center'
-                                }
-                            `}>
+                            <div 
+                                key={idx} 
+                                className={`relative rounded-2xl border border-white/10 bg-black/40 shadow-lg overflow-hidden transition-all duration-500 ${isLandscape ? 'flex-1 h-full flex flex-col justify-end max-w-[250px]' : 'w-full h-28 flex flex-row items-center'}`}
+                            >
                                 <div style={getBarStyle(opt.color)} />
-
                                 {renderOptionImage(opt)}
 
                                 {isLandscape ? (
@@ -247,13 +238,13 @@ export default function ScoreboardDisplay() {
                                         <span className="font-black text-5xl md:text-6xl text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] mb-2">
                                             {opt.percentage.toFixed(0)}%
                                         </span>
-
                                         <div className="flex-1 flex items-center justify-center">
                                             {displayTipo === 'emoji' && (
-                                                <span className="text-[6rem] leading-none transition-transform" style={getEmojiStyle()}>{displayValor}</span>
+                                                <span className="text-[6rem] leading-none transition-transform" style={getEmojiStyle()}>
+                                                    {displayValor}
+                                                </span>
                                             )}
                                         </div>
-
                                         <span className="font-black text-white uppercase tracking-wider text-center text-xl md:text-3xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] px-2 break-words w-full leading-none mb-2">
                                             {opt.nome}
                                         </span>
@@ -262,14 +253,14 @@ export default function ScoreboardDisplay() {
                                     <div className="relative z-10 w-full h-full flex flex-row items-center px-6 gap-6 justify-between pointer-events-none">
                                         <div className="w-20 flex-shrink-0 flex items-center justify-center">
                                             {displayTipo === 'emoji' && (
-                                                <span className="text-6xl leading-none" style={getEmojiStyle()}>{displayValor}</span>
+                                                <span className="text-6xl leading-none" style={getEmojiStyle()}>
+                                                    {displayValor}
+                                                </span>
                                             )}
                                         </div>
-
                                         <span className="font-black text-white uppercase tracking-wider text-4xl md:text-6xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] flex-1 text-center truncate leading-none">
                                             {opt.nome}
                                         </span>
-
                                         <span className="font-black text-5xl md:text-7xl text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
                                             {opt.percentage.toFixed(0)}%
                                         </span>
@@ -290,14 +281,13 @@ export default function ScoreboardDisplay() {
                                 boxShadow: '0 0 25px rgba(255, 77, 0, 0.6)'
                             }}
                         >
-                            <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                            <div className="absolute inset-0 bg-white/20 animate-pulse" />
                         </div>
                     </div>
                     <p className="text-xl md:text-2xl text-white font-light uppercase tracking-[0.15em] text-center drop-shadow-md animate-fade-in">
                         {getMovementMessage(crowdPercentage)}
                     </p>
                 </div>
-
             </div>
         </div>
     );

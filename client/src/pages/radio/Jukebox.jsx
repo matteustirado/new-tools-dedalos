@@ -19,14 +19,17 @@ const getTagInfo = (item) => {
   if (item.tipo === 'COMERCIAL_MANUAL' || item.is_commercial) {
     return { text: 'COMERCIAL', color: 'bg-orange-500/20 text-orange-400' };
   }
+
   if (item.tipo === 'DJ_PEDIDO' || item.tipo === 'DJ') {
     return { text: 'DJ', color: 'bg-blue-500/20 text-blue-400' };
   }
+
   if (item.unidade || item.tipo === 'JUKEBOX') {
     const u = (item.unidade || '').toUpperCase();
     if (u === 'BH') return { text: 'BH', color: 'bg-yellow-500/20 text-yellow-400' };
     return { text: u || 'SP', color: 'bg-green-500/20 text-green-400' };
   }
+
   return { text: 'PLAYLIST', color: 'bg-purple-500/20 text-purple-400' };
 };
 
@@ -36,9 +39,10 @@ export default function Jukebox() {
 
   const [socket, setSocket] = useState(null);
   const [tracks, setTracks] = useState([]);
+  const [todasPlaylists, setTodasPlaylists] = useState([]);
   const [musicaAtual, setMusicaAtual] = useState(null);
   const [fila, setFila] = useState([]);
-  const [playlistDoDia, setPlaylistDoDia] = useState(null);
+  const [activePlaylistId, setActivePlaylistId] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [customerCode, setCustomerCode] = useState('');
@@ -56,6 +60,11 @@ export default function Jukebox() {
 
   const currentDayIndex = new Date().getDay();
   const currentDayName = useMemo(() => DAYS_TRANSLATION[currentDayIndex], [currentDayIndex]);
+
+  const playlistDoDia = useMemo(() => {
+    if (!activePlaylistId || todasPlaylists.length === 0) return null;
+    return todasPlaylists.find(p => p.id === activePlaylistId) || null;
+  }, [activePlaylistId, todasPlaylists]);
 
   const validateCustomer = async (code) => {
     if (!code) return false;
@@ -111,8 +120,10 @@ export default function Jukebox() {
         setShowDropdown(false);
       }
     };
+
     document.addEventListener('mousedown', handleClickOrFocusOutside);
     document.addEventListener('focusin', handleClickOrFocusOutside);
+
     return () => {
       document.removeEventListener('mousedown', handleClickOrFocusOutside);
       document.removeEventListener('focusin', handleClickOrFocusOutside);
@@ -122,8 +133,10 @@ export default function Jukebox() {
   useEffect(() => {
     const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
     const handleActivity = () => resetInactivityTimer();
+
     events.forEach(event => window.addEventListener(event, handleActivity));
     resetInactivityTimer();
+
     return () => {
       events.forEach(event => window.removeEventListener(event, handleActivity));
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
@@ -136,26 +149,19 @@ export default function Jukebox() {
 
     fetchTracks();
 
-    const fetchTheme = async () => {
-      const today = new Date();
-      const dateString = today.toISOString().split('T')[0];
-      try {
-        const res = await axios.get(`${API_URL}/api/agendamentos/${dateString}`);
-        const schedule = res.data;
-        const firstSlot = Object.values(schedule).find(item => item !== null);
+    axios.get(`${API_URL}/api/playlists`)
+      .then(res => setTodasPlaylists(res.data || []))
+      .catch(err => console.error("Erro ao carregar playlists:", err));
 
-        if (firstSlot) {
-          const pRes = await axios.get(`${API_URL}/api/playlists`);
-          const playlist = pRes.data.find(p => p.id === firstSlot.playlist_id);
-          setPlaylistDoDia(playlist);
-        }
-      } catch (e) {
-        console.error("Erro ao buscar tema do dia", e);
-      }
-    };
-    fetchTheme();
+    newSocket.on('maestro:estadoCompleto', (estado) => {
+      setMusicaAtual(estado.musicaAtual);
+      setActivePlaylistId(estado.playlistAtualId || null);
+    });
 
-    newSocket.on('maestro:estadoCompleto', (estado) => { setMusicaAtual(estado.musicaAtual); });
+    newSocket.on('maestro:playlistAtualizada', (playlistId) => {
+      setActivePlaylistId(playlistId);
+    });
+
     newSocket.on('maestro:tocarAgora', ({ musicaInfo }) => { setMusicaAtual(musicaInfo); });
     newSocket.on('maestro:filaAtualizada', (novaFila) => { setFila(novaFila || []); });
 
@@ -194,6 +200,7 @@ export default function Jukebox() {
 
   const availableTracks = useMemo(() => {
     let filtered = tracks;
+
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
       filtered = tracks.filter(track =>
@@ -215,10 +222,17 @@ export default function Jukebox() {
   const topArtistasPlaylist = useMemo(() => {
     if (!playlistDoDia || !tracks.length) return [];
     let playlistTrackIds = playlistDoDia.tracks_ids;
+
     if (typeof playlistTrackIds === 'string') {
-      try { playlistTrackIds = JSON.parse(playlistTrackIds); } catch (e) { playlistTrackIds = []; }
+      try {
+        playlistTrackIds = JSON.parse(playlistTrackIds);
+      } catch (e) {
+        playlistTrackIds = [];
+      }
     }
+
     if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
+
     const artistCount = {};
     playlistTrackIds.forEach(id => {
       const track = tracks.find(t => t.id == id);
@@ -227,7 +241,11 @@ export default function Jukebox() {
         if (mainArtist) artistCount[mainArtist] = (artistCount[mainArtist] || 0) + 1;
       }
     });
-    return Object.entries(artistCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name);
+
+    return Object.entries(artistCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
   }, [playlistDoDia, tracks]);
 
   const handleSelectTrack = (track) => {
@@ -310,12 +328,13 @@ export default function Jukebox() {
         message = refusalReason || 'Não foi possível adicionar esta música no momento.';
         buttonText = 'Tentar Outra';
         break;
-      default: break;
+      default:
+        break;
     }
 
     return (
       <div className="h-screen w-screen bg-gradient-warm flex flex-col items-center justify-center p-8 text-center animate-fade-in select-none">
-        <div className={`w-28 h-28 rounded-full flex items-center justify-center mb-4 shadow-2xl bg-white/10 backdrop-blur-lg border border-white/10`}>
+        <div className="w-28 h-28 rounded-full flex items-center justify-center mb-4 shadow-2xl bg-white/10 backdrop-blur-lg border border-white/10">
           <span className={`material-symbols-outlined text-6xl ${colorClass} drop-shadow-lg`}>{icon}</span>
         </div>
         <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">
@@ -324,7 +343,10 @@ export default function Jukebox() {
         <p className="text-lg text-white/80 max-w-2xl leading-relaxed">
           {message}
         </p>
-        <button onClick={resetForm} className="mt-6 bg-white/10 text-white px-8 py-2 rounded-xl hover:bg-white/20 transition-colors font-bold uppercase tracking-wider text-sm border border-white/10">
+        <button
+          onClick={resetForm}
+          className="mt-6 bg-white/10 text-white px-8 py-2 rounded-xl hover:bg-white/20 transition-colors font-bold uppercase tracking-wider text-sm border border-white/10"
+        >
           {buttonText}
         </button>
       </div>
@@ -333,11 +355,8 @@ export default function Jukebox() {
 
   return (
     <div className="h-screen w-screen bg-gradient-warm p-8 flex flex-col overflow-hidden select-none text-white">
-
       <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
-
         <div className="col-span-5 flex flex-col gap-6 h-full min-h-0">
-
           <div className="liquid-glass p-4 rounded-3xl relative overflow-hidden group flex-shrink-0">
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center gap-2 bg-black/30 rounded-lg p-1">
@@ -356,14 +375,22 @@ export default function Jukebox() {
             <div className="flex gap-3 items-center">
               <div className="w-14 h-14 rounded-full border-2 border-white/10 shadow-xl overflow-hidden flex-shrink-0 bg-black relative flex items-center justify-center">
                 <div className="w-full h-full animate-spin-slow flex items-center justify-center">
-                  <img src={musicaAtual?.thumbnail_url || 'https://placehold.co/150/111/333'} className="w-full h-full object-cover scale-[1.7]" alt="Vinil" />
+                  <img
+                    src={musicaAtual?.thumbnail_url || 'https://placehold.co/150/111/333'}
+                    className="w-full h-full object-cover scale-[1.7]"
+                    alt="Vinil"
+                  />
                 </div>
                 <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/10 to-transparent pointer-events-none z-10"></div>
                 <div className="absolute w-1.5 h-1.5 bg-black rounded-full z-20 border border-white/20"></div>
               </div>
               <div className="min-w-0 pr-1">
-                <p className="text-white text-base font-bold leading-tight line-clamp-2 drop-shadow-md">{musicaAtual?.titulo || 'Rádio Dedalos'}</p>
-                <p className="text-primary text-xs font-bold mt-0.5 truncate">{musicaAtual?.artista || 'Conectado'}</p>
+                <p className="text-white text-base font-bold leading-tight line-clamp-2 drop-shadow-md">
+                  {musicaAtual?.titulo || 'Rádio Dedalos'}
+                </p>
+                <p className="text-primary text-xs font-bold mt-0.5 truncate">
+                  {musicaAtual?.artista || 'Conectado'}
+                </p>
               </div>
             </div>
           </div>
@@ -432,9 +459,7 @@ export default function Jukebox() {
                         <div
                           key={track.id}
                           onClick={() => handleSelectTrack(track)}
-                          className={`flex items-center gap-3 p-3 border-b border-white/5 last:border-0 transition-all
-                                                ${isAvailableToday ? 'hover:bg-white/10 cursor-pointer' : 'opacity-40 cursor-not-allowed grayscale-[0.5]'}
-                                            `}
+                          className={`flex items-center gap-3 p-3 border-b border-white/5 last:border-0 transition-all ${isAvailableToday ? 'hover:bg-white/10 cursor-pointer' : 'opacity-40 cursor-not-allowed grayscale-[0.5]'}`}
                         >
                           <div className="w-8 h-8 rounded-md bg-white/10 flex-shrink-0 overflow-hidden flex items-center justify-center">
                             <img src={track.thumbnail_url} className="w-full h-full object-cover scale-[1.7]" alt="" />
@@ -451,9 +476,10 @@ export default function Jukebox() {
                               if (!isDayActive) return null;
                               const isToday = idx === currentDayIndex;
                               return (
-                                <span key={idx} className={`text-[8px] font-bold px-1 py-0.5 rounded border 
-                                                            ${isToday ? 'bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(74,222,128,0.2)]' : 'bg-white/5 text-white/30 border-white/10'}
-                                                        `}>
+                                <span
+                                  key={idx}
+                                  className={`text-[8px] font-bold px-1 py-0.5 rounded border ${isToday ? 'bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(74,222,128,0.2)]' : 'bg-white/5 text-white/30 border-white/10'}`}
+                                >
                                   {dayName}
                                 </span>
                               );
@@ -501,7 +527,6 @@ export default function Jukebox() {
           </div>
 
           <div className="liquid-glass p-0 rounded-3xl flex-1 flex min-h-0 h-40 lg:h-auto bg-[#0e0e0e] border border-white/5 overflow-hidden relative">
-
             <div className="absolute top-0 right-0 h-full aspect-square z-0 max-w-[50%] lg:max-w-none">
               <img
                 src={playlistCoverUrl}

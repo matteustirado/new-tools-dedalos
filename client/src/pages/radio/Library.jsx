@@ -1,108 +1,115 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
-import { toast } from 'react-toastify'
-import Sidebar from '../../components/Sidebar'
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { toast } from 'react-toastify';
+import Sidebar from '../../components/Sidebar';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 const formatTotalDuration = (totalSeconds) => {
-  if (typeof totalSeconds !== 'number' || totalSeconds <= 0) return '0s'
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  if (typeof totalSeconds !== 'number' || totalSeconds <= 0) {
+    return '0s';
+  }
 
-  let result = ''
-  if (hours > 0) result += `${hours}h `
-  if (minutes > 0) result += `${minutes}m `
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
 
-  if (result === '') result = '0m'
-  return result.trim()
-}
+  let result = '';
+  if (hours > 0) result += `${hours}h `;
+  if (minutes > 0) result += `${minutes}m `;
+
+  return result.trim() || '0m';
+};
 
 export default function Library() {
-  const navigate = useNavigate()
-  const [playlists, setPlaylists] = useState([])
-  const [allTracks, setAllTracks] = useState([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [playlistToDelete, setPlaylistToDelete] = useState(null)
+  const navigate = useNavigate();
+
+  const [playlists, setPlaylists] = useState([]);
+  const [allTracks, setAllTracks] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [playlistToDelete, setPlaylistToDelete] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
         const [playlistsRes, tracksRes] = await Promise.all([
           axios.get(`${API_URL}/api/playlists`),
           axios.get(`${API_URL}/api/tracks`)
-        ])
-        setPlaylists(playlistsRes.data || [])
-        setAllTracks(tracksRes.data || [])
+        ]);
+        setPlaylists(playlistsRes.data || []);
+        setAllTracks(tracksRes.data || []);
       } catch (err) {
-        console.error("Erro ao buscar dados da biblioteca", err)
-        toast.error("Não foi possível carregar os dados da biblioteca.")
+        console.error("Erro ao buscar dados da biblioteca", err);
+        toast.error("Não foi possível carregar os dados da biblioteca.");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
-    fetchData()
-  }, [])
+    };
+    fetchData();
+  }, []);
 
   const getPlaylistDetails = (playlist) => {
     if (!allTracks || allTracks.length === 0) {
-      return { count: 0, duration: '0m' }
+      return { count: 0, duration: '0m' };
     }
-    const trackIds = Array.isArray(playlist.tracks_ids) ? playlist.tracks_ids : []
-    const trackCount = trackIds.length
-    let totalDurationSeconds = 0
+
+    const trackIds = Array.isArray(playlist.tracks_ids) ? playlist.tracks_ids : [];
+    const trackCount = trackIds.length;
+    let totalDurationSeconds = 0;
+
     trackIds.forEach(id => {
-      const track = allTracks.find(t => t.id === Number(id))
+      const track = allTracks.find(t => t.id === Number(id));
       if (track) {
-        const end = track.end_segundos ?? track.duracao_segundos
-        const start = track.start_segundos ?? 0
-        const duration = (end > start) ? (end - start) : 0
-        totalDurationSeconds += duration
+        const end = track.end_segundos ?? track.duracao_segundos;
+        const start = track.start_segundos ?? 0;
+        const duration = (end > start) ? (end - start) : 0;
+        totalDurationSeconds += duration;
       }
-    })
+    });
+
     return {
       count: trackCount,
       duration: formatTotalDuration(totalDurationSeconds)
-    }
-  }
+    };
+  };
 
   const filteredPlaylists = useMemo(() => {
-    if (!searchTerm) return playlists
-    const lowerQuery = searchTerm.toLowerCase()
-    return playlists.filter(p => p.nome.toLowerCase().includes(lowerQuery))
-  }, [playlists, searchTerm])
+    if (!searchTerm) return playlists;
+    const lowerQuery = searchTerm.toLowerCase();
+    return playlists.filter(p => p.nome.toLowerCase().includes(lowerQuery));
+  }, [playlists, searchTerm]);
 
   const handleEditPlaylist = (playlistId) => {
-    navigate(`/radio/playlist-creator/${playlistId}`)
-  }
+    navigate(`/radio/playlist-creator/${playlistId}`);
+  };
 
   const openDeletePlaylistModal = (playlist) => {
-    setPlaylistToDelete(playlist)
-    setShowDeleteModal(true)
-  }
+    setPlaylistToDelete(playlist);
+    setShowDeleteModal(true);
+  };
 
   const closeDeletePlaylistModal = () => {
-    setPlaylistToDelete(null)
-    setShowDeleteModal(false)
-  }
+    setPlaylistToDelete(null);
+    setShowDeleteModal(false);
+  };
 
   const confirmDeletePlaylist = async () => {
-    if (!playlistToDelete) return
+    if (!playlistToDelete) return;
+
     try {
-      await axios.delete(`${API_URL}/api/playlists/${playlistToDelete.id}`)
-      setPlaylists(prev => prev.filter(p => p.id !== playlistToDelete.id))
-      toast.success(`Playlist "${playlistToDelete.nome}" excluída com sucesso!`)
-      closeDeletePlaylistModal()
+      await axios.delete(`${API_URL}/api/playlists/${playlistToDelete.id}`);
+      setPlaylists(prev => prev.filter(p => p.id !== playlistToDelete.id));
+      toast.success(`Playlist "${playlistToDelete.nome}" excluída com sucesso!`);
+      closeDeletePlaylistModal();
     } catch (err) {
-      console.error("Erro ao excluir playlist", err)
-      toast.error(`Falha ao excluir a playlist "${playlistToDelete.nome}".`)
-      closeDeletePlaylistModal()
+      console.error("Erro ao excluir playlist", err);
+      toast.error(`Falha ao excluir a playlist "${playlistToDelete.nome}".`);
+      closeDeletePlaylistModal();
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-warm flex">
@@ -170,8 +177,9 @@ export default function Library() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredPlaylists.map((playlist) => {
-              const details = getPlaylistDetails(playlist)
-              const imageUrl = playlist.imagem ? `${API_URL}${playlist.imagem}` : null
+              const details = getPlaylistDetails(playlist);
+              const imageUrl = playlist.imagem ? `${API_URL}${playlist.imagem}` : null;
+
               return (
                 <div key={playlist.id} className="liquid-glass rounded-xl overflow-hidden hover:shadow-2xl transition-shadow duration-300 group">
                   <div
@@ -205,7 +213,7 @@ export default function Library() {
                     </div>
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
         </div>
@@ -228,5 +236,5 @@ export default function Library() {
         </div>
       )}
     </div>
-  )
+  );
 }

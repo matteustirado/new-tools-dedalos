@@ -31,35 +31,6 @@ export default function ScoreboardGame() {
         }, 20000);
     };
 
-    useEffect(() => {
-        fetchConfig();
-
-        const localSocket = io(API_URL);
-
-        localSocket.on('scoreboard:config_updated', (data) => {
-            if (data.unidade === currentUnit.toUpperCase()) {
-                fetchConfig();
-            }
-        });
-
-        localSocket.on('checkin:novo', (data) => {
-            if (data && data.unidade && data.unidade.toLowerCase() === currentUnit) {
-                setViewState(currentState => {
-                    if (currentState === 'idle' || currentState === 'success') {
-                        startVotingSession();
-                        return 'voting';
-                    }
-                    return currentState;
-                });
-            }
-        });
-
-        return () => {
-            localSocket.disconnect();
-            clearTimers();
-        };
-    }, [currentUnit]);
-
     const fetchConfig = async () => {
         try {
             const res = await axios.get(`${API_URL}/api/scoreboard/active/${currentUnit}`, {
@@ -92,12 +63,42 @@ export default function ScoreboardGame() {
                 setViewState('idle');
                 setVotedOption(null);
             }, 5000);
-
         } catch (error) {
             console.error("Erro ao votar:", error);
             setTimeout(() => setViewState('idle'), 2000);
         }
     };
+
+    useEffect(() => {
+        fetchConfig();
+
+        const localSocket = io(API_URL);
+
+        localSocket.on('scoreboard:config_updated', (data) => {
+            if (data.unidade === currentUnit.toUpperCase()) {
+                fetchConfig();
+            }
+        });
+
+        localSocket.on('checkin:novo', (data) => {
+            const isTargetUnit = data?.unidade?.toLowerCase() === currentUnit;
+
+            if (isTargetUnit) {
+                setViewState(currentState => {
+                    if (currentState === 'idle' || currentState === 'success') {
+                        startVotingSession();
+                        return 'voting';
+                    }
+                    return currentState;
+                });
+            }
+        });
+
+        return () => {
+            localSocket.disconnect();
+            clearTimers();
+        };
+    }, [currentUnit]);
 
     const renderButtonBg = (opt) => {
         const tipo = opt.game_tipo || opt.tipo;
@@ -116,29 +117,42 @@ export default function ScoreboardGame() {
         );
     };
 
-    if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white/50 animate-pulse">Carregando Sistema...</div>;
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-black flex items-center justify-center text-white/50 animate-pulse">
+                Carregando Sistema...
+            </div>
+        );
+    }
 
     const gridCols = config?.opcoes.length <= 2 ? 'grid-cols-1' : 'grid-cols-2';
 
     return (
         <div className="min-h-screen bg-[#050505] text-white font-sans overflow-hidden relative selection:bg-none flex flex-col items-center justify-center p-6 md:p-8">
             <div className="fixed inset-0 z-0 pointer-events-none">
-                <div className="absolute top-[-20%] left-[-20%] w-[800px] h-[800px] bg-orange-600/10 rounded-full blur-[120px] animate-float-slow"></div>
-                <div className="absolute bottom-[-20%] right-[-20%] w-[600px] h-[600px] bg-yellow-500/5 rounded-full blur-[100px] animate-float-reverse"></div>
+                <div className="absolute top-[-20%] left-[-20%] w-[800px] h-[800px] bg-orange-600/10 rounded-full blur-[120px] animate-float-slow" />
+                <div className="absolute bottom-[-20%] right-[-20%] w-[600px] h-[600px] bg-yellow-500/5 rounded-full blur-[100px] animate-float-reverse" />
             </div>
 
-            <main className="relative z-10 w-full max-w-[600px] h-[85vh] bg-black/60 backdrop-blur-md rounded-[2.5rem] border-[3px] border-transparent bg-clip-padding flex flex-col shadow-2xl"
-                style={{ borderImage: 'linear-gradient(135deg, #ff4d00, #ffcc00) 1', borderRadius: '2.5rem' }}>
-
+            <main 
+                className="relative z-10 w-full max-w-[600px] h-[85vh] bg-black/60 backdrop-blur-md rounded-[2.5rem] border-[3px] border-transparent bg-clip-padding flex flex-col shadow-2xl"
+                style={{ borderImage: 'linear-gradient(135deg, #ff4d00, #ffcc00) 1', borderRadius: '2.5rem' }}
+            >
                 {viewState === 'idle' && (
                     <div className="flex-1 flex flex-col justify-between p-8 text-center animate-fade-in h-full">
                         <div className="mt-8">
-                            <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-yellow-400 mb-2 drop-shadow-sm tracking-tight">OLÁ, PLAYER!</h1>
-                            <p className="text-lg text-gray-400 font-medium tracking-wide">Pronto para subir de nível?</p>
+                            <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-yellow-400 mb-2 drop-shadow-sm tracking-tight">
+                                OLÁ, PLAYER!
+                            </h1>
+                            <p className="text-lg text-gray-400 font-medium tracking-wide">
+                                Pronto para subir de nível?
+                            </p>
                         </div>
 
                         <div className="flex flex-col items-center justify-center">
-                            <p className="text-gray-500 text-sm md:text-base mb-6 animate-pulse italic tracking-widest uppercase">...aguardando o próximo movimento...</p>
+                            <p className="text-gray-500 text-sm md:text-base mb-6 animate-pulse italic tracking-widest uppercase">
+                                ...aguardando o próximo movimento...
+                            </p>
                             <svg className="w-56 h-auto drop-shadow-[0_0_20px_rgba(255,77,0,0.4)]" viewBox="0 0 600 485" xmlns="http://www.w3.org/2000/svg">
                                 <defs>
                                     <linearGradient id="logo-gradient-stroke" x1="0%" y1="100%" x2="0%" y2="0%">
@@ -153,7 +167,7 @@ export default function ScoreboardGame() {
                             </svg>
                         </div>
 
-                        <div className="mb-8 cursor-pointer group" onClick={startVotingSession} title="Clique para testar (Admin)">
+                        <div className="mb-8 cursor-pointer group" onClick={startVotingSession}>
                             <p className="text-orange-500/90 text-sm md:text-base font-bold tracking-[0.2em] uppercase group-hover:text-orange-400 transition-colors animate-pulse">
                                 Faça seu checkin e libere o game!
                             </p>
@@ -209,10 +223,13 @@ export default function ScoreboardGame() {
                         </div>
 
                         <div className="pb-6 text-center shrink-0">
-                            <button onClick={() => {
-                                clearTimers();
-                                setViewState('idle');
-                            }} className="text-[10px] text-white/20 uppercase tracking-widest hover:text-white/50 transition-colors py-2 px-4">
+                            <button 
+                                onClick={() => {
+                                    clearTimers();
+                                    setViewState('idle');
+                                }} 
+                                className="text-[10px] text-white/20 uppercase tracking-widest hover:text-white/50 transition-colors py-2 px-4"
+                            >
                                 Cancelar
                             </button>
                         </div>
@@ -222,9 +239,12 @@ export default function ScoreboardGame() {
                 {viewState === 'success' && (
                     <div className="flex-1 flex flex-col justify-between items-center p-8 text-center animate-fade-in h-full">
                         <div className="mt-12">
-                            <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-yellow-400 mb-2 drop-shadow-sm">ISSO AÍ!</h1>
+                            <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-yellow-400 mb-2 drop-shadow-sm">
+                                ISSO AÍ!
+                            </h1>
                             <p className="text-lg text-gray-400 font-medium">As portas do labirinto se abrirão.</p>
                         </div>
+
                         <div className="flex-1 flex items-center justify-center">
                             <svg className="w-64 h-auto drop-shadow-[0_0_30px_rgba(255,77,0,0.6)]" viewBox="0 0 600 485" xmlns="http://www.w3.org/2000/svg">
                                 <g fill="none" stroke="#FF4D00" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round">
@@ -233,17 +253,21 @@ export default function ScoreboardGame() {
                                 </g>
                             </svg>
                         </div>
+
                         <div className="mb-10 w-full max-w-xs mx-auto">
                             <p className="text-white/60 text-sm uppercase tracking-wide mb-2">Você escolheu:</p>
-                            <p className="text-2xl font-bold text-orange-400 mb-6 drop-shadow-md truncate px-4">"{votedOption}"</p>
+                            <p className="text-2xl font-bold text-orange-400 mb-6 drop-shadow-md truncate px-4">
+                                "{votedOption}"
+                            </p>
                             <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-orange-500 to-yellow-500 animate-progress-shrink origin-left w-full"></div>
+                                <div className="h-full bg-gradient-to-r from-orange-500 to-yellow-500 animate-progress-shrink origin-left w-full" />
                             </div>
                             <p className="text-xl font-bold italic text-white/90 mt-6">Você está no controle. Boa diversão!</p>
                         </div>
                     </div>
                 )}
             </main>
+
             <div className="mt-6 text-center text-[10px] text-white/20 uppercase tracking-widest font-medium">
                 <p>© Developed by: <span className="text-orange-500 font-bold">Matteus Tirado</span></p>
             </div>
