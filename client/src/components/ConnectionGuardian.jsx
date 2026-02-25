@@ -13,8 +13,7 @@ const ConnectionGuardian = ({ children }) => {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 10000,
-      transports: ['websocket', 'polling']
+      timeout: 10000
     });
 
     socket.on('connect', () => {
