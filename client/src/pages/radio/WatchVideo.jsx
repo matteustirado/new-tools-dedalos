@@ -18,23 +18,23 @@ const getPlayerOptions = () => ({
     modestbranding: 1,
     rel: 0,
     playsinline: 1,
-    mute: 1,
-    enablejsapi: 1, 
+    mute: 1, 
+    enablejsapi: 1,
     origin: window.location.origin, 
   },
 });
 
 const calculateTargetVolume = (lufsValue) => {
   if (lufsValue == null || isNaN(lufsValue)) return 100;
-
   const gainDb = TARGET_LUFS - lufsValue;
   const targetVolume = Math.pow(10, gainDb / 20) * 100;
-
   return Math.round(Math.min(100, Math.max(0, targetVolume)));
 };
 
 export default function WatchVideo() {
   const [hasInteracted, setHasInteracted] = useState(false);
+  const hasInteractedRef = useRef(false); 
+
   const [radioState, setRadioState] = useState(null);
   const [currentTrackInfo, setCurrentTrackInfo] = useState(null);
   const [opacityA, setOpacityA] = useState(0);
@@ -65,6 +65,7 @@ export default function WatchVideo() {
       }
 
       if (playerIn && typeof playerIn.setVolume === 'function') {
+        if (hasInteractedRef.current) playerIn.unMute();
         playerIn.setVolume(
           Math.min(targetVolumeIn, startVolIn + (targetVolumeIn - startVolIn) * ease)
         );
@@ -78,6 +79,7 @@ export default function WatchVideo() {
           playerOut.setVolume(0);
         }
         if (playerIn) {
+          if (hasInteractedRef.current) playerIn.unMute();
           playerIn.setVolume(targetVolumeIn);
         }
       }
@@ -164,18 +166,17 @@ export default function WatchVideo() {
   const loadAndPlay = (player, musica, startSeconds = 0, isCrossfading = false) => {
     if (!player || !musica) return;
 
-    // Trava de segurança para ID inválido
     const videoId = musica.youtube_id;
     if (!videoId) {
-      console.error("[Watch] ERRO FATAL: Música sem youtube_id válido. Solicitando pulo automático...", musica);
-      if (socketRef.current) {
-        socketRef.current.emit('dj:pularMusica');
-      }
+      console.error("[Watch] ERRO FATAL: Música sem youtube_id válido. Solicitando pulo...", musica);
+      if (socketRef.current) socketRef.current.emit('dj:pularMusica');
       return;
     }
 
-    if (!hasInteracted) {
+    if (!hasInteractedRef.current) {
       player.mute();
+    } else {
+      player.unMute();
     }
 
     const start = musica.start_segundos || startSeconds;
@@ -207,7 +208,7 @@ export default function WatchVideo() {
 
     const targetPlayer = estado.playerAtivo === 'A' ? playerARef.current : playerBRef.current;
 
-    if (targetPlayer && hasInteracted) {
+    if (targetPlayer && hasInteractedRef.current) {
       const delayRede = 2;
       loadAndPlay(targetPlayer, estado.musicaAtual, estado.tempoAtualSegundos + delayRede);
 
@@ -222,26 +223,25 @@ export default function WatchVideo() {
   };
 
   const onPlayerReady = (evt, id) => {
-    console.log(`[Watch] Player ${id} Pronto.`);
     if (id === 'A') playerARef.current = evt.target;
     else playerBRef.current = evt.target;
 
-    if (radioState && radioState.playerAtivo === id && hasInteracted) {
+    if (radioState && radioState.playerAtivo === id && hasInteractedRef.current) {
       syncState(radioState);
     }
   };
 
   const onPlayerError = (evt, id) => {
     console.error(`[Watch] ERRO CRÍTICO no Player ${id}. Código: ${evt.data}`);
-    if (socketRef.current) {
-      socketRef.current.emit('dj:pularMusica');
-    }
+    if (socketRef.current) socketRef.current.emit('dj:pularMusica');
   };
 
   const onStateChange = (evt) => {};
 
   const handleInteraction = () => {
+    hasInteractedRef.current = true; 
     setHasInteracted(true);
+
     const audio = new Audio(
       'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAgZGF0YQQAAAAAAA=='
     );
@@ -338,32 +338,32 @@ export default function WatchVideo() {
         )}
       </div>
 
-      <div className="absolute inset-0 w-full h-full bg-black">
+      <div className="absolute inset-0 w-full h-full bg-black pointer-events-none">
         <div
-          className="absolute inset-0 w-full h-full transition-opacity duration-1000"
+          className="absolute inset-0 w-full h-full transition-opacity duration-1000 pointer-events-none"
           style={{ opacity: opacityA, zIndex: opacityA > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId="M7lc1UVf-VE" // Dummy ID (Vídeo Oficial de Teste do Google) para aquecer o motor sem quebrar a API
+            videoId="M7lc1UVf-VE"
             opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'A')}
             onError={(e) => onPlayerError(e, 'A')}
             onStateChange={onStateChange}
-            className="w-full h-full"
+            className="w-full h-full pointer-events-none"
           />
         </div>
 
         <div
-          className="absolute inset-0 w-full h-full transition-opacity duration-1000"
+          className="absolute inset-0 w-full h-full transition-opacity duration-1000 pointer-events-none"
           style={{ opacity: opacityB, zIndex: opacityB > 0 ? 10 : 0 }}
         >
           <YouTube
-            videoId="M7lc1UVf-VE" 
+            videoId="M7lc1UVf-VE"
             opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'B')}
             onError={(e) => onPlayerError(e, 'B')}
             onStateChange={onStateChange}
-            className="w-full h-full"
+            className="w-full h-full pointer-events-none"
           />
         </div>
       </div>
