@@ -9,10 +9,13 @@ import {
     getPresets, 
     deletePreset,
     testarTrigger,
-    getCrowdCount 
+    getCrowdCount,
+    executarMarcoZero 
 } from '../controllers/scoreboardController.js';
 
 const router = express.Router();
+
+router.get('/marco-zero', executarMarcoZero);
 
 router.get('/crowd/:unidade', getCrowdCount);
 

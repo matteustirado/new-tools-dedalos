@@ -13,6 +13,7 @@ export default function ScoreboardGame() {
     const [viewState, setViewState] = useState('idle');
     const [votedOption, setVotedOption] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeSessionId, setActiveSessionId] = useState(null);
 
     const idleTimerRef = useRef(null);
     const successTimerRef = useRef(null);
@@ -28,6 +29,7 @@ export default function ScoreboardGame() {
 
         idleTimerRef.current = setTimeout(() => {
             setViewState('idle');
+            setActiveSessionId(null);
         }, 20000);
     };
 
@@ -53,7 +55,7 @@ export default function ScoreboardGame() {
                 unidade: currentUnit,
                 optionIndex: index,
                 optionLabel: optionName,
-                pulseiraId: "GAME_TOTEM"
+                cliente_id: activeSessionId
             });
 
             setVotedOption(optionName);
@@ -62,10 +64,14 @@ export default function ScoreboardGame() {
             successTimerRef.current = setTimeout(() => {
                 setViewState('idle');
                 setVotedOption(null);
+                setActiveSessionId(null);
             }, 5000);
         } catch (error) {
             console.error("Erro ao votar:", error);
-            setTimeout(() => setViewState('idle'), 2000);
+            setTimeout(() => {
+                setViewState('idle');
+                setActiveSessionId(null);
+            }, 2000);
         }
     };
 
@@ -84,6 +90,10 @@ export default function ScoreboardGame() {
             const isTargetUnit = data?.unidade?.toLowerCase() === currentUnit;
 
             if (isTargetUnit) {
+                if (data.cliente_id) {
+                    setActiveSessionId(data.cliente_id);
+                }
+
                 setViewState(currentState => {
                     if (currentState === 'idle' || currentState === 'success') {
                         startVotingSession();
@@ -227,6 +237,7 @@ export default function ScoreboardGame() {
                                 onClick={() => {
                                     clearTimers();
                                     setViewState('idle');
+                                    setActiveSessionId(null);
                                 }} 
                                 className="text-[10px] text-white/20 uppercase tracking-widest hover:text-white/50 transition-colors py-2 px-4"
                             >

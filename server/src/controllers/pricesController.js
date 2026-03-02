@@ -1,15 +1,22 @@
 import pool from '../config/db.js';
 import axios from 'axios';
 
-const LEGACY_API = {
-    SP: { 
-        url: 'https://dedalosadm2-3dab78314381.herokuapp.com', 
-        token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' 
-    },
-    BH: { 
-        url: 'https://dedalosadm2-3dab78314381.herokuapp.com', 
-        token: '7a9e64071564f6fee8d96cd209ed3a4e86801552' 
+const getApiConfig = (unidade) => {
+    if (unidade === 'SP') {
+        return {
+            url: (process.env.API_URL_SP || 'https://dedalosadm2-3dab78314381.herokuapp.com').replace(/\/$/, ''),
+            token: process.env.API_TOKEN_SP || '7a9e64071564f6fee8d96cd209ed3a4e86801552'
+        };
     }
+
+    if (unidade === 'BH') {
+        return {
+            url: (process.env.API_URL_BH || 'https://dedalosadm2bh-09d55dca461e.herokuapp.com').replace(/\/$/, ''),
+            token: process.env.API_TOKEN_BH || '919d97d7df39ecbd0036631caba657221acab99d99'
+        };
+    }
+
+    return null;
 };
 
 const getHoraBrasil = () => {
@@ -57,12 +64,13 @@ export const getPricesState = async (req, res) => {
         let valorRealApi = state.valor_atual;
 
         try {
-            const apiConfig = LEGACY_API[unidadeUpper];
-            if (apiConfig) {
+            const apiConfig = getApiConfig(unidadeUpper);
+            if (apiConfig && apiConfig.url && apiConfig.token) {
                 const response = await axios.get(`${apiConfig.url}/regras/valor-entrada/`, {
                     headers: { 'Authorization': `Token ${apiConfig.token}` },
                     timeout: 4000
                 });
+
                 const val = parseFloat(response.data.valorEntrada);
                 if (!isNaN(val)) {
                     valorRealApi = val;
@@ -261,6 +269,7 @@ export const getPromotions = async (req, res) => {
 export const addPromotion = async (req, res) => {
     const { unidade, promotions } = req.body;
     const conn = await pool.getConnection();
+    
     try {
         await conn.beginTransaction();
         
@@ -279,6 +288,7 @@ export const addPromotion = async (req, res) => {
         await conn.commit();
         if (req.io) req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
         res.json({ success: true });
+        
     } catch (error) {
         await conn.rollback();
         res.status(500).json({ error: error.message });

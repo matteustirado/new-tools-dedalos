@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 
@@ -9,15 +9,36 @@ export default function PricesDisplay() {
   const { unidade } = useParams();
   const currentUnit = unidade ? unidade.toUpperCase() : 'SP';
 
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const forceMode = queryParams.get('force');
+
   const [liveState, setLiveState] = useState(null);
   const [defaults, setDefaults] = useState([]);
   const [categoryMedia, setCategoryMedia] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading] = useState(true);
-
+  const [isTabletMode, setIsTabletMode] = useState(false);
   const [activePeriod, setActivePeriod] = useState('manha');
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
   const [currentPartyBannerIndex, setCurrentPartyBannerIndex] = useState(0);
+
+  useEffect(() => {
+    const checkScreenSize = () => {
+      if (forceMode === 'tablet') {
+        setIsTabletMode(true);
+      } else if (forceMode === 'tv') {
+        setIsTabletMode(false);
+      } else {
+        setIsTabletMode(window.innerWidth < 1024);
+      }
+    };
+
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, [forceMode]);
 
   useEffect(() => {
     fetchData();
@@ -128,7 +149,6 @@ export default function PricesDisplay() {
   if (!liveState) return <div className="loading-screen">AGUARDANDO CONFIGURAÇÃO...</div>;
 
   const orderedColumns = getOrderedPeriods();
-  const isTabletMode = false;
 
   if (liveState.modo_festa) {
     return (
@@ -143,12 +163,12 @@ export default function PricesDisplay() {
         </div>
 
         <section className="pricing-section" style={{
-          paddingTop: '2vh',
+          paddingTop: isTabletMode ? '10vh' : '2vh',
           height: '100vh',
-          justifyContent: 'flex-start',
+          justifyContent: isTabletMode ? 'center' : 'flex-start',
           alignItems: 'center',
           flexDirection: 'column',
-          gap: '1rem'
+          gap: isTabletMode ? '2rem' : '1rem'
         }}>
           <div className="pricing-content" style={{ width: '100%', maxWidth: '1200px' }}>
             <div className="pricing-columns-container">
@@ -158,7 +178,7 @@ export default function PricesDisplay() {
 
                 return (
                   <div key={colData.key} className={`price-column ${positionClass}`}>
-                    <h3 className="column-title" style={{ fontSize: '0.9rem' }}>{colData.title}</h3>
+                    <h3 className="column-title" style={{ fontSize: isTabletMode ? '1.2rem' : '0.9rem' }}>{colData.title}</h3>
                     <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`}>
                       <PriceCard
                         index={0}
@@ -168,7 +188,7 @@ export default function PricesDisplay() {
                         defaults={defaults}
                         mediaData={categoryMedia.find(m => m.qtd_pessoas === 1)}
                         isActive={isColumnActive}
-                        isTablet={false}
+                        isTablet={isTabletMode}
                       />
                     </div>
                   </div>
@@ -177,29 +197,31 @@ export default function PricesDisplay() {
             </div>
 
             <div className="price-notes" style={{ marginTop: '1rem', textAlign: 'center' }}>
-              {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_1}</p>}
-              {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_2}</p>}
-              {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_3}</p>}
-              {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_4}</p>}
+              {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
+              {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
+              {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
+              {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
             </div>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px', overflow: 'hidden' }}>
-            {liveState.party_banners && liveState.party_banners.length > 0 ? (
-              <div className="relative h-full aspect-[3/4] max-h-[55vh] rounded-xl overflow-hidden shadow-2xl bg-black/40 border border-white/10">
-                {liveState.party_banners.map((bannerUrl, idx) => (
-                  <img
-                    key={idx}
-                    src={`${API_URL}${bannerUrl}`}
-                    className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPartyBannerIndex ? 'opacity-100' : 'opacity-0'}`}
-                    alt="Festa"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="text-white/50 text-2xl font-bold uppercase tracking-widest animate-pulse">Sem Flyers Definidos</div>
-            )}
-          </div>
+          {!isTabletMode && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px', overflow: 'hidden' }}>
+              {liveState.party_banners && liveState.party_banners.length > 0 ? (
+                <div className="relative h-full aspect-[3/4] max-h-[55vh] rounded-xl overflow-hidden shadow-2xl bg-black/40 border border-white/10">
+                  {liveState.party_banners.map((bannerUrl, idx) => (
+                    <img
+                      key={idx}
+                      src={`${API_URL}${bannerUrl}`}
+                      className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPartyBannerIndex ? 'opacity-100' : 'opacity-0'}`}
+                      alt="Festa"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-white/50 text-2xl font-bold uppercase tracking-widest animate-pulse">Sem Flyers Definidos</div>
+              )}
+            </div>
+          )}
         </section>
       </div>
     );
@@ -217,11 +239,11 @@ export default function PricesDisplay() {
       </div>
 
       <section className="pricing-section" style={{
-        paddingTop: '5vh',
-        paddingBottom: '5vh',
-        gap: isTabletMode ? '0.2rem' : '1.5rem',
+        paddingTop: isTabletMode ? '0' : '5vh',
+        paddingBottom: isTabletMode ? '0' : '5vh',
+        gap: isTabletMode ? '1rem' : '1.5rem',
         height: '100vh',
-        justifyContent: 'flex-start',
+        justifyContent: isTabletMode ? 'center' : 'flex-start',
         alignItems: 'center',
         flexDirection: 'column'
       }}>
@@ -232,12 +254,12 @@ export default function PricesDisplay() {
               const positionClass = colIndex === 0 ? 'left-col' : colIndex === 1 ? 'active' : 'right-col';
 
               return (
-                <div key={colData.key} className={`price-column ${positionClass}`} style={{ gap: isTabletMode ? '0.5rem' : '1rem' }}>
-                  <h3 className="column-title" style={isTabletMode ? { padding: '0.5rem', fontSize: '0.9rem' } : {}}>
+                <div key={colData.key} className={`price-column ${positionClass}`} style={{ gap: isTabletMode ? '0.8rem' : '1rem' }}>
+                  <h3 className="column-title" style={isTabletMode ? { padding: '0.5rem', fontSize: '1rem' } : {}}>
                     {colData.title} <span className="column-time">{colData.time}</span>
                   </h3>
 
-                  <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`} style={{ gap: isTabletMode ? '0.5rem' : '1rem' }}>
+                  <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`} style={{ gap: isTabletMode ? '0.8rem' : '1rem' }}>
                     {[1, 2, 3].map((qtdPessoas, idx) => (
                       <PriceCard
                         key={qtdPessoas}
@@ -257,13 +279,13 @@ export default function PricesDisplay() {
             })}
           </div>
 
-          <div className="price-notes" style={{ marginTop: isTabletMode ? '0.5rem' : '1rem', textAlign: 'center' }}>
-            {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_1}</p>}
-            {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>* {liveState.aviso_2}</p>}
-            {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_3}</p>}
-            {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>** {liveState.aviso_4}</p>}
+          <div className="price-notes" style={{ marginTop: isTabletMode ? '2rem' : '1rem', textAlign: 'center' }}>
+            {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
+            {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
+            {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
+            {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
             {liveState.texto_futuro && liveState.texto_futuro !== '???' && (
-              <p style={{ margin: '1rem 0 0 0', fontSize: '1.2rem', fontWeight: 'bold', color: '#fbbf24', textTransform: 'uppercase' }}>
+              <p style={{ margin: '1rem 0 0 0', fontSize: isTabletMode ? '1.5rem' : '1.2rem', fontWeight: 'bold', color: '#fbbf24', textTransform: 'uppercase' }}>
                 {liveState.texto_futuro}
               </p>
             )}
@@ -356,27 +378,27 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
 
   if (!isActive) {
     return (
-      <div className="price-card inactive" style={isTablet ? { padding: '0.5rem' } : {}}>
-        <h3 style={isTablet ? { fontSize: '0.8rem', marginBottom: 0 } : {}}>{title}</h3>
+      <div className="price-card inactive" style={isTablet ? { padding: '1rem', minHeight: '120px' } : {}}>
+        <h3 style={isTablet ? { fontSize: '1rem', marginBottom: 0 } : {}}>{title}</h3>
         {qtdPessoas === 1 ? (
-          <div className="price-value" style={isTablet ? { fontSize: '1.2rem', margin: '0.2rem 0' } : {}}>{mainDisplayPrice}</div>
+          <div className="price-value" style={isTablet ? { fontSize: '1.8rem', margin: '0.2rem 0' } : {}}>{mainDisplayPrice}</div>
         ) : (
           <div className="price-details-new" style={isTablet ? { minHeight: 'auto', margin: 0 } : {}}>
-            <span className="price-per-person-label" style={{ fontSize: '0.6rem' }}>cada um paga</span>
-            <div className="price-per-person-value" style={{ fontSize: isTablet ? '1rem' : '1.4rem' }}>{mainDisplayPrice}</div>
-            <span className="price-total-label" style={{ fontSize: isTablet ? '0.5rem' : '0.65rem' }}>{subText}</span>
+            <span className="price-per-person-label" style={{ fontSize: '0.7rem' }}>cada um paga</span>
+            <div className="price-per-person-value" style={{ fontSize: isTablet ? '1.5rem' : '1.4rem' }}>{mainDisplayPrice}</div>
+            <span className="price-total-label" style={{ fontSize: isTablet ? '0.6rem' : '0.65rem' }}>{subText}</span>
           </div>
         )}
       </div>
     );
   }
 
-  const cardStyle = isTablet ? { padding: '0.8rem', minHeight: '140px', boxShadow: '0 0 15px rgba(255, 77, 0, 0.5)' } : {};
-  const titleStyle = isTablet ? { fontSize: '1.2rem', marginBottom: '0.2rem' } : {};
-  const priceStyle = isTablet ? { fontSize: '1.8rem', margin: '0.2rem 0' } : {};
-  const perPersonStyle = isTablet ? { fontSize: '1.8rem' } : {};
-  const labelStyle = isTablet ? { fontSize: '0.8rem' } : {};
-  const subTextStyle = isTablet ? { fontSize: '0.7rem' } : {};
+  const cardStyle = isTablet ? { padding: '1.2rem', minHeight: '180px', boxShadow: '0 0 20px rgba(255, 77, 0, 0.4)' } : {};
+  const titleStyle = isTablet ? { fontSize: '1.4rem', marginBottom: '0.2rem' } : {};
+  const priceStyle = isTablet ? { fontSize: '2.8rem', margin: '0.2rem 0' } : {};
+  const perPersonStyle = isTablet ? { fontSize: '2.8rem' } : {};
+  const labelStyle = isTablet ? { fontSize: '0.9rem' } : {};
+  const subTextStyle = isTablet ? { fontSize: '0.8rem' } : {};
 
   return (
     <div className={`price-card layout-active ${index === 0 ? 'player' : index === 1 ? 'amiga' : 'marmita'}`} style={cardStyle}>
@@ -402,7 +424,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
         )}
 
         {mediaData?.aviso_categoria && (
-          <ul className="price-features">
+          <ul className="price-features" style={isTablet ? { marginTop: '0.5rem', fontSize: '0.9rem' } : {}}>
             <li className="static-feature">{mediaData.aviso_categoria}</li>
           </ul>
         )}

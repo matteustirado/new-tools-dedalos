@@ -4,6 +4,7 @@ import { io as ioClient } from 'socket.io-client';
 import axios from 'axios';
 
 const CHECKIN_INTERVAL = 30000;
+const SYNC_INTERVAL = 60000;
 
 const EXTERNAL_SOCKETS = {
     SP: 'https://placar-80b3f72889ba.herokuapp.com/',
@@ -26,10 +27,8 @@ const fetchFromDedalos = async (unidade) => {
         BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH }
     }[unidadeUpper];
 
-    log('PROXY', `Iniciando busca externa para unidade: ${unidadeUpper}`);
-
     if (!config || !config.url) {
-        log('PROXY_ERR', '❌ Configuração de API (URL/Token) não encontrada no .env do servidor.', { unidade: unidadeUpper });
+        log('PROXY_ERR', '❌ Configuração de API não encontrada.', { unidade: unidadeUpper });
         return null;
     }
 
@@ -44,8 +43,7 @@ const fetchFromDedalos = async (unidade) => {
                 timeout: 5000
             });
         } catch (err) {
-            log('PROXY_WARN', `Falha no endpoint principal (${err.message}). Tentando fallback...`);
-            
+            log('PROXY_WARN', `Falha no endpoint principal. Tentando fallback...`);
             const dataHoje = new Date().toISOString().split('T')[0];
             endpoint = `${baseUrl}/api/entradasPorData/${dataHoje}`;
             response = await axios.get(endpoint, {
@@ -60,26 +58,99 @@ const fetchFromDedalos = async (unidade) => {
             if (data.length > 0 && data[0].contador !== undefined) return data[0].contador;
             return data.length;
         } 
-        
-        if (data.results) {
-            return data.results.length;
-        } 
-        
-        if (data.contador !== undefined) {
-            return data.contador;
-        } 
-        
-        if (data.count !== undefined) {
-            return data.count;
-        }
+
+        if (data.results) return data.results.length;
+        if (data.contador !== undefined) return data.contador;
+        if (data.count !== undefined) return data.count;
 
         return 0;
-
     } catch (error) {
-        console.error(`[Dedalos API] Erro crítico em ${unidade}:`, error.message);
-        log('PROXY_ERR', `Erro na comunicação com API externa`, error.message);
+        log('PROXY_ERR', `Erro na comunicação externa`, error.message);
         return null;
     }
+};
+
+const fetchCurrentVotes = async (unidadeUpper) => {
+    const sql = `
+        SELECT option_index, COUNT(*) as count 
+        FROM scoreboard_votes 
+        WHERE unidade = ? 
+        AND status = 'DENTRO'
+        AND option_index IS NOT NULL
+        GROUP BY option_index
+    `;
+    
+    const [rows] = await pool.query(sql, [unidadeUpper]);
+    return rows;
+};
+
+const iniciarSincronizacaoCheckout = () => {
+    log('SYNC', "Serviço de Varredura de Checkouts iniciado.");
+
+    setInterval(async () => {
+        for (const unidade of ['SP', 'BH']) {
+            const unidadeUpper = unidade.toUpperCase();
+            const config = {
+                SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
+                BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH }
+            }[unidadeUpper];
+
+            if (!config || !config.url) continue;
+
+            try {
+                const baseUrl = config.url.replace(/\/$/, "");
+                const endpoint = `${baseUrl}/api/entradasCheckout/`;
+                
+                const response = await axios.get(endpoint, {
+                    headers: { "Authorization": `Token ${config.token}` },
+                    timeout: 8000
+                });
+
+                const data = response.data;
+                if (!Array.isArray(data)) continue;
+
+                const activeIds = data.map(c => String(c.armario || c.pulseira)).filter(id => id && id !== 'undefined' && id !== 'null');
+
+                const connection = await pool.getConnection();
+                try {
+                    await connection.beginTransaction();
+
+                    let rowsAffected = 0;
+
+                    if (activeIds.length > 0) {
+                        const placeholders = activeIds.map(() => '?').join(',');
+                        const sqlUpdate = `
+                            UPDATE scoreboard_votes 
+                            SET status = 'SAIU' 
+                            WHERE unidade = ? AND status = 'DENTRO' AND cliente_id NOT IN (${placeholders})
+                        `;
+                        const [result] = await connection.query(sqlUpdate, [unidadeUpper, ...activeIds]);
+                        rowsAffected = result.affectedRows;
+                    } else if (data.length === 0) {
+                        const [result] = await connection.query(`UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`, [unidadeUpper]);
+                        rowsAffected = result.affectedRows;
+                    }
+
+                    await connection.commit();
+
+                    if (rowsAffected > 0) {
+                        log('SYNC', `[${unidade}] ${rowsAffected} votos inativados por checkout.`);
+                        const io = getIO();
+                        const currentVotes = await fetchCurrentVotes(unidadeUpper);
+                        io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: currentVotes });
+                    }
+                } catch (err) {
+                    await connection.rollback();
+                    throw err;
+                } finally {
+                    connection.release();
+                }
+
+            } catch (error) {
+                log('SYNC_ERR', `Falha ao sincronizar checkouts em ${unidade}: ${error.message}`);
+            }
+        }
+    }, SYNC_INTERVAL);
 };
 
 const iniciarPonteRealTime = () => {
@@ -97,13 +168,27 @@ const iniciarPonteRealTime = () => {
 
             socket.on('new_id', async (data) => {
                 log('PONTE', `⚡ [${unidade}] CHECK-IN DETECTADO!`);
+                
+                const clienteId = data?.armario || data?.pulseira || data?.id || String(Date.now());
+                const unidadeUpper = unidade.toUpperCase();
+
+                try {
+                    await pool.query(
+                        'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status) VALUES (?, ?, NULL, "DENTRO")', 
+                        [unidadeUpper, String(clienteId)]
+                    );
+                } catch(e) {
+                    console.error(`[Ponte ${unidade}] Erro ao inserir voto sombra:`, e);
+                }
+
                 const totalAtual = await fetchFromDedalos(unidade);
                 
                 if (totalAtual !== null) {
                     const io = getIO();
                     io.emit('checkin:novo', { 
-                        unidade: unidade, 
+                        unidade: unidadeUpper, 
                         total: totalAtual, 
+                        cliente_id: clienteId,
                         origem: 'websocket_externo',
                         timestamp: new Date()
                     });
@@ -147,6 +232,69 @@ const iniciarSentinela = () => {
 
 iniciarPonteRealTime();
 iniciarSentinela();
+iniciarSincronizacaoCheckout();
+
+export const executarMarcoZero = async (req, res) => {
+    try {
+        log('MIGRAÇÃO', "Iniciando Marco Zero. Apagando banco de votos...");
+        await pool.query("TRUNCATE TABLE scoreboard_votes");
+        
+        let relatorio = {};
+
+        for (const unidade of ['SP', 'BH']) {
+            const config = {
+                SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
+                BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH }
+            }[unidade];
+
+            if (!config || !config.url) continue;
+
+            try {
+                const endpoint = `${config.url.replace(/\/$/, "")}/api/entradasCheckout/`;
+                const response = await axios.get(endpoint, { headers: { "Authorization": `Token ${config.token}` }, timeout: 10000 });
+                
+                if (Array.isArray(response.data)) {
+                    const activeIds = response.data
+                        .map(c => String(c.armario || c.pulseira))
+                        .filter(id => id && id !== 'undefined' && id !== 'null');
+                    
+                    if (activeIds.length > 0) {
+                        const connection = await pool.getConnection();
+                        try {
+                            await connection.beginTransaction();
+                            for (const id of activeIds) {
+                                await connection.query(
+                                    'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status) VALUES (?, ?, NULL, "DENTRO")',
+                                    [unidade, id]
+                                );
+                            }
+                            await connection.commit();
+                        } catch(err) {
+                            await connection.rollback();
+                            throw err;
+                        } finally {
+                            connection.release();
+                        }
+                    }
+                    relatorio[unidade] = `${activeIds.length} clientes sincronizados.`;
+                    log('MIGRAÇÃO', `[${unidade}] ${activeIds.length} clientes populados como sombras.`);
+                }
+            } catch (e) {
+                relatorio[unidade] = `Erro ao puxar dados: ${e.message}`;
+                log('MIGRAÇÃO_ERR', `[${unidade}] Falha na sincronização: ${e.message}`);
+            }
+        }
+        
+        const io = getIO();
+        io.emit('scoreboard:vote_updated', { unidade: 'SP', votes: [] });
+        io.emit('scoreboard:vote_updated', { unidade: 'BH', votes: [] });
+
+        res.json({ message: "Marco Zero executado com sucesso!", detalhes: relatorio });
+    } catch (error) {
+        log('MIGRAÇÃO_ERR', `Falha global: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+};
 
 export const getCrowdCount = async (req, res) => {
     const { unidade } = req.params;
@@ -154,26 +302,31 @@ export const getCrowdCount = async (req, res) => {
     
     const count = await fetchFromDedalos(unidade);
     
-    if (count !== null) {
-        return res.json({ count });
-    }
+    if (count !== null) return res.json({ count });
 
     log('API_ERR', `Falha ao obter contagem para ${unidade}`);
-    res.status(502).json({ error: "Falha na comunicação com API Dedalos Externa" });
+    res.status(502).json({ error: "Falha na comunicação com API Externa" });
 };
 
-export const testarTrigger = (req, res) => {
+export const testarTrigger = async (req, res) => {
     const { unidade } = req.params;
     const unidadeUpper = unidade ? unidade.toUpperCase() : 'SP';
+    const fakeId = "TESTE-" + Math.floor(Math.random() * 1000);
 
     try {
+        await pool.query(
+            'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status) VALUES (?, ?, NULL, "DENTRO")', 
+            [unidadeUpper, fakeId]
+        );
+
         const io = getIO();
-        log('TESTE', `Disparo manual para ${unidadeUpper}`);
+        log('TESTE', `Disparo manual para ${unidadeUpper} / ID: ${fakeId}`);
         
         io.emit('checkin:novo', { 
             unidade: unidadeUpper,
             total: 999, 
             novos: 1,
+            cliente_id: fakeId,
             timestamp: new Date()
         });
 
@@ -189,14 +342,10 @@ export const getActiveConfig = async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT * FROM scoreboard_active WHERE unidade = ?', [unidade.toUpperCase()]);
         
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'Configuração não encontrada.' });
-        }
+        if (rows.length === 0) return res.status(404).json({ error: 'Configuração não encontrada.' });
         
         const config = rows[0];
-        if (typeof config.opcoes === 'string') {
-            config.opcoes = JSON.parse(config.opcoes);
-        }
+        if (typeof config.opcoes === 'string') config.opcoes = JSON.parse(config.opcoes);
 
         res.json(config);
     } catch (err) {
@@ -207,9 +356,7 @@ export const getActiveConfig = async (req, res) => {
 export const updateActiveConfig = async (req, res) => {
     const { unidade, titulo, layout, opcoes, status } = req.body;
     
-    if (!unidade || !titulo || !opcoes) {
-        return res.status(400).json({ error: "Dados incompletos." });
-    }
+    if (!unidade || !titulo || !opcoes) return res.status(400).json({ error: "Dados incompletos." });
 
     const connection = await pool.getConnection();
 
@@ -227,7 +374,7 @@ export const updateActiveConfig = async (req, res) => {
         `;
 
         await connection.query(sql, [unidadeUpper, titulo, layout, opcoesString, status]);
-        await connection.query('DELETE FROM scoreboard_votes WHERE unidade = ?', [unidadeUpper]);
+        await connection.query(`UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`, [unidadeUpper]);
         
         await connection.commit();
 
@@ -245,23 +392,27 @@ export const updateActiveConfig = async (req, res) => {
 };
 
 export const castVote = async (req, res) => {
-    const { unidade, optionIndex } = req.body;
+    const { unidade, optionIndex, cliente_id } = req.body;
     
-    if (!unidade || optionIndex === undefined) {
-        return res.status(400).json({ error: "Voto inválido." });
-    }
+    if (!unidade || optionIndex === undefined) return res.status(400).json({ error: "Voto inválido." });
 
     try {
         const unidadeUpper = unidade.toUpperCase();
-        await pool.query('INSERT INTO scoreboard_votes (unidade, option_index) VALUES (?, ?)', [unidadeUpper, optionIndex]);
+        
+        if (cliente_id) {
+            await pool.query(
+                `UPDATE scoreboard_votes SET option_index = ? WHERE unidade = ? AND cliente_id = ? AND status = 'DENTRO' ORDER BY id DESC LIMIT 1`, 
+                [optionIndex, unidadeUpper, cliente_id]
+            );
+        } else {
+            await pool.query('INSERT INTO scoreboard_votes (unidade, option_index, status) VALUES (?, ?, "DENTRO")', [unidadeUpper, optionIndex]);
+        }
         
         const io = getIO();
-        const [rows] = await pool.query(
-            'SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', 
-            [unidadeUpper]
-        );
+        const rows = await fetchCurrentVotes(unidadeUpper);
 
         io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: rows });
+        
         res.json({ message: "Voto computado." });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -272,10 +423,7 @@ export const getVotes = async (req, res) => {
     const { unidade } = req.params;
 
     try {
-        const [rows] = await pool.query(
-            'SELECT option_index, COUNT(*) as count FROM scoreboard_votes WHERE unidade = ? GROUP BY option_index', 
-            [unidade.toUpperCase()]
-        );
+        const rows = await fetchCurrentVotes(unidade.toUpperCase());
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -287,12 +435,12 @@ export const resetVotes = async (req, res) => {
 
     try {
         const unidadeUpper = unidade.toUpperCase();
-        await pool.query('DELETE FROM scoreboard_votes WHERE unidade = ?', [unidadeUpper]);
+        await pool.query(`UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`, [unidadeUpper]);
         
         const io = getIO();
         io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: [] });
         
-        res.json({ message: "Votos zerados." });
+        res.json({ message: "Votos zerados e sessão renovada." });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
