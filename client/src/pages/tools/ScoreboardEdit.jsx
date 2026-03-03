@@ -249,6 +249,12 @@ export default function ScoreboardEdit() {
         isDanger: false 
     });
 
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportData, setReportData] = useState([]);
+    const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
+    const [reportYear, setReportYear] = useState(new Date().getFullYear());
+    const [loadingReport, setLoadingReport] = useState(false);
+
     useEffect(() => { 
         loadActiveConfig(); 
     }, [currentUnit]);
@@ -454,6 +460,37 @@ export default function ScoreboardEdit() {
         }, true);
     };
 
+    const loadReport = async () => {
+        setLoadingReport(true);
+        try {
+            const res = await axios.get(`${API_URL}/api/scoreboard/history/${currentUnit}?month=${reportMonth}&year=${reportYear}`);
+            setReportData(res.data);
+        } catch (error) {
+            toast.error("Erro ao carregar relatório.");
+        } finally {
+            setLoadingReport(false);
+        }
+    };
+
+    const formatPeriod = (entry, exit, status) => {
+        const entryTime = new Date(entry).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        if (status === 'DENTRO') return `${entryTime} - DENTRO`;
+        if (!exit || entry === exit) return `${entryTime} - N/A`;
+        const exitTime = new Date(exit).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return `${entryTime} - ${exitTime}`;
+    };
+
+    const getTurno = (dateStr) => {
+        const h = new Date(dateStr).getHours();
+        if (h >= 6 && h < 14) return '1 (06h - 14h)';
+        if (h >= 14 && h < 22) return '2 (14h - 22h)';
+        return '3 (22h - 06h)';
+    };
+
+    const realVotesList = reportData.filter(i => i.cliente_id && !i.cliente_id.startsWith('TESTE-') && !i.expires_at);
+    const totalVotantes = realVotesList.filter(i => i.option_index !== null).length;
+    const totalNaoVotantes = realVotesList.filter(i => i.option_index === null).length;
+
     if (loading) {
         return (
             <div className="min-h-screen bg-[#050505] flex items-center justify-center">
@@ -478,12 +515,21 @@ export default function ScoreboardEdit() {
                         <h1 className="text-3xl font-bold text-white mb-1">Manutenção de Placar</h1>
                         <p className="text-white/50 text-sm">Configure o jogo de votação em tempo real</p>
                     </div>
-                    <button 
-                        onClick={() => { setShowPresetsModal(true); loadPresets(); }} 
-                        className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10"
-                    >
-                        <span className="material-symbols-outlined text-lg">bookmarks</span> PREDEFINIÇÕES
-                    </button>
+                    
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => { setShowReportModal(true); loadReport(); }} 
+                            className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10"
+                        >
+                            <span className="material-symbols-outlined text-lg">assessment</span> CONSULTAR VOTOS
+                        </button>
+                        <button 
+                            onClick={() => { setShowPresetsModal(true); loadPresets(); }} 
+                            className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10"
+                        >
+                            <span className="material-symbols-outlined text-lg">bookmarks</span> PREDEFINIÇÕES
+                        </button>
+                    </div>
                 </div>
 
                 <div className="liquid-glass p-5 rounded-2xl mb-6 flex-shrink-0">
@@ -657,6 +703,121 @@ export default function ScoreboardEdit() {
                                         </div>
                                     ))}
                                 </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showReportModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-fade-in">
+                    <div className="bg-[#121212] border border-white/10 rounded-3xl w-full max-w-6xl shadow-2xl flex flex-col h-[85vh]">
+                        <div className="flex justify-between items-center p-6 border-b border-white/10 bg-[#1a1a1a] rounded-t-3xl">
+                            <div className="flex gap-4 items-center">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                                    <span className="material-symbols-outlined text-blue-500">analytics</span> Relatório Analítico
+                                </h2>
+                                <div className="flex gap-2 ml-4 bg-black/40 p-1 rounded-lg border border-white/10">
+                                    <select 
+                                        className="bg-transparent text-white text-sm outline-none px-2 cursor-pointer font-bold"
+                                        value={reportMonth}
+                                        onChange={(e) => setReportMonth(e.target.value)}
+                                    >
+                                        {Array.from({length: 12}, (_, i) => (
+                                            <option key={i+1} value={i+1} className="bg-black text-white">{new Date(0, i).toLocaleString('pt-BR', {month: 'long'}).toUpperCase()}</option>
+                                        ))}
+                                    </select>
+                                    <select 
+                                        className="bg-transparent text-white text-sm outline-none px-2 cursor-pointer font-bold border-l border-white/10"
+                                        value={reportYear}
+                                        onChange={(e) => setReportYear(e.target.value)}
+                                    >
+                                        {[2025, 2026, 2027].map(y => <option key={y} value={y} className="bg-black text-white">{y}</option>)}
+                                    </select>
+                                    <button onClick={loadReport} className="ml-2 bg-blue-600 hover:bg-blue-500 rounded px-3 py-1 text-xs font-bold text-white transition-colors">BUSCAR</button>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowReportModal(false)} className="text-white/50 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+
+                        <div className="flex gap-4 p-4 bg-black/20 border-b border-white/5 shrink-0">
+                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                                <span className="text-[10px] text-blue-400 uppercase font-black tracking-widest">Público Votante</span>
+                                <span className="text-4xl font-black text-white">{totalVotantes}</span>
+                            </div>
+                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                                <span className="text-[10px] text-white/40 uppercase font-black tracking-widest">Não Votaram</span>
+                                <span className="text-4xl font-black text-white">{totalNaoVotantes}</span>
+                            </div>
+                            <div className="bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                                <span className="text-[10px] text-red-400/50 uppercase font-black tracking-widest">Testes de Sistema</span>
+                                <span className="text-4xl font-black text-red-400/80">{reportData.length - realVotesList.length}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto custom-scrollbar bg-[#121212]">
+                            {loadingReport ? (
+                                <div className="flex flex-col items-center justify-center h-full text-white/30">
+                                    <span className="material-symbols-outlined text-4xl animate-spin mb-2">refresh</span>
+                                    <p className="text-sm font-bold tracking-widest uppercase">Processando Dados...</p>
+                                </div>
+                            ) : (
+                                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                                    <thead className="sticky top-0 bg-[#1a1a1a] z-10 shadow-md">
+                                        <tr>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Data</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Dia</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Pulseira</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Nome</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Voto</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Período</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Turno</th>
+                                            <th className="p-4 text-white/40 font-bold uppercase tracking-widest border-b border-white/10">Real</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {reportData.map((row) => {
+                                            const isFake = !row.cliente_id || row.cliente_id.startsWith('TESTE-') || row.expires_at !== null;
+                                            const isNonVoter = row.option_index === null;
+                                            const dateObj = new Date(row.created_at);
+                                            const currentVoteConfig = config.opcoes[row.option_index];
+
+                                            return (
+                                                <tr key={row.id} className={`hover:bg-white/5 transition-colors ${isFake ? 'opacity-40' : ''}`}>
+                                                    <td className="p-4 text-white/80">{dateObj.toLocaleString('pt-BR')}</td>
+                                                    <td className="p-4 text-white/60 capitalize">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</td>
+                                                    <td className="p-4 font-bold text-white">{isFake ? 'N/A' : row.cliente_id}</td>
+                                                    <td className="p-4 text-white/80 font-medium">
+                                                        {isFake 
+                                                            ? <span className="text-white/30">N/A</span> 
+                                                            : (row.cliente_nome || <span className="text-white/40 italic">Desconhecido</span>)
+                                                        }
+                                                    </td>
+                                                    <td className="p-4">
+                                                        {isFake ? <span className="text-white/30">N/A</span> : 
+                                                         isNonVoter ? <span className="bg-white/10 text-white/50 px-2 py-1 rounded text-[10px] font-bold">SEM VOTO</span> : 
+                                                         <span className="bg-blue-900/30 text-blue-300 px-2 py-1 rounded text-[10px] font-bold border border-blue-500/20 truncate max-w-[120px] inline-block">
+                                                             {currentVoteConfig ? currentVoteConfig.nome || `Opção ${row.option_index + 1}` : `Opção ${row.option_index + 1}`}
+                                                         </span>
+                                                        }
+                                                    </td>
+                                                    <td className="p-4 text-white/60 font-mono">{isFake ? 'N/A' : formatPeriod(row.created_at, row.updated_at, row.status)}</td>
+                                                    <td className="p-4 text-white/60">{isFake ? 'N/A' : getTurno(row.created_at)}</td>
+                                                    <td className="p-4">
+                                                        {isFake ? <span title="Voto Fake / Teste">🤖 Falso</span> : <span title="Cliente Real">👤 Verdadeiro</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {reportData.length === 0 && !loadingReport && (
+                                            <tr>
+                                                <td colSpan="8" className="p-8 text-center text-white/30">Nenhum dado encontrado para o período selecionado.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
                             )}
                         </div>
                     </div>
