@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import Sidebar from '../../components/Sidebar';
-import { toast } from 'react-toastify';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import { 
     Settings, 
     Save, 
@@ -20,6 +19,8 @@ import {
     ChevronRight, 
     Trash2 
 } from 'lucide-react';
+
+import Sidebar from '../../components/Sidebar';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -45,20 +46,15 @@ export default function PricesEdit() {
     const [defaults, setDefaults] = useState([]);
     const [categoriesMedia, setCategoriesMedia] = useState([]); 
     const [manualFuture, setManualFuture] = useState('');
-
     const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
-
     const [isIdentidadeOpen, setIsIdentidadeOpen] = useState(false);
     const [isAvisosOpen, setIsAvisosOpen] = useState(false);
-
     const [showHolidayModal, setShowHolidayModal] = useState(false);
     const [holidays, setHolidays] = useState([]);
     const [newHolidayName, setNewHolidayName] = useState('');
     const [newHolidayDate, setNewHolidayDate] = useState('');
-
     const [showPromoModal, setShowPromoModal] = useState(false);
     const [promotions, setPromotions] = useState([]);
-
     const [activeTab, setActiveTab] = useState('semana');
 
     useEffect(() => {
@@ -71,7 +67,7 @@ export default function PricesEdit() {
         try {
             const [stateRes, defaultsRes, mediaRes, holidaysRes, promosRes] = await Promise.all([
                 axios.get(`${API_URL}/api/prices/state/${currentUnit}`),
-                axios.get(`${API_URL}/api/prices/defaults`),
+                axios.get(`${API_URL}/api/prices/defaults?unidade=${currentUnit}`),
                 axios.get(`${API_URL}/api/prices/media/${currentUnit}`),
                 axios.get(`${API_URL}/api/prices/holidays/${currentUnit}`).catch(() => ({ data: [] })),
                 axios.get(`${API_URL}/api/prices/promotions/${currentUnit}`).catch(() => ({ data: [] }))
@@ -100,13 +96,14 @@ export default function PricesEdit() {
                 ...p,
                 dias_ativos: Array.isArray(p.dias_ativos) ? p.dias_ativos : JSON.parse(p.dias_ativos || '[]')
             }));
+            
             setPromotions(formattedPromos);
 
             const valorInicial = stateRes.data.valor_futuro 
                 ? stateRes.data.valor_futuro 
                 : (stateRes.data.valor_padrao_futuro || '');
+                
             setManualFuture(valorInicial);
-
         } catch (error) {
             console.error(error);
             toast.error("Erro ao carregar dados.");
@@ -295,7 +292,9 @@ export default function PricesEdit() {
             const res = await axios.post(`${API_URL}/api/prices/upload`, formData, { 
                 headers: { 'Content-Type': 'multipart/form-data' } 
             });
+            
             setPromotions(prev => [...prev, { image_url: res.data.url, dias_ativos: [] }]);
+            
             toast.update(toastId, { 
                 render: "Flyer adicionado!", 
                 type: "success", 
@@ -347,7 +346,7 @@ export default function PricesEdit() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+            <div className="min-h-screen bg-[#050505] flex items-center justify-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
         );

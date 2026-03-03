@@ -1,18 +1,24 @@
 import pool from '../config/db.js';
 import axios from 'axios';
 
+const log = (tag, msg, data = null) => {
+    const time = new Date().toISOString().split('T')[1].slice(0, 8);
+    const dataStr = data ? ` | DADOS: ${JSON.stringify(data).substring(0, 200)}...` : '';
+    console.log(`[💰 PREÇOS ${time}] [${tag}] ${msg}${dataStr}`);
+};
+
 const getApiConfig = (unidade) => {
     if (unidade === 'SP') {
         return {
-            url: (process.env.API_URL_SP || 'https://dedalosadm2-3dab78314381.herokuapp.com').replace(/\/$/, ''),
-            token: process.env.API_TOKEN_SP || '7a9e64071564f6fee8d96cd209ed3a4e86801552'
+            url: (process.env.VITE_API_URL_SP || process.env.API_URL_SP || 'https://dedalosadm2-3dab78314381.herokuapp.com').replace(/\/$/, ''),
+            token: process.env.VITE_API_TOKEN_SP || process.env.API_TOKEN_SP || '7a9e64071564f6fee8d96cd209ed3a4e86801552'
         };
     }
 
     if (unidade === 'BH') {
         return {
-            url: (process.env.API_URL_BH || 'https://dedalosadm2bh-09d55dca461e.herokuapp.com').replace(/\/$/, ''),
-            token: process.env.API_TOKEN_BH || '919d97d7df39ecbd0036631caba657221acab99d99'
+            url: (process.env.VITE_API_URL_BH || process.env.API_URL_BH || 'https://dedalosadm2bh-09d55dca461e.herokuapp.com').replace(/\/$/, ''),
+            token: process.env.VITE_API_TOKEN_BH || process.env.API_TOKEN_BH || '919d97d7df39ecbd0036631caba657221acab99d'
         };
     }
 
@@ -21,19 +27,21 @@ const getApiConfig = (unidade) => {
 
 const getHoraBrasil = () => {
     const date = new Date();
-    const utcDate = new Date(date.toLocaleString('en-US', { timeZone: "America/Sao_Paulo" }));
-    return utcDate;
+    return new Date(date.toLocaleString('en-US', { timeZone: "America/Sao_Paulo" }));
 };
 
 const getPeriodo = (hora) => {
     if (hora >= 6 && hora < 14) return 'manha';
     if (hora >= 14 && hora < 20) return 'tarde';
+    
     return 'noite';
 };
 
 const getTipoDia = (data) => {
     const diaSemana = data.getDay(); 
+    
     if (diaSemana === 6 || diaSemana === 0) return 'fim_de_semana';
+    
     return 'semana';
 };
 
@@ -42,15 +50,91 @@ const getProximoPeriodo = (periodoAtual, tipoDiaAtual, diaSemanaAtual) => {
     if (periodoAtual === 'tarde') return { periodo: 'noite', tipo: tipoDiaAtual };
     
     let proximoTipo = tipoDiaAtual;
+    
     if (diaSemanaAtual === 5) proximoTipo = 'fim_de_semana'; 
     if (diaSemanaAtual === 0) proximoTipo = 'semana';        
 
     return { periodo: 'manha', tipo: proximoTipo };
 };
 
+const getBhDayAndRound = (agora) => {
+    const hora = agora.getHours();
+    let round = "Round 3";
+    
+    if (hora >= 6 && hora < 14) round = "Round 1";
+    else if (hora >= 14 && hora < 20) round = "Round 2";
+    
+    const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+    const day = dayNames[agora.getDay()];
+
+    return { day, round };
+};
+
+const fetchLivePriceFromExternalApi = async (unidadeUpper, apiConfig, agora) => {
+    try {
+        if (unidadeUpper === 'SP') {
+            const response = await axios.get(`${apiConfig.url}/regras/valor-entrada/`, {
+                headers: { 'Authorization': `Token ${apiConfig.token}` },
+                timeout: 5000
+            });
+            const data = response.data;
+            let val = parseFloat(data.valorEntrada);
+            
+            if (isNaN(val) && data.valor !== undefined) val = parseFloat(data.valor);
+            if (isNaN(val) && data.price !== undefined) val = parseFloat(data.price);
+            
+            return isNaN(val) ? null : val;
+        } 
+        
+        if (unidadeUpper === 'BH') {
+            const { day, round } = getBhDayAndRound(agora);
+            
+            const urlDay = encodeURIComponent(day);
+            const urlRound = encodeURIComponent(round);
+
+            const bhUrl = `${apiConfig.url}/recepcao/api/newcheckin/getprice/?day=${urlDay}&round=${urlRound}`;
+            log('BH_FETCH', `Buscando em: ${bhUrl}`);
+            
+            const response = await axios.get(bhUrl, {
+                headers: { 'Authorization': `Token ${apiConfig.token}` },
+                timeout: 5000
+            });
+            
+            const data = response.data;
+            
+            if (Array.isArray(data) && data.length > 0) {
+                let val = null;
+                
+                if (data[0].Discreto) {
+                    val = parseFloat(data[0].Discreto.replace(',', '.'));
+                } else if (data[0].price !== undefined) {
+                    val = parseFloat(String(data[0].price).replace(',', '.'));
+                } else if (data[0].valor !== undefined) {
+                    val = parseFloat(String(data[0].valor).replace(',', '.'));
+                } else if (data[0].valor_atual !== undefined) {
+                    val = parseFloat(String(data[0].valor_atual).replace(',', '.'));
+                }
+                
+                if (!isNaN(val) && val !== null) {
+                    log('BH_SUCCESS', `Encontrado preço: R$ ${val}`);
+                    return val;
+                }
+            }
+            return null;
+        }
+    } catch (error) {
+        const errorMsg = error.response ? JSON.stringify(error.response.data) : error.message;
+        log('API_ERR', `Falha ao conectar na busca de preços de ${unidadeUpper}: ${errorMsg}`);
+        return null;
+    }
+    
+    return null;
+};
+
 export const getPricesState = async (req, res) => {
     const { unidade } = req.params;
     const unidadeUpper = unidade.toUpperCase();
+    const agora = getHoraBrasil();
     
     try {
         const [stateRows] = await pool.query('SELECT * FROM price_live_state WHERE unidade = ?', [unidadeUpper]);
@@ -63,44 +147,41 @@ export const getPricesState = async (req, res) => {
 
         let valorRealApi = state.valor_atual;
 
-        try {
-            const apiConfig = getApiConfig(unidadeUpper);
-            if (apiConfig && apiConfig.url && apiConfig.token) {
-                const response = await axios.get(`${apiConfig.url}/regras/valor-entrada/`, {
-                    headers: { 'Authorization': `Token ${apiConfig.token}` },
-                    timeout: 4000
-                });
-
-                const val = parseFloat(response.data.valorEntrada);
-                if (!isNaN(val)) {
-                    valorRealApi = val;
-                    if (valorRealApi !== parseFloat(state.valor_atual)) {
-                        await pool.query('UPDATE price_live_state SET valor_atual = ? WHERE unidade = ?', [valorRealApi, unidadeUpper]);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error(`[Prices] Erro API Legada (${unidade}):`, error.message);
-        }
-
-        const agora = getHoraBrasil();
         const tipoDia = getTipoDia(agora);
         const periodo = getPeriodo(agora.getHours());
 
         const [regrasAtuais] = await pool.query(
-            'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1',
-            [tipoDia, periodo]
+            'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1 AND unidade = ?',
+            [tipoDia, periodo, unidadeUpper]
         );
-
         const valorPadraoAgora = regrasAtuais[0]?.valor || 0;
-        const isPadrao = Math.abs(valorRealApi - valorPadraoAgora) < 0.50;
 
+        const apiConfig = getApiConfig(unidadeUpper);
+        
+        if (apiConfig && apiConfig.url && apiConfig.token) {
+            const externalPrice = await fetchLivePriceFromExternalApi(unidadeUpper, apiConfig, agora);
+            
+            if (externalPrice !== null) {
+                valorRealApi = externalPrice;
+            } else {
+                if (valorPadraoAgora > 0) {
+                    valorRealApi = valorPadraoAgora;
+                }
+            }
+
+            if (valorRealApi !== parseFloat(state.valor_atual)) {
+                await pool.query('UPDATE price_live_state SET valor_atual = ? WHERE unidade = ?', [valorRealApi, unidadeUpper]);
+            }
+        }
+
+        const isPadrao = Math.abs(valorRealApi - valorPadraoAgora) < 0.50;
         let valorPadraoFuturo = null;
+        
         if (isPadrao) {
             const next = getProximoPeriodo(periodo, tipoDia, agora.getDay());
             const [regrasFuturas] = await pool.query(
-                'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1',
-                [next.tipo, next.periodo]
+                'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1 AND unidade = ?',
+                [next.tipo, next.periodo, unidadeUpper]
             );
             valorPadraoFuturo = regrasFuturas[0]?.valor;
         } 
@@ -116,7 +197,7 @@ export const getPricesState = async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        log('SYS_ERR', `Falha geral no carregamento: ${error.message}`);
         res.status(500).json({ error: "Erro interno" });
     }
 };
@@ -124,12 +205,8 @@ export const getPricesState = async (req, res) => {
 export const updatePriceState = async (req, res) => {
     const { unidade } = req.params;
     const { 
-        modo_festa, 
-        party_banners, 
-        valor_futuro, 
-        texto_futuro, 
-        valor_passado,
-        aviso_1, aviso_2, aviso_3, aviso_4
+        modo_festa, party_banners, valor_futuro, texto_futuro, valor_passado,
+        aviso_1, aviso_2, aviso_3, aviso_4 
     } = req.body;
 
     try {
@@ -137,71 +214,64 @@ export const updatePriceState = async (req, res) => {
 
         await pool.query(`
             UPDATE price_live_state 
-            SET 
-                modo_festa = ?, 
-                party_banners = ?, 
-                valor_futuro = ?, 
-                texto_futuro = ?, 
-                valor_passado = ?,
+            SET modo_festa = ?, party_banners = ?, valor_futuro = ?, texto_futuro = ?, valor_passado = ?,
                 aviso_1 = ?, aviso_2 = ?, aviso_3 = ?, aviso_4 = ?
             WHERE unidade = ?
         `, [
-            modo_festa, 
-            bannersJson, 
-            valor_futuro || null, 
-            texto_futuro || '???', 
-            valor_passado || null,
-            aviso_1 || '', aviso_2 || '', aviso_3 || '', aviso_4 || '',
-            unidade.toUpperCase()
+            modo_festa, bannersJson, valor_futuro || null, texto_futuro || '???', valor_passado || null,
+            aviso_1 || '', aviso_2 || '', aviso_3 || '', aviso_4 || '', unidade.toUpperCase()
         ]);
 
         if (req.io) {
             req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
         }
-
-        res.json({ success: true, message: "Estado atualizado com sucesso" });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.json({ success: true, message: "Estado atualizado" });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const getDefaults = async (req, res) => {
+    const unidade = (req.query.unidade || 'SP').toUpperCase();
+    
     try {
-        const [rows] = await pool.query('SELECT * FROM price_defaults ORDER BY tipo_dia DESC, periodo, qtd_pessoas');
+        const [rows] = await pool.query('SELECT * FROM price_defaults WHERE unidade = ? ORDER BY tipo_dia DESC, periodo, qtd_pessoas', [unidade]);
         res.json(rows);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const updateDefault = async (req, res) => {
     const { id, valor } = req.body;
+    
     try {
+        const [rows] = await pool.query('SELECT unidade FROM price_defaults WHERE id = ?', [id]);
         await pool.query('UPDATE price_defaults SET valor = ? WHERE id = ?', [valor, id]);
         
-        if (req.io) {
-            req.io.emit('prices:updated', { unidade: 'SP' });
-            req.io.emit('prices:updated', { unidade: 'BH' });
+        if (req.io && rows.length > 0) {
+            req.io.emit('prices:updated', { unidade: rows[0].unidade });
         }
-
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const getCategoryMedia = async (req, res) => {
     const { unidade } = req.params;
+    
     try {
         const [rows] = await pool.query('SELECT * FROM price_category_media WHERE unidade = ? ORDER BY qtd_pessoas', [unidade.toUpperCase()]);
         res.json(rows);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const updateCategoryMedia = async (req, res) => {
     const { id, media_url, titulo, aviso_categoria } = req.body;
+    
     try {
         if (media_url !== undefined) await pool.query('UPDATE price_category_media SET media_url = ? WHERE id = ?', [media_url, id]);
         if (titulo !== undefined) await pool.query('UPDATE price_category_media SET titulo = ? WHERE id = ?', [titulo, id]);
@@ -209,40 +279,43 @@ export const updateCategoryMedia = async (req, res) => {
         
         if (req.io) {
             const [rows] = await pool.query('SELECT unidade FROM price_category_media WHERE id = ?', [id]);
-            if (rows.length > 0) {
-                req.io.emit('prices:updated', { unidade: rows[0].unidade });
-            }
+            if (rows.length > 0) req.io.emit('prices:updated', { unidade: rows[0].unidade });
         }
-
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const getHolidays = async (req, res) => {
     const { unidade } = req.params;
+    
     try {
         const [rows] = await pool.query('SELECT * FROM holidays WHERE unidade = ? ORDER BY data_feriado', [unidade.toUpperCase()]);
         res.json(rows);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const addHoliday = async (req, res) => {
     const { unidade, nome, data_feriado } = req.body;
+    
     try {
         await pool.query('INSERT INTO holidays (unidade, nome, data_feriado) VALUES (?, ?, ?)', [unidade.toUpperCase(), nome, data_feriado]);
-        if (req.io) req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
+        
+        if (req.io) {
+            req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
+        }
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const deleteHoliday = async (req, res) => {
     const { id } = req.params;
+    
     try {
         const [rows] = await pool.query('SELECT unidade FROM holidays WHERE id = ?', [id]);
         await pool.query('DELETE FROM holidays WHERE id = ?', [id]);
@@ -251,18 +324,19 @@ export const deleteHoliday = async (req, res) => {
             req.io.emit('prices:updated', { unidade: rows[0].unidade });
         }
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
 export const getPromotions = async (req, res) => {
     const { unidade } = req.params;
+    
     try {
         const [rows] = await pool.query('SELECT * FROM price_promotions WHERE unidade = ? ORDER BY created_at DESC', [unidade.toUpperCase()]);
         res.json(rows);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
+    } catch (error) { 
+        res.status(500).json({ error: error.message }); 
     }
 };
 
@@ -272,7 +346,6 @@ export const addPromotion = async (req, res) => {
     
     try {
         await conn.beginTransaction();
-        
         await conn.query('DELETE FROM price_promotions WHERE unidade = ?', [unidade.toUpperCase()]);
 
         if (promotions && promotions.length > 0) {
@@ -286,13 +359,15 @@ export const addPromotion = async (req, res) => {
         }
 
         await conn.commit();
-        if (req.io) req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
-        res.json({ success: true });
         
+        if (req.io) {
+            req.io.emit('prices:updated', { unidade: unidade.toUpperCase() });
+        }
+        res.json({ success: true });
     } catch (error) {
         await conn.rollback();
         res.status(500).json({ error: error.message });
-    } finally {
-        conn.release();
+    } finally { 
+        conn.release(); 
     }
 };

@@ -18,25 +18,37 @@ export default function PricesDisplay() {
   const [categoryMedia, setCategoryMedia] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading] = useState(true);
+  
   const [isTabletMode, setIsTabletMode] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
   const [activePeriod, setActivePeriod] = useState('manha');
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
   const [currentPartyBannerIndex, setCurrentPartyBannerIndex] = useState(0);
 
   useEffect(() => {
     const checkScreenSize = () => {
-      if (forceMode === 'tablet') {
-        setIsTabletMode(true);
+      const width = window.innerWidth;
+      let isMob = width < 768;
+      let isTab = width >= 768 && width < 1024;
+
+      if (forceMode === 'mobile') {
+        isMob = true;
+        isTab = false;
+      } else if (forceMode === 'tablet') {
+        isTab = true;
+        isMob = false;
       } else if (forceMode === 'tv') {
-        setIsTabletMode(false);
-      } else {
-        setIsTabletMode(window.innerWidth < 1024);
+        isTab = false;
+        isMob = false;
       }
+
+      setIsMobile(isMob);
+      setIsTabletMode(isTab);
     };
 
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
-
     return () => window.removeEventListener('resize', checkScreenSize);
   }, [forceMode]);
 
@@ -48,9 +60,7 @@ export default function PricesDisplay() {
     updateActivePeriod();
 
     const socket = io(API_URL);
-
     socket.on('connect', () => console.log("Socket conectado"));
-
     socket.on('prices:updated', (data) => {
       if (!data.unidade || data.unidade === currentUnit) {
         fetchData();
@@ -84,17 +94,17 @@ export default function PricesDisplay() {
     try {
       const [stateRes, defaultsRes, mediaRes, promoRes] = await Promise.all([
         axios.get(`${API_URL}/api/prices/state/${currentUnit}`),
-        axios.get(`${API_URL}/api/prices/defaults`),
+        axios.get(`${API_URL}/api/prices/defaults?unidade=${currentUnit}`),
         axios.get(`${API_URL}/api/prices/media/${currentUnit}`),
         axios.get(`${API_URL}/api/prices/promotions/${currentUnit}`).catch(() => ({ data: [] }))
       ]);
 
       const stateData = stateRes.data;
       if (typeof stateData.party_banners === 'string') {
-        try {
-          stateData.party_banners = JSON.parse(stateData.party_banners);
-        } catch (e) {
-          stateData.party_banners = [];
+        try { 
+          stateData.party_banners = JSON.parse(stateData.party_banners); 
+        } catch (e) { 
+          stateData.party_banners = []; 
         }
       } else if (!Array.isArray(stateData.party_banners)) {
         stateData.party_banners = [];
@@ -141,8 +151,7 @@ export default function PricesDisplay() {
 
     if (activePeriod === 'manha') return [{ ...periodsData.noite, type: 'past' }, { ...periodsData.manha, type: 'current' }, { ...periodsData.tarde, type: 'future' }];
     if (activePeriod === 'tarde') return [{ ...periodsData.manha, type: 'past' }, { ...periodsData.tarde, type: 'current' }, { ...periodsData.noite, type: 'future' }];
-    if (activePeriod === 'noite') return [{ ...periodsData.tarde, type: 'past' }, { ...periodsData.noite, type: 'current' }, { ...periodsData.manha, type: 'future' }];
-    return [{ ...periodsData.manha, type: 'past' }, { ...periodsData.tarde, type: 'current' }, { ...periodsData.noite, type: 'future' }];
+    return [{ ...periodsData.tarde, type: 'past' }, { ...periodsData.noite, type: 'current' }, { ...periodsData.manha, type: 'future' }];
   };
 
   if (loading) return <div className="loading-screen">CARREGANDO...</div>;
@@ -163,22 +172,25 @@ export default function PricesDisplay() {
         </div>
 
         <section className="pricing-section" style={{
-          paddingTop: isTabletMode ? '10vh' : '2vh',
+          paddingTop: (isTabletMode || isMobile) ? '10vh' : '2vh',
           height: '100vh',
-          justifyContent: isTabletMode ? 'center' : 'flex-start',
+          justifyContent: (isTabletMode || isMobile) ? 'center' : 'flex-start',
           alignItems: 'center',
           flexDirection: 'column',
-          gap: isTabletMode ? '2rem' : '1rem'
+          gap: (isTabletMode || isMobile) ? '2rem' : '1rem'
         }}>
           <div className="pricing-content" style={{ width: '100%', maxWidth: '1200px' }}>
-            <div className="pricing-columns-container">
+            <div className="pricing-columns-container" style={isMobile ? { justifyContent: 'center' } : {}}>
               {orderedColumns.map((colData, colIndex) => {
                 const isColumnActive = colIndex === 1;
+                
+                if (isMobile && !isColumnActive) return null;
+
                 const positionClass = colIndex === 0 ? 'left-col' : colIndex === 1 ? 'active' : 'right-col';
 
                 return (
                   <div key={colData.key} className={`price-column ${positionClass}`}>
-                    <h3 className="column-title" style={{ fontSize: isTabletMode ? '1.2rem' : '0.9rem' }}>{colData.title}</h3>
+                    <h3 className="column-title" style={{ fontSize: (isTabletMode || isMobile) ? '1.2rem' : '0.9rem' }}>{colData.title}</h3>
                     <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`}>
                       <PriceCard
                         index={0}
@@ -188,7 +200,7 @@ export default function PricesDisplay() {
                         defaults={defaults}
                         mediaData={categoryMedia.find(m => m.qtd_pessoas === 1)}
                         isActive={isColumnActive}
-                        isTablet={isTabletMode}
+                        isTablet={isTabletMode || isMobile}
                       />
                     </div>
                   </div>
@@ -197,14 +209,14 @@ export default function PricesDisplay() {
             </div>
 
             <div className="price-notes" style={{ marginTop: '1rem', textAlign: 'center' }}>
-              {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
-              {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
-              {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
-              {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
+              {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
+              {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
+              {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
+              {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
             </div>
           </div>
 
-          {!isTabletMode && (
+          {!isTabletMode && !isMobile && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: '20px', overflow: 'hidden' }}>
               {liveState.party_banners && liveState.party_banners.length > 0 ? (
                 <div className="relative h-full aspect-[3/4] max-h-[55vh] rounded-xl overflow-hidden shadow-2xl bg-black/40 border border-white/10">
@@ -239,27 +251,30 @@ export default function PricesDisplay() {
       </div>
 
       <section className="pricing-section" style={{
-        paddingTop: isTabletMode ? '0' : '5vh',
-        paddingBottom: isTabletMode ? '0' : '5vh',
-        gap: isTabletMode ? '1rem' : '1.5rem',
+        paddingTop: (isTabletMode || isMobile) ? '0' : '5vh',
+        paddingBottom: (isTabletMode || isMobile) ? '0' : '5vh',
+        gap: (isTabletMode || isMobile) ? '1rem' : '1.5rem',
         height: '100vh',
-        justifyContent: isTabletMode ? 'center' : 'flex-start',
+        justifyContent: (isTabletMode || isMobile) ? 'center' : 'flex-start',
         alignItems: 'center',
         flexDirection: 'column'
       }}>
         <div className="pricing-content" style={{ width: '100%', maxWidth: '1200px' }}>
-          <div className="pricing-columns-container">
+          <div className="pricing-columns-container" style={isMobile ? { justifyContent: 'center' } : {}}>
             {orderedColumns.map((colData, colIndex) => {
               const isColumnActive = colIndex === 1;
+              
+              if (isMobile && !isColumnActive) return null;
+
               const positionClass = colIndex === 0 ? 'left-col' : colIndex === 1 ? 'active' : 'right-col';
 
               return (
-                <div key={colData.key} className={`price-column ${positionClass}`} style={{ gap: isTabletMode ? '0.8rem' : '1rem' }}>
-                  <h3 className="column-title" style={isTabletMode ? { padding: '0.5rem', fontSize: '1rem' } : {}}>
+                <div key={colData.key} className={`price-column ${positionClass}`} style={{ gap: (isTabletMode || isMobile) ? '0.8rem' : '1rem' }}>
+                  <h3 className="column-title" style={(isTabletMode || isMobile) ? { padding: '0.5rem', fontSize: '1rem' } : {}}>
                     {colData.title} <span className="column-time">{colData.time}</span>
                   </h3>
 
-                  <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`} style={{ gap: isTabletMode ? '0.8rem' : '1rem' }}>
+                  <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`} style={{ gap: (isTabletMode || isMobile) ? '0.8rem' : '1rem' }}>
                     {[1, 2, 3].map((qtdPessoas, idx) => (
                       <PriceCard
                         key={qtdPessoas}
@@ -270,7 +285,7 @@ export default function PricesDisplay() {
                         defaults={defaults}
                         mediaData={categoryMedia.find(m => m.qtd_pessoas === qtdPessoas)}
                         isActive={isColumnActive}
-                        isTablet={isTabletMode}
+                        isTablet={isTabletMode || isMobile}
                       />
                     ))}
                   </div>
@@ -279,20 +294,20 @@ export default function PricesDisplay() {
             })}
           </div>
 
-          <div className="price-notes" style={{ marginTop: isTabletMode ? '2rem' : '1rem', textAlign: 'center' }}>
-            {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
-            {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
-            {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
-            {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: isTabletMode ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
+          <div className="price-notes" style={{ marginTop: (isTabletMode || isMobile) ? '2rem' : '1rem', textAlign: 'center' }}>
+            {liveState.aviso_1 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_1}</p>}
+            {liveState.aviso_2 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>* {liveState.aviso_2}</p>}
+            {liveState.aviso_3 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_3}</p>}
+            {liveState.aviso_4 && <p style={{ margin: '0 0 0.5rem 0', fontSize: (isTabletMode || isMobile) ? '1.1rem' : '0.9rem' }}>** {liveState.aviso_4}</p>}
             {liveState.texto_futuro && liveState.texto_futuro !== '???' && (
-              <p style={{ margin: '1rem 0 0 0', fontSize: isTabletMode ? '1.5rem' : '1.2rem', fontWeight: 'bold', color: '#fbbf24', textTransform: 'uppercase' }}>
+              <p style={{ margin: '1rem 0 0 0', fontSize: (isTabletMode || isMobile) ? '1.5rem' : '1.2rem', fontWeight: 'bold', color: '#fbbf24', textTransform: 'uppercase' }}>
                 {liveState.texto_futuro}
               </p>
             )}
           </div>
         </div>
 
-        {!isTabletMode && promotions.length > 0 && (
+        {!isTabletMode && !isMobile && promotions.length > 0 && (
           <div className="slider-container" style={{
             width: '90%',
             maxWidth: '800px',
