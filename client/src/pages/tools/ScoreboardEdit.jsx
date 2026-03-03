@@ -36,6 +36,7 @@ const EmojiPickerInline = ({ onSelect, onClose, recentEmojis }) => {
                         </button>
                     ))}
                 </div>
+                
                 <button 
                     onClick={onClose} 
                     className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-colors flex-shrink-0 border border-red-500/20"
@@ -43,6 +44,7 @@ const EmojiPickerInline = ({ onSelect, onClose, recentEmojis }) => {
                     <span className="material-symbols-outlined text-base">close</span>
                 </button>
             </div>
+            
             <div className="flex-1 overflow-y-auto custom-scrollbar p-2 bg-[#181818]">
                 {currentEmojis.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-white/20">
@@ -81,6 +83,7 @@ const ColorPicker = ({ onSelect, onClose }) => {
                     />
                 ))}
             </div>
+            
             <div className="mt-2 pt-2 border-t border-white/10 text-center">
                 <button 
                     onClick={onClose} 
@@ -135,12 +138,14 @@ const OptionCard = ({
                         onChange={(e) => handleOptionChange(index, 'nome', e.target.value)} 
                         placeholder={`Opção ${index + 1}`} 
                     />
+                    
                     <button 
                         className="w-5 h-5 rounded-full absolute right-1 top-1/2 -translate-y-1/2 border border-white/30 shadow-sm hover:scale-110 transition-transform"
                         style={{ backgroundColor: opt.cor || COLOR_PALETTE[index % COLOR_PALETTE.length] }}
                         onClick={() => setActiveColorPickerIndex(activeColorPickerIndex === index ? null : index)}
                         title="Alterar cor"
                     />
+                    
                     {activeColorPickerIndex === index && (
                         <ColorPicker 
                             onSelect={(color) => { handleOptionChange(index, 'cor', color); setActiveColorPickerIndex(null); }} 
@@ -158,6 +163,7 @@ const OptionCard = ({
                     >
                         <span className="material-symbols-outlined text-xs">sports_esports</span> Game
                     </button>
+                    
                     <button 
                         onClick={() => setActiveTab('display')} 
                         className={`flex-1 flex items-center justify-center gap-1 py-1 rounded text-[9px] font-bold uppercase transition-all ${activeTab === 'display' ? 'bg-white/10 text-white shadow-sm' : 'text-white/30 hover:text-white'}`}
@@ -170,6 +176,7 @@ const OptionCard = ({
                     <span className="text-[9px] text-white/30 uppercase font-bold">
                         {activeTab === 'game' ? 'Visual do Celular' : 'Visual da TV'}
                     </span>
+                    
                     <div className="flex gap-1">
                         {['emoji', 'image'].map(type => (
                             <button 
@@ -194,12 +201,14 @@ const OptionCard = ({
                             <span className="text-[10px] uppercase font-bold mt-2">Vazio</span>
                         </div>
                     )}
+                    
                     <button 
                         onClick={() => { if(isEmoji) setShowEmojiPicker(true); else document.getElementById(`file-${context}-${index}`).click(); }} 
                         className="absolute inset-0 bg-black/60 opacity-0 group-hover/control:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-sm cursor-pointer z-10"
                     >
                         <span className="material-symbols-outlined text-3xl">edit</span>
                     </button>
+                    
                     {showEmojiPicker && isEmoji && (
                         <div className="absolute inset-0 z-20">
                             <EmojiPickerInline 
@@ -209,6 +218,7 @@ const OptionCard = ({
                             />
                         </div>
                     )}
+                    
                     <input 
                         type="file" 
                         id={`file-${context}-${index}`} 
@@ -253,6 +263,7 @@ export default function ScoreboardEdit() {
     const [reportData, setReportData] = useState([]);
     const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
     const [reportYear, setReportYear] = useState(new Date().getFullYear());
+    const [activeTurnoFilter, setActiveTurnoFilter] = useState('todos');
     const [loadingReport, setLoadingReport] = useState(false);
 
     useEffect(() => { 
@@ -270,6 +281,7 @@ export default function ScoreboardEdit() {
                 display_tipo: opt.display_tipo || opt.tipo || 'emoji',
                 display_valor: opt.display_valor || opt.valor || '❓'
             }));
+            
             setConfig({ 
                 titulo: res.data.titulo || '', 
                 layout: res.data.layout || 'landscape', 
@@ -307,13 +319,16 @@ export default function ScoreboardEdit() {
 
     const handleImageUpload = async (index, context, file) => {
         if (!file) return;
+        
         const formData = new FormData();
         formData.append('scoreboardImage', file);
         const toastId = toast.loading("Enviando...");
+        
         try {
             const res = await axios.post(`${API_URL}/api/scoreboard/upload`, formData, { 
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
+            
             handleOptionChange(index, `${context}_valor`, res.data.url);
             toast.update(toastId, { render: "Sucesso!", type: "success", isLoading: false, autoClose: 2000 });
         } catch (error) { 
@@ -325,9 +340,12 @@ export default function ScoreboardEdit() {
         let count = parseInt(e.target.value);
         if (count < 1) count = 1; 
         if (count > 10) count = 10;
+        
         setOptionCount(count);
+        
         setConfig(prev => {
             const newOpcoes = [...prev.opcoes];
+            
             while (newOpcoes.length < count) {
                 const colorIndex = newOpcoes.length % COLOR_PALETTE.length;
                 newOpcoes.push({ 
@@ -339,6 +357,7 @@ export default function ScoreboardEdit() {
                     display_valor: '❓' 
                 });
             }
+            
             if (newOpcoes.length > count) newOpcoes.length = count;
             return { ...prev, opcoes: newOpcoes };
         });
@@ -348,23 +367,27 @@ export default function ScoreboardEdit() {
         setConfig(prev => {
             const newOpcoes = [...prev.opcoes];
             newOpcoes[index] = { ...newOpcoes[index], [field]: value };
+            
             if (field === 'game_tipo' && value === 'image' && !newOpcoes[index].game_valor.includes('/')) {
                 newOpcoes[index].game_valor = '';
             }
             if (field === 'display_tipo' && value === 'image' && !newOpcoes[index].display_valor.includes('/')) {
                 newOpcoes[index].display_valor = '';
             }
+            
             return { ...prev, opcoes: newOpcoes };
         });
     };
 
     const handleRemoveOption = (index) => {
         if(optionCount <= 1) return;
+        
         setConfig(prev => {
             const newOpcoes = [...prev.opcoes];
             newOpcoes.splice(index, 1);
             return { ...prev, opcoes: newOpcoes };
         });
+        
         setOptionCount(prev => prev - 1);
     };
 
@@ -416,6 +439,7 @@ export default function ScoreboardEdit() {
 
     const handleSavePreset = async () => {
         if (!presetName) return toast.warning("Dê um nome.");
+        
         try {
             await axios.post(`${API_URL}/api/scoreboard/presets`, { 
                 unidade: currentUnit, 
@@ -424,6 +448,7 @@ export default function ScoreboardEdit() {
                 layout: config.layout, 
                 opcoes: config.opcoes 
             });
+            
             toast.success("Salvo!"); 
             setPresetName(''); 
             loadPresets();
@@ -441,6 +466,7 @@ export default function ScoreboardEdit() {
                 display_tipo: opt.display_tipo || opt.tipo || 'emoji',
                 display_valor: opt.display_valor || opt.valor || '❓'
             }));
+            
             setConfig({ titulo: preset.titulo_placar, layout: preset.layout, opcoes: adaptedOptions });
             setOptionCount(adaptedOptions.length);
             setShowPresetsModal(false);
@@ -465,6 +491,7 @@ export default function ScoreboardEdit() {
         try {
             const res = await axios.get(`${API_URL}/api/scoreboard/history/${currentUnit}?month=${reportMonth}&year=${reportYear}`);
             setReportData(res.data);
+            setActiveTurnoFilter('todos');
         } catch (error) {
             toast.error("Erro ao carregar relatório.");
         } finally {
@@ -474,22 +501,35 @@ export default function ScoreboardEdit() {
 
     const formatPeriod = (entry, exit, status) => {
         const entryTime = new Date(entry).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        
         if (status === 'DENTRO') return `${entryTime} - DENTRO`;
         if (!exit || entry === exit) return `${entryTime} - N/A`;
+        
         const exitTime = new Date(exit).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         return `${entryTime} - ${exitTime}`;
     };
 
     const getTurno = (dateStr) => {
         const h = new Date(dateStr).getHours();
+        
         if (h >= 6 && h < 14) return '1 (06h - 14h)';
         if (h >= 14 && h < 22) return '2 (14h - 22h)';
         return '3 (22h - 06h)';
     };
 
-    const realVotesList = reportData.filter(i => i.cliente_id && !i.cliente_id.startsWith('TESTE-') && !i.expires_at);
+    const filteredReportData = reportData.filter(row => {
+        if (activeTurnoFilter === 'todos') return true;
+        const h = new Date(row.created_at).getHours();
+        if (activeTurnoFilter === '1') return h >= 6 && h < 14;
+        if (activeTurnoFilter === '2') return h >= 14 && h < 22;
+        if (activeTurnoFilter === '3') return h >= 22 || h < 6;
+        return true;
+    });
+
+    const realVotesList = filteredReportData.filter(i => i.cliente_id && !i.cliente_id.startsWith('TESTE-') && !i.expires_at);
     const totalVotantes = realVotesList.filter(i => i.option_index !== null).length;
     const totalNaoVotantes = realVotesList.filter(i => i.option_index === null).length;
+    const totalFakes = filteredReportData.length - realVotesList.length;
 
     if (loading) {
         return (
@@ -523,6 +563,7 @@ export default function ScoreboardEdit() {
                         >
                             <span className="material-symbols-outlined text-lg">assessment</span> CONSULTAR VOTOS
                         </button>
+                        
                         <button 
                             onClick={() => { setShowPresetsModal(true); loadPresets(); }} 
                             className="bg-white/5 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition-colors border border-white/10"
@@ -544,6 +585,7 @@ export default function ScoreboardEdit() {
                                 onChange={(e) => setConfig({...config, titulo: e.target.value})} 
                             />
                         </div>
+                        
                         <div className="w-full md:w-auto">
                             <label className="block text-[10px] text-white/40 uppercase font-bold mb-1 ml-1">Layout</label>
                             <div className="flex bg-black/30 p-1 rounded-lg border border-white/10 items-center">
@@ -553,6 +595,7 @@ export default function ScoreboardEdit() {
                                 >
                                     <span className="material-symbols-outlined text-base">view_column</span> PAISAGEM
                                 </button>
+                                
                                 <button 
                                     onClick={() => setConfig({...config, layout: 'portrait'})} 
                                     className={`px-4 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${config.layout === 'portrait' ? 'bg-blue-600 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
@@ -561,6 +604,7 @@ export default function ScoreboardEdit() {
                                 </button>
                             </div>
                         </div>
+                        
                         <div className="w-full md:w-24">
                             <label className="block text-[10px] text-white/40 uppercase font-bold mb-1 ml-1">Opções</label>
                             <input 
@@ -712,12 +756,14 @@ export default function ScoreboardEdit() {
             {showReportModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-fade-in">
                     <div className="bg-[#121212] border border-white/10 rounded-3xl w-full max-w-6xl shadow-2xl flex flex-col h-[85vh]">
-                        <div className="flex justify-between items-center p-6 border-b border-white/10 bg-[#1a1a1a] rounded-t-3xl">
-                            <div className="flex gap-4 items-center">
+                        
+                        <div className="flex flex-wrap justify-between items-center p-6 border-b border-white/10 bg-[#1a1a1a] rounded-t-3xl gap-4">
+                            <div className="flex gap-4 items-center flex-wrap">
                                 <h2 className="text-xl font-bold text-white flex items-center gap-3">
                                     <span className="material-symbols-outlined text-blue-500">analytics</span> Relatório Analítico
                                 </h2>
-                                <div className="flex gap-2 ml-4 bg-black/40 p-1 rounded-lg border border-white/10">
+                                
+                                <div className="flex gap-2 bg-black/40 p-1 rounded-lg border border-white/10">
                                     <select 
                                         className="bg-transparent text-white text-sm outline-none px-2 cursor-pointer font-bold"
                                         value={reportMonth}
@@ -736,24 +782,41 @@ export default function ScoreboardEdit() {
                                     </select>
                                     <button onClick={loadReport} className="ml-2 bg-blue-600 hover:bg-blue-500 rounded px-3 py-1 text-xs font-bold text-white transition-colors">BUSCAR</button>
                                 </div>
+
+                                <div className="flex gap-1 bg-black/40 p-1 rounded-lg border border-white/10 ml-2">
+                                    {['todos', '1', '2', '3'].map(t => (
+                                        <button
+                                            key={t}
+                                            onClick={() => setActiveTurnoFilter(t)}
+                                            className={`px-3 py-1 text-xs font-bold rounded uppercase transition-colors ${
+                                                activeTurnoFilter === t 
+                                                ? 'bg-blue-600 text-white shadow-md' 
+                                                : 'text-white/40 hover:bg-white/10 hover:text-white'
+                                            }`}
+                                        >
+                                            {t === 'todos' ? 'Todos' : `Turno ${t}`}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
+                            
                             <button onClick={() => setShowReportModal(false)} className="text-white/50 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors">
                                 <span className="material-symbols-outlined">close</span>
                             </button>
                         </div>
 
                         <div className="flex gap-4 p-4 bg-black/20 border-b border-white/5 shrink-0">
-                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 flex-1 flex flex-col items-center justify-center transition-all">
                                 <span className="text-[10px] text-blue-400 uppercase font-black tracking-widest">Público Votante</span>
                                 <span className="text-4xl font-black text-white">{totalVotantes}</span>
                             </div>
-                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex-1 flex flex-col items-center justify-center transition-all">
                                 <span className="text-[10px] text-white/40 uppercase font-black tracking-widest">Não Votaram</span>
                                 <span className="text-4xl font-black text-white">{totalNaoVotantes}</span>
                             </div>
-                            <div className="bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex-1 flex flex-col items-center justify-center">
+                            <div className="bg-red-900/10 border border-red-500/20 rounded-xl p-4 flex-1 flex flex-col items-center justify-center transition-all">
                                 <span className="text-[10px] text-red-400/50 uppercase font-black tracking-widest">Testes de Sistema</span>
-                                <span className="text-4xl font-black text-red-400/80">{reportData.length - realVotesList.length}</span>
+                                <span className="text-4xl font-black text-red-400/80">{totalFakes}</span>
                             </div>
                         </div>
 
@@ -778,7 +841,7 @@ export default function ScoreboardEdit() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
-                                        {reportData.map((row) => {
+                                        {filteredReportData.map((row) => {
                                             const isFake = !row.cliente_id || row.cliente_id.startsWith('TESTE-') || row.expires_at !== null;
                                             const isNonVoter = row.option_index === null;
                                             const dateObj = new Date(row.created_at);
@@ -788,7 +851,19 @@ export default function ScoreboardEdit() {
                                                 <tr key={row.id} className={`hover:bg-white/5 transition-colors ${isFake ? 'opacity-40' : ''}`}>
                                                     <td className="p-4 text-white/80">{dateObj.toLocaleString('pt-BR')}</td>
                                                     <td className="p-4 text-white/60 capitalize">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</td>
-                                                    <td className="p-4 font-bold text-white">{isFake ? 'N/A' : (row.cliente_pulseira || row.cliente_id)}</td>
+                                                    
+                                                    <td className="p-4 font-bold text-white">
+                                                        {isFake ? (
+                                                            <span className="text-white/30">N/A</span>
+                                                        ) : row.cliente_pulseira ? (
+                                                            <span className="text-blue-400">{row.cliente_pulseira}</span>
+                                                        ) : (
+                                                            <span className="text-white/30 text-[10px] uppercase border border-white/10 px-2 py-1 rounded bg-black/50" title="Dado antigo sem registro">
+                                                                Arm. {row.cliente_id}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    
                                                     <td className="p-4 text-white/80 font-medium">
                                                         {isFake 
                                                             ? <span className="text-white/30">N/A</span> 
@@ -811,9 +886,9 @@ export default function ScoreboardEdit() {
                                                 </tr>
                                             );
                                         })}
-                                        {reportData.length === 0 && !loadingReport && (
+                                        {filteredReportData.length === 0 && !loadingReport && (
                                             <tr>
-                                                <td colSpan="8" className="p-8 text-center text-white/30">Nenhum dado encontrado para o período selecionado.</td>
+                                                <td colSpan="8" className="p-8 text-center text-white/30">Nenhum dado encontrado para o turno e período selecionados.</td>
                                             </tr>
                                         )}
                                     </tbody>
