@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import Sidebar from '../../components/Sidebar';
-import { toast } from 'react-toastify';
 import axios from 'axios';
+import { toast } from 'react-toastify';
+import Sidebar from '../../components/Sidebar';
 import { EMOJI_DATA, COLOR_PALETTE } from '../../assets/emojis/KeyboardEmojis';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -788,7 +788,7 @@ export default function ScoreboardEdit() {
                                                 <tr key={row.id} className={`hover:bg-white/5 transition-colors ${isFake ? 'opacity-40' : ''}`}>
                                                     <td className="p-4 text-white/80">{dateObj.toLocaleString('pt-BR')}</td>
                                                     <td className="p-4 text-white/60 capitalize">{dateObj.toLocaleDateString('pt-BR', { weekday: 'short' })}</td>
-                                                    <td className="p-4 font-bold text-white">{isFake ? 'N/A' : row.cliente_id}</td>
+                                                    <td className="p-4 font-bold text-white">{isFake ? 'N/A' : (row.cliente_pulseira || row.cliente_id)}</td>
                                                     <td className="p-4 text-white/80 font-medium">
                                                         {isFake 
                                                             ? <span className="text-white/30">N/A</span> 

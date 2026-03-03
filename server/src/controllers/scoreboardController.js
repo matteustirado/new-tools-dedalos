@@ -76,21 +76,21 @@ const fetchFromDedalos = async (unidade) => {
 
 const fetchCurrentVotes = async (unidadeUpper) => {
   const sql = `
-        SELECT option_index, COUNT(*) as count 
-        FROM scoreboard_votes 
-        WHERE unidade = ? 
-        AND status = 'DENTRO'
-        AND option_index IS NOT NULL
-        AND (expires_at IS NULL OR expires_at > NOW())
-        GROUP BY option_index
-    `;
+    SELECT option_index, COUNT(*) as count 
+    FROM scoreboard_votes 
+    WHERE unidade = ? 
+    AND status = 'DENTRO'
+    AND option_index IS NOT NULL
+    AND (expires_at IS NULL OR expires_at > NOW())
+    GROUP BY option_index
+  `;
 
   const [rows] = await pool.query(sql, [unidadeUpper]);
   return rows;
 };
 
 const iniciarSincronizacaoCheckout = () => {
-  log('SYNC', 'Serviço de Varredura de Checkouts iniciado (Otimizado).');
+  log('SYNC', 'Serviço de Varredura (Baseado na Lógica Rigorosa do Golden Thursday).');
 
   setInterval(async () => {
     for (const unidade of ['SP', 'BH']) {
@@ -115,24 +115,25 @@ const iniciarSincronizacaoCheckout = () => {
         const data = response.data;
         if (!Array.isArray(data)) continue;
 
-        const activeIds = data
-          .map((c) => String(c.armario || c.pulseira))
+        const activeSystemIds = data
+          .map((c) => String(c.armario || c.pulseira || '').trim())
           .filter((id) => id && id !== 'undefined' && id !== 'null');
 
         let rowsAffected = 0;
 
-        if (activeIds.length > 0) {
-          const placeholders = activeIds.map(() => '?').join(',');
+        if (activeSystemIds.length > 0) {
+          const placeholders = activeSystemIds.map(() => '?').join(',');
+          
           const sqlUpdate = `
-                        UPDATE scoreboard_votes 
-                        SET status = 'SAIU' 
-                        WHERE unidade = ? 
-                        AND status = 'DENTRO' 
-                        AND cliente_id IS NOT NULL 
-                        AND cliente_id NOT IN (${placeholders})
-                    `;
+            UPDATE scoreboard_votes 
+            SET status = 'SAIU' 
+            WHERE unidade = ? 
+            AND status = 'DENTRO' 
+            AND cliente_id IS NOT NULL 
+            AND cliente_id NOT IN (${placeholders})
+          `;
 
-          const [result] = await pool.query(sqlUpdate, [unidadeUpper, ...activeIds]);
+          const [result] = await pool.query(sqlUpdate, [unidadeUpper, ...activeSystemIds]);
           rowsAffected = result.affectedRows;
         } else if (data.length === 0) {
           const [result] = await pool.query(
@@ -143,7 +144,7 @@ const iniciarSincronizacaoCheckout = () => {
         }
 
         if (rowsAffected > 0) {
-          log('SYNC', `[${unidade}] ${rowsAffected} votos reais inativados por checkout.`);
+          log('SYNC', `[${unidade}] ${rowsAffected} checkouts processados via chave de sistema.`);
 
           const io = getIO();
           const currentVotes = await fetchCurrentVotes(unidadeUpper);
@@ -173,14 +174,17 @@ const iniciarPonteRealTime = () => {
       socket.on('new_id', async (data) => {
         log('PONTE', `⚡ [${unidade}] CHECK-IN DETECTADO!`);
 
-        const clienteId = data?.armario || data?.pulseira || data?.id || String(Date.now());
+        const armario = data?.armario ? String(data.armario).trim() : null;
+        const pulseira = data?.pulseira ? String(data.pulseira).trim() : null;
         const clienteNome = data?.nome || data?.cliente_nome || data?.name || null;
+        
+        const systemId = armario || pulseira || String(Date.now());
         const unidadeUpper = unidade.toUpperCase();
 
         try {
           await pool.query(
-            'INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_nome, option_index, status) VALUES (?, ?, ?, NULL, "DENTRO")',
-            [unidadeUpper, String(clienteId), clienteNome]
+            'INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) VALUES (?, ?, ?, ?, NULL, "DENTRO")',
+            [unidadeUpper, systemId, pulseira, clienteNome]
           );
         } catch (e) {
           console.error(`[Ponte ${unidade}] Erro ao inserir voto sombra:`, e);
@@ -193,7 +197,7 @@ const iniciarPonteRealTime = () => {
           io.emit('checkin:novo', {
             unidade: unidadeUpper,
             total: totalAtual,
-            cliente_id: clienteId,
+            cliente_id: systemId,
             origem: 'websocket_externo',
             timestamp: new Date(),
           });
@@ -242,7 +246,7 @@ iniciarSincronizacaoCheckout();
 
 export const executarMarcoZero = async (req, res) => {
   try {
-    log('MIGRAÇÃO', 'Iniciando Marco Zero. Apagando banco de votos...');
+    log('MIGRAÇÃO', 'Iniciando Marco Zero com Dupla-Chave...');
 
     await pool.query('TRUNCATE TABLE scoreboard_votes');
 
@@ -264,21 +268,23 @@ export const executarMarcoZero = async (req, res) => {
         });
 
         if (Array.isArray(response.data)) {
-          const activeIds = response.data
-            .map((c) => String(c.armario || c.pulseira))
-            .filter((id) => id && id !== 'undefined' && id !== 'null');
-
-          if (activeIds.length > 0) {
-            for (const id of activeIds) {
+          const activeData = response.data.filter(c => c.armario || c.pulseira);
+          
+          if (activeData.length > 0) {
+            for (const c of activeData) {
+              const armario = c.armario ? String(c.armario).trim() : null;
+              const pulseira = c.pulseira ? String(c.pulseira).trim() : null;
+              const systemId = armario || pulseira;
+              
               await pool.query(
-                'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status) VALUES (?, ?, NULL, "DENTRO")',
-                [unidade, id]
+                'INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status) VALUES (?, ?, ?, NULL, "DENTRO")',
+                [unidade, systemId, pulseira]
               );
             }
           }
 
-          relatorio[unidade] = `${activeIds.length} clientes sincronizados.`;
-          log('MIGRAÇÃO', `[${unidade}] ${activeIds.length} clientes populados como sombras.`);
+          relatorio[unidade] = `${activeData.length} clientes sincronizados.`;
+          log('MIGRAÇÃO', `[${unidade}] ${activeData.length} clientes populados como sombras.`);
         }
       } catch (e) {
         relatorio[unidade] = `Erro ao puxar dados: ${e.message}`;
@@ -317,7 +323,7 @@ export const testarTrigger = async (req, res) => {
 
   try {
     await pool.query(
-      'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status, expires_at) VALUES (?, ?, NULL, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
+      'INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status, expires_at) VALUES (?, ?, NULL, NULL, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))',
       [unidadeUpper, fakeId]
     );
 
@@ -378,11 +384,11 @@ export const updateActiveConfig = async (req, res) => {
     const unidadeUpper = unidade.toUpperCase();
 
     const sql = `
-            INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status)
-            VALUES (?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-            titulo = VALUES(titulo), layout = VALUES(layout), opcoes = VALUES(opcoes), status = VALUES(status)
-        `;
+      INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status)
+      VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+      titulo = VALUES(titulo), layout = VALUES(layout), opcoes = VALUES(opcoes), status = VALUES(status)
+    `;
 
     await connection.query(sql, [unidadeUpper, titulo, layout, opcoesString, status]);
     await connection.query(
@@ -417,14 +423,14 @@ export const castVote = async (req, res) => {
 
     if (cliente_id) {
       const [result] = await pool.query(
-        `UPDATE scoreboard_votes SET option_index = ? WHERE unidade = ? AND cliente_id = ? AND status = 'DENTRO' ORDER BY id DESC LIMIT 1`,
-        [optionIndex, unidadeUpper, cliente_id]
+        `UPDATE scoreboard_votes SET option_index = ? WHERE unidade = ? AND (cliente_pulseira = ? OR cliente_id = ?) AND status = 'DENTRO' ORDER BY id DESC LIMIT 1`,
+        [optionIndex, unidadeUpper, cliente_id, cliente_id]
       );
 
       if (result.affectedRows === 0) {
         await pool.query(
-          'INSERT INTO scoreboard_votes (unidade, cliente_id, option_index, status) VALUES (?, ?, ?, "DENTRO")',
-          [unidadeUpper, cliente_id, optionIndex]
+          'INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status) VALUES (?, ?, ?, ?, "DENTRO")',
+          [unidadeUpper, cliente_id, cliente_id, optionIndex]
         );
       }
     } else {
@@ -531,14 +537,14 @@ export const getScoreboardHistory = async (req, res) => {
 
   try {
     const sql = `
-            SELECT 
-                id, cliente_id, cliente_nome, option_index, status, created_at, updated_at, expires_at
-            FROM scoreboard_votes 
-            WHERE unidade = ? 
-            AND MONTH(created_at) = ? 
-            AND YEAR(created_at) = ?
-            ORDER BY created_at DESC
-        `;
+      SELECT 
+        id, cliente_id, cliente_pulseira, cliente_nome, option_index, status, created_at, updated_at, expires_at
+      FROM scoreboard_votes 
+      WHERE unidade = ? 
+      AND MONTH(created_at) = ? 
+      AND YEAR(created_at) = ?
+      ORDER BY created_at DESC
+    `;
     const [rows] = await pool.query(sql, [unidade.toUpperCase(), month, year]);
     res.json(rows);
   } catch (err) {
