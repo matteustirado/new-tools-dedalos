@@ -6,13 +6,26 @@ import axios from 'axios';
 import Sidebar from '../../components/Sidebar';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const SHORT_DAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+
+const getLogicalDayIndex = () => {
+  const now = new Date();
+  const hour = now.getHours();
+  let day = now.getDay();
+  
+  if (hour < 6) {
+    day = day === 0 ? 6 : day - 1;
+  }
+  
+  return day;
+};
 
 const formatDuration = (totalSeconds) => {
   if (typeof totalSeconds !== 'number' || totalSeconds < 0) return '0:00';
-
+  
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.floor(totalSeconds % 60);
-
+  
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
@@ -62,6 +75,7 @@ const ProgressBar = ({ progresso, crossfadeInfo }) => {
 
   if (crossfadeInfo && tempoTotal > 0) {
     const tempoInicioCrossfade = tempoTotal - crossfadeDuration;
+    
     if (tempoAtual > tempoInicioCrossfade) {
       const progressoCrossfade = (tempoAtual - tempoInicioCrossfade) / crossfadeDuration;
       crossfadeProgressPercent = Math.min(progressoCrossfade * 100, 100);
@@ -122,17 +136,29 @@ export default function DJController() {
   const [acervo, setAcervo] = useState([]);
   const [comerciais, setComerciais] = useState([]);
   const [buscaAcervo, setBuscaAcervo] = useState("");
+  const [currentDayIndex, setCurrentDayIndex] = useState(getLogicalDayIndex());
 
   const [isMuted, setIsMuted] = useState(() => {
     return localStorage.getItem('dedalos_local_mute') === 'true';
   });
 
   useEffect(() => {
+    const dayInterval = setInterval(() => {
+      const newLogicalDay = getLogicalDayIndex();
+      if (newLogicalDay !== currentDayIndex) {
+        setCurrentDayIndex(newLogicalDay);
+      }
+    }, 60000);
+    
+    return () => clearInterval(dayInterval);
+  }, [currentDayIndex]);
+
+  useEffect(() => {
     const newSocket = io(API_URL);
     setSocket(newSocket);
 
-    newSocket.on('connect', () => { setIsConnected(true); });
-    newSocket.on('disconnect', () => { setIsConnected(false); });
+    newSocket.on('connect', () => setIsConnected(true));
+    newSocket.on('disconnect', () => setIsConnected(false));
 
     newSocket.on('maestro:estadoCompleto', (estado) => {
       setMusicaAtual(estado.musicaAtual || null);
@@ -143,8 +169,8 @@ export default function DJController() {
       setCrossfadeInfo(null);
     });
 
-    newSocket.on('maestro:filaAtualizada', (novaFila) => { setFila(novaFila || []); });
-    newSocket.on('maestro:progresso', (info) => { setProgresso(info); });
+    newSocket.on('maestro:filaAtualizada', (novaFila) => setFila(novaFila || []));
+    newSocket.on('maestro:progresso', (info) => setProgresso(info));
 
     newSocket.on('maestro:iniciarCrossfade', ({ playerAtivo, proximoPlayer, proximaMusica }) => {
       setCrossfadeInfo({ playerAtivo, proximoPlayer, proximaMusica });
@@ -173,7 +199,7 @@ export default function DJController() {
       })
       .catch(() => toast.error("Falha ao carregar acervo/comerciais."));
 
-    return () => { newSocket.disconnect(); };
+    return () => newSocket.disconnect();
   }, []);
 
   const handlePularMusica = () => {
@@ -215,8 +241,10 @@ export default function DJController() {
 
     if (item.unidade || item.tipo === 'JUKEBOX') {
       const u = (item.unidade || '').toUpperCase();
+      
       if (u === 'BH') return { text: 'BH', color: 'bg-yellow-500/20 text-yellow-400' };
       if (u === 'SP') return { text: 'SP', color: 'bg-green-500/20 text-green-400' };
+      
       return { text: u || 'JUKEBOX', color: 'bg-green-500/20 text-green-400' };
     }
 
@@ -225,10 +253,23 @@ export default function DJController() {
 
   const acervoFiltrado = useMemo(() => {
     if (!buscaAcervo) return [];
-    return acervo
-      .filter(t => t.titulo.toLowerCase().includes(buscaAcervo.toLowerCase()))
-      .slice(0, 5);
-  }, [buscaAcervo, acervo]);
+    
+    const lowerTerm = buscaAcervo.toLowerCase();
+    const filtered = acervo.filter(track => 
+      track.titulo.toLowerCase().includes(lowerTerm) || 
+      (track.artista && track.artista.toLowerCase().includes(lowerTerm))
+    );
+
+    return filtered.sort((a, b) => {
+      const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex);
+      const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex);
+
+      if (aAvailable && !bAvailable) return -1;
+      if (!aAvailable && bAvailable) return 1;
+      
+      return 0;
+    });
+  }, [buscaAcervo, acervo, currentDayIndex]);
 
   return (
     <div className="min-h-screen bg-gradient-warm flex">
@@ -290,33 +331,71 @@ export default function DJController() {
             <div className="liquid-glass rounded-xl p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-white">Próximos na Fila</h2>
-                <div className="flex items-center gap-2 relative">
+                <div className="flex items-center gap-3 relative">
+                  <span className="text-[10px] font-bold bg-white/10 text-white/50 px-2 py-1.5 rounded-lg border border-white/5 whitespace-nowrap hidden md:block">
+                    {buscaAcervo 
+                      ? `${acervoFiltrado.length} resultados` 
+                      : `${acervo.length} no acervo`}
+                  </span>
+
                   <input
-                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder:text-text-muted focus:ring-2 focus:ring-primary w-64"
+                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white text-sm placeholder:text-text-muted focus:ring-2 focus:ring-primary w-72 outline-none transition-all"
                     placeholder="Buscar no Acervo para adicionar..."
                     type="text"
                     value={buscaAcervo}
                     onChange={(e) => setBuscaAcervo(e.target.value)}
                   />
 
-                  {buscaAcervo && acervoFiltrado.length > 0 && (
-                    <div className="absolute top-full right-0 w-64 mt-2 bg-bg-dark-secondary border border-white/10 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
-                      {acervoFiltrado.map(track => (
-                        <div
-                          key={track.id}
-                          onClick={() => handleDjAdicionarPedido(track.id)}
-                          className="p-3 hover:bg-primary/20 cursor-pointer"
-                        >
-                          <p className="text-white text-sm font-medium truncate">{track.titulo}</p>
-                          <p className="text-text-muted text-xs truncate">{track.artista}</p>
+                  {buscaAcervo && (
+                    <div className="absolute top-full right-0 w-[400px] mt-2 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-20 max-h-72 overflow-y-auto custom-scrollbar">
+                      {acervoFiltrado.length > 0 ? (
+                        acervoFiltrado.map(track => {
+                          const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex);
+
+                          return (
+                            <div
+                              key={track.id}
+                              onClick={() => handleDjAdicionarPedido(track.id)}
+                              className={`p-3 border-b border-white/5 last:border-0 hover:bg-white/10 cursor-pointer transition-all flex items-center justify-between group ${!isAvailableToday ? 'opacity-40 grayscale-[0.5]' : ''}`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="text-white text-sm font-medium truncate">{track.titulo}</p>
+                                <p className="text-white/40 text-[10px] truncate">{track.artista}</p>
+                              </div>
+
+                              <div className="flex gap-1 ml-2 flex-shrink-0">
+                                {SHORT_DAYS.map((dayName, idx) => {
+                                  const isDayActive = Array.isArray(track.dias_semana) && track.dias_semana.includes(idx);
+                                  if (!isDayActive) return null;
+                                  
+                                  const isToday = idx === currentDayIndex;
+                                  
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className={`text-[8px] font-bold px-1 py-0.5 rounded border ${isToday ? 'bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_8px_rgba(74,222,128,0.2)]' : 'bg-white/5 text-white/30 border-white/10'}`}
+                                    >
+                                      {dayName}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+
+                              <span className="material-symbols-outlined text-primary ml-2 text-base opacity-0 group-hover:opacity-100 transition-opacity">add_circle</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-center text-white/40 text-xs">
+                          <p>Nenhuma música encontrada para "{buscaAcervo}".</p>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                 {fila.length === 0 && (
                   <p className="text-text-muted text-sm text-center py-4">Fila de pedidos vazia.</p>
                 )}
@@ -349,7 +428,7 @@ export default function DJController() {
           <div className="col-span-3 lg:col-span-1 flex flex-col gap-6">
             <div className="liquid-glass rounded-xl p-6" style={{ height: '280px' }}>
               <h2 className="text-xl font-bold text-white mb-4">Playlists</h2>
-              <div className="space-y-3 mb-3 overflow-y-auto h-36 pr-2">
+              <div className="space-y-3 mb-3 overflow-y-auto h-36 pr-2 custom-scrollbar">
                 {playlists.length === 0 && <p className="text-text-muted text-sm">Carregando playlists...</p>}
                 {playlists.map((playlist) => (
                   <div key={playlist.id} className="bg-white/5 p-4 rounded-lg flex items-center justify-between hover:bg-white/10 transition-colors">
@@ -376,7 +455,7 @@ export default function DJController() {
 
             <div className="liquid-glass rounded-xl p-6">
               <h2 className="text-xl font-bold text-white mb-4">Comerciais</h2>
-              <div className="space-y-3 mb-3 max-h-48 overflow-y-auto pr-2">
+              <div className="space-y-3 mb-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                 {comerciais.length === 0 && <p className="text-text-muted text-sm">Nenhum comercial encontrado.</p>}
                 {comerciais.map((commercial) => (
                   <div key={commercial.id} className="bg-white/5 p-3 rounded-lg flex items-center justify-between hover:bg-white/10 transition-colors">

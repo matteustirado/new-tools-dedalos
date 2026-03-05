@@ -19,6 +19,7 @@ export const getHistoricoPedidos = async (req, res) => {
             jp.pedido_em as created_at, 
             jp.tocado_em,
             jp.termo_busca,
+            jp.telefone, 
             t.titulo,
             t.artista,
             t.thumbnail_url,
@@ -46,16 +47,34 @@ export const handleReceberSugestao = async (socket, data) => {
     }
 
     try {
-        await pool.query(
+        const [result] = await pool.query(
             'INSERT INTO jukebox_pedidos (pulseira_id, unidade, status, termo_busca, track_id) VALUES (?, ?, ?, ?, NULL)',
             [pulseiraId, unidade, 'SUGERIDA', termo]
         );
         
-        console.log(`[Jukebox] Sugestão salva: "${termo}" (${unidade})`);
-        socket.emit('jukebox:sugestaoAceita'); 
+        console.log(`[Jukebox] Sugestão salva: "${termo}" (${unidade}) - ID: ${result.insertId}`);
+        
+        socket.emit('jukebox:sugestaoAceita', { suggestionId: result.insertId }); 
     } catch (err) {
         console.error("[Jukebox] Erro ao salvar sugestão:", err);
         socket.emit('jukebox:erroPedido', { message: 'Erro ao salvar sugestão.' });
+    }
+};
+
+export const handleAtualizarTelefoneSugestao = async (socket, data) => {
+    const { id, telefone } = data;
+
+    if (!id || !telefone) return;
+
+    try {
+        await pool.query(
+            'UPDATE jukebox_pedidos SET telefone = ? WHERE id = ? AND status = "SUGERIDA"',
+            [telefone, id]
+        );
+        console.log(`[Jukebox] Telefone ${telefone} atrelado à sugestão #${id}`);
+        socket.emit('jukebox:telefoneAtualizadoSucesso');
+    } catch (err) {
+        console.error("[Jukebox] Erro ao salvar telefone da sugestão:", err);
     }
 };
 

@@ -33,6 +33,28 @@ const getTagInfo = (item) => {
   return { text: 'PLAYLIST', color: 'bg-purple-500/20 text-purple-400' };
 };
 
+const getLogicalDayIndex = () => {
+  const now = new Date();
+  const hour = now.getHours();
+  let day = now.getDay();
+
+  if (hour < 6) {
+    day = day === 0 ? 6 : day - 1; 
+  }
+
+  return day;
+};
+
+const maskPhone = (value) => {
+  let v = value.replace(/\D/g, "");
+
+  if (v.length > 11) v = v.slice(0, 11);
+  if (v.length > 2) v = `(${v.slice(0, 2)}) ${v.slice(2)}`;
+  if (v.length > 10) v = `${v.slice(0, 10)}-${v.slice(10)}`;
+
+  return v;
+};
+
 export default function Jukebox() {
   const { unidade } = useParams();
   const unitLabel = unidade ? unidade.toUpperCase() : 'SP';
@@ -53,12 +75,17 @@ export default function Jukebox() {
   const [requestStatus, setRequestStatus] = useState('IDLE');
   const [refusalReason, setRefusalReason] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [currentDayIndex, setCurrentDayIndex] = useState(getLogicalDayIndex());
+
+  const [suggestionId, setSuggestionId] = useState(null);
+  const [wantsNotification, setWantsNotification] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneSubmitted, setPhoneSubmitted] = useState(false);
 
   const searchInputRef = useRef(null);
   const searchContainerRef = useRef(null);
   const inactivityTimerRef = useRef(null);
 
-  const currentDayIndex = new Date().getDay();
   const currentDayName = useMemo(() => DAYS_TRANSLATION[currentDayIndex], [currentDayIndex]);
 
   const playlistDoDia = useMemo(() => {
@@ -66,10 +93,73 @@ export default function Jukebox() {
     return todasPlaylists.find(p => p.id === activePlaylistId) || null;
   }, [activePlaylistId, todasPlaylists]);
 
+  const availableTracks = useMemo(() => {
+    let filtered = tracks;
+
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      filtered = tracks.filter(track =>
+        track.titulo.toLowerCase().includes(lowerTerm) ||
+        (track.artista && track.artista.toLowerCase().includes(lowerTerm))
+      );
+    }
+
+    return filtered.sort((a, b) => {
+      const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex);
+      const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex);
+      
+      if (aAvailable && !bAvailable) return -1;
+      if (!aAvailable && bAvailable) return 1;
+      
+      return 0;
+    }); 
+  }, [tracks, searchTerm, currentDayIndex]);
+
+  const topArtistasPlaylist = useMemo(() => {
+    if (!playlistDoDia || !tracks.length) return [];
+    
+    let playlistTrackIds = playlistDoDia.tracks_ids;
+
+    if (typeof playlistTrackIds === 'string') {
+      try { 
+        playlistTrackIds = JSON.parse(playlistTrackIds); 
+      } catch (e) { 
+        playlistTrackIds = []; 
+      }
+    }
+
+    if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
+
+    const artistCount = {};
+    
+    playlistTrackIds.forEach(id => {
+      const track = tracks.find(t => t.id == id);
+      if (track && track.artista) {
+        const mainArtist = track.artista.split(/,| feat\.|&/)[0].trim();
+        if (mainArtist) artistCount[mainArtist] = (artistCount[mainArtist] || 0) + 1;
+      }
+    });
+
+    return Object.entries(artistCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+  }, [playlistDoDia, tracks]);
+
+  const playlistCoverUrl = useMemo(() => {
+    if (!playlistDoDia?.imagem) {
+      return 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=2070&auto=format&fit=crop';
+    }
+    
+    return playlistDoDia.imagem.startsWith('http')
+      ? playlistDoDia.imagem
+      : `${API_URL}${playlistDoDia.imagem}`;
+  }, [playlistDoDia]);
+
   const validateCustomer = async (code) => {
     if (!code) return false;
+    
     const cleanCode = code.toString().trim();
-
     if (cleanCode === MASTER_CODE) return true;
 
     const baseUrl = VALIDATION_API[unitLabel] || VALIDATION_API.SP;
@@ -102,151 +192,22 @@ export default function Jukebox() {
     setRequestStatus('IDLE');
     setRefusalReason('');
     setShowDropdown(false);
+    setSuggestionId(null);
+    setWantsNotification(false);
+    setPhoneNumber('');
+    setPhoneSubmitted(false);
     if (searchInputRef.current) searchInputRef.current.blur();
   };
 
   const resetInactivityTimer = () => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    
     inactivityTimerRef.current = setTimeout(() => {
       if (searchTerm || customerCode || selectedTrack || requestStatus !== 'IDLE') {
         resetForm();
       }
     }, INACTIVITY_TIMEOUT_MS);
   };
-
-  useEffect(() => {
-    const handleClickOrFocusOutside = (event) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOrFocusOutside);
-    document.addEventListener('focusin', handleClickOrFocusOutside);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOrFocusOutside);
-      document.removeEventListener('focusin', handleClickOrFocusOutside);
-    };
-  }, []);
-
-  useEffect(() => {
-    const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
-    const handleActivity = () => resetInactivityTimer();
-
-    events.forEach(event => window.addEventListener(event, handleActivity));
-    resetInactivityTimer();
-
-    return () => {
-      events.forEach(event => window.removeEventListener(event, handleActivity));
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [searchTerm, customerCode, selectedTrack, requestStatus]);
-
-  useEffect(() => {
-    const newSocket = io(API_URL);
-    setSocket(newSocket);
-
-    fetchTracks();
-
-    axios.get(`${API_URL}/api/playlists`)
-      .then(res => setTodasPlaylists(res.data || []))
-      .catch(err => console.error("Erro ao carregar playlists:", err));
-
-    newSocket.on('maestro:estadoCompleto', (estado) => {
-      setMusicaAtual(estado.musicaAtual);
-      setActivePlaylistId(estado.playlistAtualId || null);
-    });
-
-    newSocket.on('maestro:playlistAtualizada', (playlistId) => {
-      setActivePlaylistId(playlistId);
-    });
-
-    newSocket.on('maestro:tocarAgora', ({ musicaInfo }) => { setMusicaAtual(musicaInfo); });
-    newSocket.on('maestro:filaAtualizada', (novaFila) => { setFila(novaFila || []); });
-
-    newSocket.on('acervo:atualizado', () => {
-      fetchTracks();
-    });
-
-    newSocket.on('jukebox:pedidoAceito', () => {
-      setIsValidating(false);
-      setRequestStatus('SUCCESS_REQUEST');
-      setTimeout(() => resetForm(), 5000);
-    });
-
-    newSocket.on('jukebox:sugestaoAceita', () => {
-      setIsValidating(false);
-      setRequestStatus('SUCCESS_SUGGESTION');
-      setTimeout(() => resetForm(), 5000);
-    });
-
-    newSocket.on('jukebox:pedidoRecusado', ({ motivo }) => {
-      setIsValidating(false);
-      setRefusalReason(motivo || 'Pedido não pôde ser processado.');
-      setRequestStatus('ERROR_REFUSED');
-      setTimeout(() => resetForm(), 6000);
-    });
-
-    newSocket.on('jukebox:erroPedido', ({ message }) => {
-      setIsValidating(false);
-      setRefusalReason(message || 'Erro desconhecido.');
-      setRequestStatus('ERROR_REFUSED');
-      setTimeout(() => resetForm(), 6000);
-    });
-
-    return () => newSocket.disconnect();
-  }, []);
-
-  const availableTracks = useMemo(() => {
-    let filtered = tracks;
-
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      filtered = tracks.filter(track =>
-        track.titulo.toLowerCase().includes(lowerTerm) ||
-        (track.artista && track.artista.toLowerCase().includes(lowerTerm))
-      );
-    }
-
-    return filtered.sort((a, b) => {
-      const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex);
-      const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex);
-
-      if (aAvailable && !bAvailable) return -1;
-      if (!aAvailable && bAvailable) return 1;
-      return 0;
-    }).slice(0, 8);
-  }, [tracks, searchTerm, currentDayIndex]);
-
-  const topArtistasPlaylist = useMemo(() => {
-    if (!playlistDoDia || !tracks.length) return [];
-    let playlistTrackIds = playlistDoDia.tracks_ids;
-
-    if (typeof playlistTrackIds === 'string') {
-      try {
-        playlistTrackIds = JSON.parse(playlistTrackIds);
-      } catch (e) {
-        playlistTrackIds = [];
-      }
-    }
-
-    if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
-
-    const artistCount = {};
-    playlistTrackIds.forEach(id => {
-      const track = tracks.find(t => t.id == id);
-      if (track && track.artista) {
-        const mainArtist = track.artista.split(/,| feat\.|&/)[0].trim();
-        if (mainArtist) artistCount[mainArtist] = (artistCount[mainArtist] || 0) + 1;
-      }
-    });
-
-    return Object.entries(artistCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name]) => name);
-  }, [playlistDoDia, tracks]);
 
   const handleSelectTrack = (track) => {
     const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex);
@@ -294,12 +255,110 @@ export default function Jukebox() {
     }
   };
 
-  const playlistCoverUrl = useMemo(() => {
-    if (!playlistDoDia?.imagem) return 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=2070&auto=format&fit=crop';
-    return playlistDoDia.imagem.startsWith('http')
-      ? playlistDoDia.imagem
-      : `${API_URL}${playlistDoDia.imagem}`;
-  }, [playlistDoDia]);
+  const handleSavePhone = () => {
+    if (socket && suggestionId && phoneNumber.length >= 14) {
+      socket.emit('jukebox:atualizarTelefoneSugestao', {
+        id: suggestionId,
+        telefone: phoneNumber
+      });
+    } else {
+      toast.warning("Preencha o WhatsApp corretamente.");
+    }
+  };
+
+  useEffect(() => {
+    const dayInterval = setInterval(() => {
+      const newLogicalDay = getLogicalDayIndex();
+      if (newLogicalDay !== currentDayIndex) {
+        setCurrentDayIndex(newLogicalDay);
+      }
+    }, 60000);
+    
+    return () => clearInterval(dayInterval);
+  }, [currentDayIndex]);
+
+  useEffect(() => {
+    const handleClickOrFocusOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOrFocusOutside);
+    document.addEventListener('focusin', handleClickOrFocusOutside);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOrFocusOutside);
+      document.removeEventListener('focusin', handleClickOrFocusOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
+    const handleActivity = () => resetInactivityTimer();
+    
+    events.forEach(event => window.addEventListener(event, handleActivity));
+    resetInactivityTimer();
+    
+    return () => {
+      events.forEach(event => window.removeEventListener(event, handleActivity));
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, [searchTerm, customerCode, selectedTrack, requestStatus, wantsNotification]);
+
+  useEffect(() => {
+    const newSocket = io(API_URL);
+    setSocket(newSocket);
+
+    fetchTracks();
+
+    axios.get(`${API_URL}/api/playlists`)
+      .then(res => setTodasPlaylists(res.data || []))
+      .catch(err => console.error("Erro ao carregar playlists:", err));
+
+    newSocket.on('maestro:estadoCompleto', (estado) => {
+      setMusicaAtual(estado.musicaAtual);
+      setActivePlaylistId(estado.playlistAtualId || null);
+    });
+
+    newSocket.on('maestro:playlistAtualizada', (playlistId) => setActivePlaylistId(playlistId));
+    newSocket.on('maestro:tocarAgora', ({ musicaInfo }) => setMusicaAtual(musicaInfo));
+    newSocket.on('maestro:filaAtualizada', (novaFila) => setFila(novaFila || []));
+    newSocket.on('acervo:atualizado', () => fetchTracks());
+
+    newSocket.on('jukebox:pedidoAceito', () => {
+      setIsValidating(false);
+      setRequestStatus('SUCCESS_REQUEST');
+      setTimeout(() => resetForm(), 5000);
+    });
+
+    newSocket.on('jukebox:sugestaoAceita', (data) => {
+      setIsValidating(false);
+      setSuggestionId(data?.suggestionId || null);
+      setRequestStatus('SUCCESS_SUGGESTION');
+    });
+
+    newSocket.on('jukebox:telefoneAtualizadoSucesso', () => {
+      setPhoneSubmitted(true);
+      setTimeout(() => resetForm(), 4000);
+    });
+
+    newSocket.on('jukebox:pedidoRecusado', ({ motivo }) => {
+      setIsValidating(false);
+      setRefusalReason(motivo || 'Pedido não pôde ser processado.');
+      setRequestStatus('ERROR_REFUSED');
+      setTimeout(() => resetForm(), 6000);
+    });
+
+    newSocket.on('jukebox:erroPedido', ({ message }) => {
+      setIsValidating(false);
+      setRefusalReason(message || 'Erro desconhecido.');
+      setRequestStatus('ERROR_REFUSED');
+      setTimeout(() => resetForm(), 6000);
+    });
+
+    return () => newSocket.disconnect();
+  }, []);
 
   if (requestStatus !== 'IDLE') {
     let icon = '';
@@ -340,15 +399,70 @@ export default function Jukebox() {
         <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">
           {title}
         </h1>
+        
         <p className="text-lg text-white/80 max-w-2xl leading-relaxed">
-          {message}
+          {phoneSubmitted ? "Seu telefone foi salvo com sucesso!" : message}
         </p>
-        <button
-          onClick={resetForm}
-          className="mt-6 bg-white/10 text-white px-8 py-2 rounded-xl hover:bg-white/20 transition-colors font-bold uppercase tracking-wider text-sm border border-white/10"
-        >
-          {buttonText}
-        </button>
+
+        {requestStatus === 'SUCCESS_SUGGESTION' && !phoneSubmitted && (
+          <div className="mt-8 flex flex-col items-center w-full max-w-md">
+            {!wantsNotification ? (
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={() => setWantsNotification(true)}
+                  className="w-full bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl transition-all font-black uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:scale-[1.02]"
+                >
+                  <span className="material-symbols-outlined align-middle mr-2 text-xl">notifications_active</span>
+                  Avise-me quando for adicionada
+                </button>
+                <button
+                  onClick={resetForm}
+                  className="w-full bg-white/5 text-white/50 px-8 py-3 rounded-xl hover:bg-white/10 hover:text-white transition-colors font-bold uppercase tracking-wider text-xs border border-white/10"
+                >
+                  Não, obrigado (Voltar)
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4 w-full animate-fade-in liquid-glass p-6 rounded-2xl border border-white/10">
+                <label className="text-left text-xs font-bold text-white/60 uppercase tracking-widest ml-1">
+                  Seu WhatsApp
+                </label>
+                <input 
+                  type="tel"
+                  className="w-full bg-black/40 border border-white/20 rounded-xl py-3 px-4 text-xl text-white placeholder:text-white/30 focus:outline-none focus:border-green-500 transition-colors text-center font-mono tracking-widest"
+                  placeholder="(11) 99999-9999"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(maskPhone(e.target.value))}
+                  autoFocus
+                />
+                <div className="flex gap-3 mt-2">
+                  <button
+                    onClick={() => setWantsNotification(false)}
+                    className="flex-1 bg-white/5 text-white/50 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors font-bold uppercase text-xs"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSavePhone}
+                    disabled={phoneNumber.length < 14}
+                    className="flex-[2] bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-500 transition-colors font-black uppercase tracking-wider text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Salvar Número
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {requestStatus !== 'SUCCESS_SUGGESTION' && (
+          <button
+            onClick={resetForm}
+            className="mt-6 bg-white/10 text-white px-8 py-2 rounded-xl hover:bg-white/20 transition-colors font-bold uppercase tracking-wider text-sm border border-white/10"
+          >
+            {buttonText}
+          </button>
+        )}
       </div>
     );
   }
@@ -430,9 +544,17 @@ export default function Jukebox() {
 
         <div className="col-span-7 flex flex-col gap-6 h-full min-h-0">
           <div className="liquid-glass p-5 rounded-3xl shadow-lg flex-shrink-0 relative z-50">
-            <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-2xl">search</span> Pedir Música
-            </h2>
+            
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-2xl">search</span> Pedir Música
+              </h2>
+              <span className="text-[10px] font-bold bg-white/10 text-white/50 px-2 py-1 rounded-lg border border-white/5">
+                {searchTerm 
+                  ? `${availableTracks.length} resultados` 
+                  : `${tracks.length} no acervo`}
+              </span>
+            </div>
 
             <div ref={searchContainerRef} className="relative mb-3">
               <input
@@ -449,10 +571,9 @@ export default function Jukebox() {
                 }}
               />
 
-              {searchTerm && !selectedTrack && showDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
-                  {availableTracks.length > 0 ? (
-                    availableTracks.map(track => {
+              {searchTerm && !selectedTrack && showDropdown && availableTracks.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
+                    {availableTracks.map(track => {
                       const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex);
 
                       return (
@@ -475,6 +596,7 @@ export default function Jukebox() {
                               const isDayActive = Array.isArray(track.dias_semana) && track.dias_semana.includes(idx);
                               if (!isDayActive) return null;
                               const isToday = idx === currentDayIndex;
+                              
                               return (
                                 <span
                                   key={idx}
@@ -491,13 +613,7 @@ export default function Jukebox() {
                           )}
                         </div>
                       );
-                    })
-                  ) : (
-                    <div className="p-4 text-center text-white/40 text-xs">
-                      <p>Nenhuma música encontrada.</p>
-                      <p className="text-[10px] mt-1">Digite o código abaixo.</p>
-                    </div>
-                  )}
+                    })}
                 </div>
               )}
             </div>

@@ -13,7 +13,6 @@ import { Server } from 'socket.io'
 import pool from './src/config/db.js'
 import { initIO } from './src/socket.js'
 import { iniciarMaestro } from './src/controllers/conductorController.js'
-
 import trackRoutes from './src/routes/trackRoutes.js'
 import playlistRoutes from './src/routes/playlistRoutes.js'
 import scheduleRoutes from './src/routes/scheduleRoutes.js'
@@ -49,6 +48,7 @@ const pricesDir = path.join(__dirname, 'src/assets/upload/prices')
 const uploadsPublicDir = path.join(__dirname, 'public/uploads')
 
 const directories = [overlayDir, scoreboardDir, pricesDir, uploadsPublicDir]
+
 directories.forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
@@ -66,7 +66,6 @@ const storage = multer.diskStorage({
         if (file.fieldname === 'photo' || file.fieldname === 'logo') {
             return cb(null, uploadsPublicDir)
         }
-        
         return cb(null, overlayDir)
     },
     filename: (req, file, cb) => {
@@ -146,6 +145,12 @@ io.on('connection', (socket) => {
     socket.on('jukebox:adicionarPedido', (data) => {
         import('./src/controllers/jukeboxController.js')
             .then(ctrl => ctrl.handleAdicionarPedido(socket, data))
+            .catch(err => console.error(err))
+    })
+
+    socket.on('jukebox:atualizarTelefoneSugestao', (data) => {
+        import('./src/controllers/jukeboxController.js')
+            .then(ctrl => ctrl.handleAtualizarTelefoneSugestao(socket, data))
             .catch(err => console.error(err))
     })
 })
