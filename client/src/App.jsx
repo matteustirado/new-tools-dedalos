@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
+import { io } from 'socket.io-client';
 import 'react-toastify/dist/ReactToastify.css';
 
 import ConnectionGuardian from './components/ConnectionGuardian';
@@ -27,7 +28,55 @@ import NameTagGenerator from './pages/people/NameTagGenerator';
 import BenefitsCheck from './pages/people/BenefitsCheck';
 import BadgeModelEditor from './pages/people/BadgeModelEditor';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
 function App() {
+  const bootTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    const checkAutoReloadRoutine = () => {
+      const now = new Date();
+      const todayStr = now.toLocaleDateString('pt-BR');
+      const lastAutoReload = localStorage.getItem('dedalos_auto_reload_date');
+
+      if (now.getHours() >= 16 && lastAutoReload !== todayStr) {
+        console.log("[Auto-Reload] Atualização diária acionada.");
+        localStorage.setItem('dedalos_auto_reload_date', todayStr);
+        window.location.reload(true);
+      }
+    };
+
+    const interval = setInterval(checkAutoReloadRoutine, 60000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAutoReloadRoutine();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const socket = io(API_URL);
+
+    socket.on('system:executeReload', () => {
+      console.log("[Socket] Comando de Reload Global Recebido!");
+      window.location.reload(true);
+    });
+
+    socket.on('system:syncReload', (serverLastReloadTime) => {
+      if (serverLastReloadTime > bootTimeRef.current) {
+        console.log("[Socket Sync] Um reload global aconteceu enquanto este tablet dormia. Sincronizando...");
+        window.location.reload(true);
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      socket.disconnect();
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <ConnectionGuardian>

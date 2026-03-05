@@ -3,7 +3,6 @@ import { io } from 'socket.io-client';
 import YouTube from 'react-youtube';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-const CROSSFADE_DURATION_MS = 4000;
 const TARGET_LUFS = -14;
 
 const getPlayerOptions = () => ({
@@ -18,23 +17,23 @@ const getPlayerOptions = () => ({
     modestbranding: 1,
     rel: 0,
     playsinline: 1,
-    mute: 1, 
+    mute: 1,
     enablejsapi: 1,
-    origin: window.location.origin, 
+    origin: window.location.origin,
   },
 });
 
 const calculateTargetVolume = (lufsValue) => {
   if (lufsValue == null || isNaN(lufsValue)) return 100;
+  
   const gainDb = TARGET_LUFS - lufsValue;
   const targetVolume = Math.pow(10, gainDb / 20) * 100;
+  
   return Math.round(Math.min(100, Math.max(0, targetVolume)));
 };
 
 export default function WatchVideo() {
   const [hasInteracted, setHasInteracted] = useState(false);
-  const hasInteractedRef = useRef(false); 
-
   const [radioState, setRadioState] = useState(null);
   const [currentTrackInfo, setCurrentTrackInfo] = useState(null);
   const [opacityA, setOpacityA] = useState(0);
@@ -42,57 +41,20 @@ export default function WatchVideo() {
   const [overlayUrl, setOverlayUrl] = useState(null);
   const [showTrackInfo, setShowTrackInfo] = useState(false);
 
+  const hasInteractedRef = useRef(false);
   const playerARef = useRef(null);
   const playerBRef = useRef(null);
   const activePlayerIdRef = useRef(null);
-  const fadeFrameRef = useRef(null);
   const socketRef = useRef(null);
-
-  const smoothFade = (playerOut, playerIn, duration, targetVolumeIn = 100) => {
-    if (fadeFrameRef.current) cancelAnimationFrame(fadeFrameRef.current);
-
-    const startTime = performance.now();
-    const startVolOut = playerOut ? playerOut.getVolume() : 0;
-    const startVolIn = playerIn ? playerIn.getVolume() : 0;
-
-    const animate = (currentTime) => {
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const ease = progress;
-
-      if (playerOut && typeof playerOut.setVolume === 'function') {
-        playerOut.setVolume(Math.max(0, startVolOut * (1 - ease)));
-      }
-
-      if (playerIn && typeof playerIn.setVolume === 'function') {
-        if (hasInteractedRef.current) playerIn.unMute();
-        playerIn.setVolume(
-          Math.min(targetVolumeIn, startVolIn + (targetVolumeIn - startVolIn) * ease)
-        );
-      }
-
-      if (progress < 1) {
-        fadeFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        if (playerOut) {
-          playerOut.pauseVideo();
-          playerOut.setVolume(0);
-        }
-        if (playerIn) {
-          if (hasInteractedRef.current) playerIn.unMute();
-          playerIn.setVolume(targetVolumeIn);
-        }
-      }
-    };
-
-    fadeFrameRef.current = requestAnimationFrame(animate);
-  };
+  const cuedVideoRefA = useRef(null);
+  const cuedVideoRefB = useRef(null);
 
   useEffect(() => {
     const socket = io(API_URL, {
       reconnection: true,
       reconnectionDelay: 1000,
     });
+    
     socketRef.current = socket;
 
     socket.on('maestro:estadoCompleto', (estado) => {
@@ -101,53 +63,58 @@ export default function WatchVideo() {
       if (estado.overlayUrl) setOverlayUrl(`${API_URL}${estado.overlayUrl}`);
     });
 
+    socket.on('maestro:prepararProxima', ({ playerBackground, proximaMusica }) => {
+      const pBg = playerBackground === 'A' ? playerARef.current : playerBRef.current;
+      const targetCuedRef = playerBackground === 'A' ? cuedVideoRefA : cuedVideoRefB;
+
+      if (pBg && proximaMusica?.youtube_id) {
+        pBg.mute();
+        pBg.cueVideoById({
+          videoId: proximaMusica.youtube_id,
+          startSeconds: proximaMusica.start_segundos || 0
+        });
+        targetCuedRef.current = proximaMusica.youtube_id;
+      }
+    });
+
     socket.on('maestro:tocarAgora', ({ player, musicaInfo }) => {
       setCurrentTrackInfo(musicaInfo);
       activePlayerIdRef.current = player;
 
       const targetPlayer = player === 'A' ? playerARef.current : playerBRef.current;
       const otherPlayer = player === 'A' ? playerBRef.current : playerARef.current;
+      const targetCuedRef = player === 'A' ? cuedVideoRefA : cuedVideoRefB;
 
-      loadAndPlay(targetPlayer, musicaInfo, 0, false);
       if (otherPlayer) {
         otherPlayer.setVolume(0);
         otherPlayer.stopVideo();
       }
 
-      if (player === 'A') {
-        setOpacityA(1);
-        setOpacityB(0);
-      } else {
-        setOpacityA(0);
-        setOpacityB(1);
-      }
-    });
+      if (targetPlayer) {
+        if (hasInteractedRef.current) targetPlayer.unMute();
+        targetPlayer.setVolume(calculateTargetVolume(musicaInfo.loudness_lufs));
 
-    socket.on('maestro:iniciarCrossfade', ({ playerAtivo, proximoPlayer, proximaMusica }) => {
-      setCurrentTrackInfo(proximaMusica);
-
-      const pOut = playerAtivo === 'A' ? playerARef.current : playerBRef.current;
-      const pIn = proximoPlayer === 'A' ? playerARef.current : playerBRef.current;
-
-      loadAndPlay(pIn, proximaMusica, 0, true);
-
-      const targetVol = calculateTargetVolume(proximaMusica.loudness_lufs);
-      smoothFade(pOut, pIn, CROSSFADE_DURATION_MS, targetVol);
-
-      if (proximoPlayer === 'A') {
-        setOpacityA(1);
-        setOpacityB(0);
-      } else {
-        setOpacityA(0);
-        setOpacityB(1);
+        if (targetCuedRef.current === musicaInfo.youtube_id) {
+            targetPlayer.playVideo();
+        } else {
+            targetPlayer.loadVideoById({
+                videoId: musicaInfo.youtube_id,
+                startSeconds: musicaInfo.start_segundos || 0
+            });
+            targetPlayer.playVideo();
+        }
+        
+        targetCuedRef.current = null;
       }
 
-      activePlayerIdRef.current = proximoPlayer;
+      setOpacityA(player === 'A' ? 1 : 0);
+      setOpacityB(player === 'B' ? 1 : 0);
     });
 
     socket.on('maestro:pararTudo', () => {
       if (playerARef.current) playerARef.current.stopVideo();
       if (playerBRef.current) playerBRef.current.stopVideo();
+      
       setOpacityA(0);
       setOpacityB(0);
       setCurrentTrackInfo(null);
@@ -157,48 +124,25 @@ export default function WatchVideo() {
       setOverlayUrl(url ? `${API_URL}${url}` : null)
     );
 
-    return () => {
-      if (fadeFrameRef.current) cancelAnimationFrame(fadeFrameRef.current);
-      socket.disconnect();
-    };
+    return () => socket.disconnect();
   }, []);
 
-  const loadAndPlay = (player, musica, startSeconds = 0, isCrossfading = false) => {
-    if (!player || !musica) return;
+  useEffect(() => {
+    const infoInterval = setInterval(async () => {
+      const active = activePlayerIdRef.current === 'A' ? playerARef.current : playerBRef.current;
 
-    const videoId = musica.youtube_id;
-    if (!videoId) {
-      console.error("[Watch] ERRO FATAL: Música sem youtube_id válido. Solicitando pulo...", musica);
-      if (socketRef.current) socketRef.current.emit('dj:pularMusica');
-      return;
-    }
-
-    if (!hasInteractedRef.current) {
-      player.mute();
-    } else {
-      player.unMute();
-    }
-
-    const start = musica.start_segundos || startSeconds;
-    const finalVolume = calculateTargetVolume(musica.loudness_lufs);
-
-    try {
-      if (isCrossfading) {
-        player.setVolume(0);
-      } else {
-        player.setVolume(finalVolume);
+      if (active && typeof active.getCurrentTime === 'function') {
+        try {
+          const t = await active.getCurrentTime();
+          const total = await active.getDuration();
+          const show = t < 15 || (total > 0 && t > total - 15);
+          setShowTrackInfo(show);
+        } catch (e) {}
       }
+    }, 1000);
 
-      player.loadVideoById({
-        videoId: videoId,
-        startSeconds: start,
-      });
-
-      player.playVideo();
-    } catch (e) {
-      console.error("[Watch] Erro ao comandar player:", e);
-    }
-  };
+    return () => clearInterval(infoInterval);
+  }, []);
 
   const syncState = (estado) => {
     if (!estado.musicaAtual) return;
@@ -210,7 +154,14 @@ export default function WatchVideo() {
 
     if (targetPlayer && hasInteractedRef.current) {
       const delayRede = 2;
-      loadAndPlay(targetPlayer, estado.musicaAtual, estado.tempoAtualSegundos + delayRede);
+      
+      targetPlayer.unMute();
+      targetPlayer.setVolume(calculateTargetVolume(estado.musicaAtual.loudness_lufs));
+      targetPlayer.loadVideoById({
+        videoId: estado.musicaAtual.youtube_id,
+        startSeconds: (estado.musicaAtual.start_segundos || 0) + estado.tempoAtualSegundos + delayRede,
+      });
+      targetPlayer.playVideo();
 
       if (estado.playerAtivo === 'A') {
         setOpacityA(1);
@@ -236,8 +187,6 @@ export default function WatchVideo() {
     if (socketRef.current) socketRef.current.emit('dj:pularMusica');
   };
 
-  const onStateChange = (evt) => {};
-
   const handleInteraction = () => {
     hasInteractedRef.current = true; 
     setHasInteracted(true);
@@ -252,29 +201,15 @@ export default function WatchVideo() {
     }
   };
 
-  useEffect(() => {
-    const infoInterval = setInterval(async () => {
-      const active = activePlayerIdRef.current === 'A' ? playerARef.current : playerBRef.current;
-
-      if (active && typeof active.getCurrentTime === 'function') {
-        try {
-          const t = await active.getCurrentTime();
-          const total = await active.getDuration();
-          const show = t < 15 || (total > 0 && t > total - 15);
-          setShowTrackInfo(show);
-        } catch (e) {}
-      }
-    }, 1000);
-
-    return () => clearInterval(infoInterval);
-  }, []);
-
   const getArtistDisplay = () => {
     if (!currentTrackInfo) return '';
+    
     let text = currentTrackInfo.artista || '';
+    
     if (currentTrackInfo.artistas_participantes?.length > 0) {
       text += ` feat. ${currentTrackInfo.artistas_participantes.join(', ')}`;
     }
+    
     return text;
   };
 
@@ -340,7 +275,7 @@ export default function WatchVideo() {
 
       <div className="absolute inset-0 w-full h-full bg-black pointer-events-none">
         <div
-          className="absolute inset-0 w-full h-full transition-opacity duration-1000 pointer-events-none"
+          className="absolute inset-0 w-full h-full transition-opacity duration-300 pointer-events-none"
           style={{ opacity: opacityA, zIndex: opacityA > 0 ? 10 : 0 }}
         >
           <YouTube
@@ -348,13 +283,12 @@ export default function WatchVideo() {
             opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'A')}
             onError={(e) => onPlayerError(e, 'A')}
-            onStateChange={onStateChange}
             className="w-full h-full pointer-events-none"
           />
         </div>
 
         <div
-          className="absolute inset-0 w-full h-full transition-opacity duration-1000 pointer-events-none"
+          className="absolute inset-0 w-full h-full transition-opacity duration-300 pointer-events-none"
           style={{ opacity: opacityB, zIndex: opacityB > 0 ? 10 : 0 }}
         >
           <YouTube
@@ -362,7 +296,6 @@ export default function WatchVideo() {
             opts={getPlayerOptions()}
             onReady={(e) => onPlayerReady(e, 'B')}
             onError={(e) => onPlayerError(e, 'B')}
-            onStateChange={onStateChange}
             className="w-full h-full pointer-events-none"
           />
         </div>

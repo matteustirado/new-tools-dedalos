@@ -10,7 +10,7 @@ let estadoRadio = {
     filaComercialManual: [],
     filaDePedidos: [],
     contadorComercial: 0,
-    isCrossfading: false,
+    isPreloading: false,
     playerAtivo: 'A',
     overlayUrl: null
 };
@@ -201,7 +201,7 @@ const obterProximoId = async () => {
 };
 
 const tocarProximaMusica = async () => {
-    estadoRadio.isCrossfading = false;
+    estadoRadio.isPreloading = false;
 
     const proximo = await obterProximoId();
 
@@ -316,17 +316,26 @@ const iniciarTicker = () => {
             tempoTotal: fimMusicaSegundos
         });
 
-        const tempoCrossfade = 4;
-        if (!estadoRadio.isCrossfading && estadoRadio.tempoAtualSegundos >= (fimMusicaSegundos - tempoCrossfade)) {
-            estadoRadio.isCrossfading = true;
+        const tempoPreload = 15;
+        if (!estadoRadio.isPreloading && estadoRadio.tempoAtualSegundos >= (fimMusicaSegundos - tempoPreload)) {
+            estadoRadio.isPreloading = true; 
 
-            const proximo = await obterProximoId();
-            if (proximo) {
-                const infoProxima = await buscarDetalhesTrack(proximo.id);
+            let peekId = null;
+            if (estadoRadio.filaComercialManual.length > 0) {
+                peekId = estadoRadio.filaComercialManual[0];
+            } else if (estadoRadio.contadorComercial >= 10 && cacheComerciais.length > 0) {
+                peekId = cacheComerciais[0];
+            } else if (estadoRadio.filaDePedidos.length > 0) {
+                peekId = estadoRadio.filaDePedidos[0].trackId;
+            } else if (estadoRadio.playlistAtiva.length > 0) {
+                peekId = estadoRadio.playlistAtiva[0];
+            }
+
+            if (peekId) {
+                const infoProxima = await buscarDetalhesTrack(peekId);
                 if (infoProxima) {
-                    getIO().emit('maestro:iniciarCrossfade', {
-                        playerAtivo: estadoRadio.playerAtivo,
-                        proximoPlayer: estadoRadio.playerAtivo === 'A' ? 'B' : 'A',
+                    getIO().emit('maestro:prepararProxima', {
+                        playerBackground: estadoRadio.playerAtivo === 'A' ? 'B' : 'A',
                         proximaMusica: infoProxima
                     });
                 }

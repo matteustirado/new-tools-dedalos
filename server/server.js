@@ -13,6 +13,7 @@ import { Server } from 'socket.io'
 import pool from './src/config/db.js'
 import { initIO } from './src/socket.js'
 import { iniciarMaestro } from './src/controllers/conductorController.js'
+
 import trackRoutes from './src/routes/trackRoutes.js'
 import playlistRoutes from './src/routes/playlistRoutes.js'
 import scheduleRoutes from './src/routes/scheduleRoutes.js'
@@ -42,6 +43,8 @@ const io = new Server(httpServer, {
 app.set('io', io)
 initIO(io)
 
+let lastGlobalReloadTime = Date.now()
+
 const overlayDir = path.join(__dirname, 'src/assets/upload/overlays')
 const scoreboardDir = path.join(__dirname, 'src/assets/upload/scoreboard')
 const pricesDir = path.join(__dirname, 'src/assets/upload/prices')
@@ -57,15 +60,10 @@ directories.forEach(dir => {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        if (file.fieldname === 'scoreboardImage') {
-            return cb(null, scoreboardDir)
-        }
-        if (file.fieldname === 'priceMedia') {
-            return cb(null, pricesDir)
-        }
-        if (file.fieldname === 'photo' || file.fieldname === 'logo') {
-            return cb(null, uploadsPublicDir)
-        }
+        if (file.fieldname === 'scoreboardImage') return cb(null, scoreboardDir)
+        if (file.fieldname === 'priceMedia') return cb(null, pricesDir)
+        if (file.fieldname === 'photo' || file.fieldname === 'logo') return cb(null, uploadsPublicDir)
+        
         return cb(null, overlayDir)
     },
     filename: (req, file, cb) => {
@@ -103,27 +101,18 @@ app.use('/api/people', peopleRoutes)
 app.use('/api/badges', badgeRoutes)
 
 app.post('/api/scoreboard/upload', upload.single('scoreboardImage'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    }
-    const fileUrl = `/assets/upload/scoreboard/${req.file.filename}`
-    return res.json({ message: 'Imagem enviada com sucesso!', url: fileUrl })
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
+    return res.json({ message: 'Imagem enviada com sucesso!', url: `/assets/upload/scoreboard/${req.file.filename}` })
 })
 
 app.post('/api/prices/upload', upload.single('priceMedia'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    }
-    const fileUrl = `/assets/upload/prices/${req.file.filename}`
-    return res.json({ message: 'Mídia enviada com sucesso!', url: fileUrl })
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
+    return res.json({ message: 'Mídia enviada com sucesso!', url: `/assets/upload/prices/${req.file.filename}` })
 })
 
 app.post('/api/badges/upload-logo', upload.single('logo'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    }
-    const fileUrl = `/uploads/${req.file.filename}`
-    return res.json({ message: 'Logo atualizado!', url: fileUrl })
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
+    return res.json({ message: 'Logo atualizado!', url: `/uploads/${req.file.filename}` })
 })
 
 app.get('/', async (req, res) => {
@@ -136,6 +125,8 @@ app.get('/', async (req, res) => {
 })
 
 io.on('connection', (socket) => {
+    socket.emit('system:syncReload', lastGlobalReloadTime)
+
     socket.on('jukebox:enviarSugestao', (data) => {
         import('./src/controllers/jukeboxController.js')
             .then(ctrl => ctrl.handleReceberSugestao(socket, data))
@@ -152,6 +143,12 @@ io.on('connection', (socket) => {
         import('./src/controllers/jukeboxController.js')
             .then(ctrl => ctrl.handleAtualizarTelefoneSugestao(socket, data))
             .catch(err => console.error(err))
+    })
+
+    socket.on('system:forceReload', () => {
+        console.log('[System] Comando manual de atualização global recebido. Recarregando as telas...')
+        lastGlobalReloadTime = Date.now()
+        io.emit('system:executeReload')
     })
 })
 

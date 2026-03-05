@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { io } from 'socket.io-client'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export default function Home({ unit = 'sp' }) {
   const navigate = useNavigate()
-  
-  useEffect(() => {
-    localStorage.setItem('dedalos_active_unit', unit)
-  }, [unit])
   
   const [expandedSections, setExpandedSections] = useState({ 
     radio: false, 
@@ -14,6 +13,10 @@ export default function Home({ unit = 'sp' }) {
     people: false,
     cx: false 
   })
+
+  useEffect(() => {
+    localStorage.setItem('dedalos_active_unit', unit)
+  }, [unit])
 
   const radioTools = [
     { id: 'dj-controller', name: 'Painel do DJ', icon: 'album', path: '/radio/dj' },
@@ -41,6 +44,10 @@ export default function Home({ unit = 'sp' }) {
     { id: 'avaliacoes', name: 'Avaliações', icon: 'reviews', path: '/cx/avaliacoes' }
   ]
 
+  const isBH = unit === 'bh'
+  const unitLabel = isBH ? 'BELO HORIZONTE' : 'SÃO PAULO'
+  const unitTextColor = isBH ? 'text-yellow-400' : 'text-green-500'
+
   const toggleSection = (section) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
@@ -53,12 +60,29 @@ export default function Home({ unit = 'sp' }) {
     }
   }
 
-  const isBH = unit === 'bh'
-  const unitLabel = isBH ? 'BELO HORIZONTE' : 'SÃO PAULO'
-  const unitTextColor = isBH ? 'text-yellow-400' : 'text-green-500'
+  const forceGlobalReload = () => {
+    const isConfirmed = window.confirm('ATENÇÃO: Deseja forçar a atualização (Reload) de TODOS os tablets e telas espalhadas pela casa?')
+    
+    if (isConfirmed) {
+      const tempSocket = io(API_URL)
+      tempSocket.emit('system:forceReload')
+      setTimeout(() => tempSocket.disconnect(), 1500) 
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-warm">
+    <div className="min-h-screen bg-gradient-warm relative">
+      <div className="absolute top-6 left-6 z-50">
+        <button
+          onClick={forceGlobalReload}
+          className="flex items-center gap-2 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-600/30 px-4 py-2.5 rounded-xl transition-all font-bold text-xs uppercase tracking-wider shadow-lg group"
+          title="Recarrega forçadamente todas as telas ativas na rede"
+        >
+          <span className="material-symbols-outlined text-lg group-hover:animate-spin">sync</span>
+          Update System
+        </button>
+      </div>
+
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-16">
           <div className="flex justify-center mb-8">
@@ -78,7 +102,6 @@ export default function Home({ unit = 'sp' }) {
         </div>
 
         <div className="max-w-7xl mx-auto space-y-6">
-          
           <div className="liquid-glass rounded-xl p-6">
             <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection('radio')}>
               <div className="flex items-center gap-4">
@@ -208,7 +231,6 @@ export default function Home({ unit = 'sp' }) {
               </div>
             )}
           </div>
-
         </div>
       </div>
     </div>
