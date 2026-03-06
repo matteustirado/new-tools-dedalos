@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { io } from 'socket.io-client';
@@ -31,6 +31,8 @@ import BadgeModelEditor from './pages/people/BadgeModelEditor';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 function App() {
+  const bootTimeRef = useRef(Date.now());
+
   useEffect(() => {
     const applyHardReload = (versionId = null) => {
       if (versionId) {
@@ -42,8 +44,24 @@ function App() {
           names.forEach(name => caches.delete(name));
         });
       }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
       
-      window.location.href = window.location.pathname + '?update=' + new Date().getTime();
+      setTimeout(() => {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        
+        if (window.location.href !== cleanUrl) {
+          window.location.href = cleanUrl;
+        } else {
+          window.location.reload(true);
+        }
+      }, 300);
     };
 
     const checkAutoReloadRoutine = () => {
@@ -52,6 +70,7 @@ function App() {
       const lastAutoReload = localStorage.getItem('dedalos_auto_reload_date');
 
       if (now.getHours() >= 16 && lastAutoReload !== todayStr) {
+        console.log("[Auto-Reload] Atualização diária acionada.");
         localStorage.setItem('dedalos_auto_reload_date', todayStr);
         applyHardReload();
       }
@@ -64,12 +83,12 @@ function App() {
         checkAutoReloadRoutine();
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const socket = io(API_URL);
 
     socket.on('system:executeReload', (newVersion) => {
+      console.log("[Socket] Comando de Reload Global Recebido!");
       applyHardReload(newVersion);
     });
 
@@ -82,6 +101,7 @@ function App() {
       }
 
       if (serverVersion !== localVersion) {
+        console.log("[Socket Sync] Versão divergente encontrada. Atualizando tablet...");
         applyHardReload(serverVersion);
       }
     });
@@ -144,7 +164,7 @@ function App() {
         </Routes>
       </ConnectionGuardian>
     </BrowserRouter>
-  );
+  ); 
 }
 
 export default App;

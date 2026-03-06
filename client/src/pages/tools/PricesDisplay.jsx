@@ -75,18 +75,24 @@ export default function PricesDisplay() {
   }, [currentUnit]);
 
   useEffect(() => {
+    setCurrentPromoIndex(0); 
     if (promotions.length <= 1) return;
+    
     const promoInterval = setInterval(() => {
       setCurrentPromoIndex(prev => (prev + 1) % promotions.length);
     }, 8000);
+    
     return () => clearInterval(promoInterval);
   }, [promotions]);
 
   useEffect(() => {
+    setCurrentPartyBannerIndex(0);
     if (!liveState?.modo_festa || !liveState?.party_banners || liveState.party_banners.length <= 1) return;
+    
     const bannerInterval = setInterval(() => {
       setCurrentPartyBannerIndex(prev => (prev + 1) % liveState.party_banners.length);
     }, 5000);
+    
     return () => clearInterval(bannerInterval);
   }, [liveState?.modo_festa, liveState?.party_banners]);
 
@@ -159,6 +165,9 @@ export default function PricesDisplay() {
 
   const orderedColumns = getOrderedPeriods();
 
+  const safePartyBannerIndex = liveState.party_banners ? (currentPartyBannerIndex >= liveState.party_banners.length ? 0 : currentPartyBannerIndex) : 0;
+  const safePromoIndex = currentPromoIndex >= promotions.length ? 0 : currentPromoIndex;
+
   if (liveState.modo_festa) {
     return (
       <div className="pricing-page-wrapper" style={{ paddingTop: 0, paddingBottom: 0 }}>
@@ -224,7 +233,7 @@ export default function PricesDisplay() {
                     <img
                       key={idx}
                       src={`${API_URL}${bannerUrl}`}
-                      className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPartyBannerIndex ? 'opacity-100' : 'opacity-0'}`}
+                      className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === safePartyBannerIndex ? 'opacity-100' : 'opacity-0'}`}
                       alt="Festa"
                     />
                   ))}
@@ -324,7 +333,7 @@ export default function PricesDisplay() {
                   key={idx}
                   src={`${API_URL}${promo.image_url}`}
                   alt="Promoção"
-                  className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === currentPromoIndex ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === safePromoIndex ? 'opacity-100' : 'opacity-0'}`}
                 />
               ))}
             </div>
