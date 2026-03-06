@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { io } from 'socket.io-client';
@@ -31,84 +31,17 @@ import BadgeModelEditor from './pages/people/BadgeModelEditor';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 function App() {
-  const bootTimeRef = useRef(Date.now());
-
+  
   useEffect(() => {
-    const applyHardReload = (versionId = null) => {
-      if (versionId) {
-        localStorage.setItem('dedalos_system_version', versionId);
-      }
-      
-      if ('caches' in window) {
-        caches.keys().then((names) => {
-          names.forEach(name => caches.delete(name));
-        });
-      }
-
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then((registrations) => {
-          for (let registration of registrations) {
-            registration.unregister();
-          }
-        });
-      }
-      
-      setTimeout(() => {
-        const cleanUrl = window.location.origin + window.location.pathname;
-        
-        if (window.location.href !== cleanUrl) {
-          window.location.href = cleanUrl;
-        } else {
-          window.location.reload(true);
-        }
-      }, 300);
-    };
-
-    const checkAutoReloadRoutine = () => {
-      const now = new Date();
-      const todayStr = now.toLocaleDateString('pt-BR');
-      const lastAutoReload = localStorage.getItem('dedalos_auto_reload_date');
-
-      if (now.getHours() >= 16 && lastAutoReload !== todayStr) {
-        console.log("[Auto-Reload] Atualização diária acionada.");
-        localStorage.setItem('dedalos_auto_reload_date', todayStr);
-        applyHardReload();
-      }
-    };
-
-    const interval = setInterval(checkAutoReloadRoutine, 60000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkAutoReloadRoutine();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     const socket = io(API_URL);
 
-    socket.on('system:executeReload', (newVersion) => {
-      console.log("[Socket] Comando de Reload Global Recebido!");
-      applyHardReload(newVersion);
-    });
-
-    socket.on('system:syncReload', (serverVersion) => {
-      const localVersion = localStorage.getItem('dedalos_system_version');
-      
-      if (!localVersion) {
-        localStorage.setItem('dedalos_system_version', serverVersion);
-        return;
-      }
-
-      if (serverVersion !== localVersion) {
-        console.log("[Socket Sync] Versão divergente encontrada. Atualizando tablet...");
-        applyHardReload(serverVersion);
-      }
+    // Sistema direto: Ouve o comando manual da gerência e dá refresh imediato.
+    socket.on('system:executeReload', () => {
+      console.log("[Socket] Comando manual de Reload Global recebido!");
+      window.location.reload(true);
     });
 
     return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       socket.disconnect();
     };
   }, []);
@@ -164,7 +97,7 @@ function App() {
         </Routes>
       </ConnectionGuardian>
     </BrowserRouter>
-  ); 
+  );
 }
 
 export default App;

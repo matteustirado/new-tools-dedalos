@@ -43,14 +43,17 @@ const io = new Server(httpServer, {
 app.set('io', io)
 initIO(io)
 
-let currentSystemVersion = Date.now().toString(36)
-
 const overlayDir = path.join(__dirname, 'src/assets/upload/overlays')
 const scoreboardDir = path.join(__dirname, 'src/assets/upload/scoreboard')
 const pricesDir = path.join(__dirname, 'src/assets/upload/prices')
 const uploadsPublicDir = path.join(__dirname, 'public/uploads')
 
-const directories = [overlayDir, scoreboardDir, pricesDir, uploadsPublicDir]
+const directories = [
+    overlayDir, 
+    scoreboardDir, 
+    pricesDir, 
+    uploadsPublicDir
+]
 
 directories.forEach(dir => {
     if (!fs.existsSync(dir)) {
@@ -102,17 +105,29 @@ app.use('/api/badges', badgeRoutes)
 
 app.post('/api/scoreboard/upload', upload.single('scoreboardImage'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    return res.json({ message: 'Imagem enviada com sucesso!', url: `/assets/upload/scoreboard/${req.file.filename}` })
+    
+    return res.json({ 
+        message: 'Imagem enviada com sucesso!', 
+        url: `/assets/upload/scoreboard/${req.file.filename}` 
+    })
 })
 
 app.post('/api/prices/upload', upload.single('priceMedia'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    return res.json({ message: 'Mídia enviada com sucesso!', url: `/assets/upload/prices/${req.file.filename}` })
+    
+    return res.json({ 
+        message: 'Mídia enviada com sucesso!', 
+        url: `/assets/upload/prices/${req.file.filename}` 
+    })
 })
 
 app.post('/api/badges/upload-logo', upload.single('logo'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })
-    return res.json({ message: 'Logo atualizado!', url: `/uploads/${req.file.filename}` })
+    
+    return res.json({ 
+        message: 'Logo atualizado!', 
+        url: `/uploads/${req.file.filename}` 
+    })
 })
 
 app.get('/', async (req, res) => {
@@ -125,8 +140,6 @@ app.get('/', async (req, res) => {
 })
 
 io.on('connection', (socket) => {
-    socket.emit('system:syncReload', currentSystemVersion)
-
     socket.on('jukebox:enviarSugestao', (data) => {
         import('./src/controllers/jukeboxController.js')
             .then(ctrl => ctrl.handleReceberSugestao(socket, data))
@@ -146,9 +159,8 @@ io.on('connection', (socket) => {
     })
 
     socket.on('system:forceReload', () => {
-        console.log('[System] Comando manual de atualização global recebido. Recarregando as telas...')
-        currentSystemVersion = Date.now().toString(36)
-        io.emit('system:executeReload', currentSystemVersion)
+        console.log('[System] Comando manual de atualização global recebido. Recarregando as telas ativas...')
+        io.emit('system:executeReload')
     })
 })
 
