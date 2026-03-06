@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { io } from 'socket.io-client';
@@ -31,18 +31,29 @@ import BadgeModelEditor from './pages/people/BadgeModelEditor';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 function App() {
-  const bootTimeRef = useRef(Date.now());
-
   useEffect(() => {
+    const applyHardReload = (versionId = null) => {
+      if (versionId) {
+        localStorage.setItem('dedalos_system_version', versionId);
+      }
+      
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach(name => caches.delete(name));
+        });
+      }
+      
+      window.location.href = window.location.pathname + '?update=' + new Date().getTime();
+    };
+
     const checkAutoReloadRoutine = () => {
       const now = new Date();
       const todayStr = now.toLocaleDateString('pt-BR');
       const lastAutoReload = localStorage.getItem('dedalos_auto_reload_date');
 
       if (now.getHours() >= 16 && lastAutoReload !== todayStr) {
-        console.log("[Auto-Reload] Atualização diária acionada.");
         localStorage.setItem('dedalos_auto_reload_date', todayStr);
-        window.location.reload(true);
+        applyHardReload();
       }
     };
 
@@ -58,15 +69,20 @@ function App() {
 
     const socket = io(API_URL);
 
-    socket.on('system:executeReload', () => {
-      console.log("[Socket] Comando de Reload Global Recebido!");
-      window.location.reload(true);
+    socket.on('system:executeReload', (newVersion) => {
+      applyHardReload(newVersion);
     });
 
-    socket.on('system:syncReload', (serverLastReloadTime) => {
-      if (serverLastReloadTime > bootTimeRef.current) {
-        console.log("[Socket Sync] Um reload global aconteceu enquanto este tablet dormia. Sincronizando...");
-        window.location.reload(true);
+    socket.on('system:syncReload', (serverVersion) => {
+      const localVersion = localStorage.getItem('dedalos_system_version');
+      
+      if (!localVersion) {
+        localStorage.setItem('dedalos_system_version', serverVersion);
+        return;
+      }
+
+      if (serverVersion !== localVersion) {
+        applyHardReload(serverVersion);
       }
     });
 

@@ -37,21 +37,22 @@ const getLogicalDayIndex = () => {
   const now = new Date();
   const hour = now.getHours();
   let day = now.getDay();
-
   if (hour < 6) {
     day = day === 0 ? 6 : day - 1; 
   }
-
   return day;
+};
+
+const checkIsOffHours = () => {
+  const h = new Date().getHours();
+  return h >= 6 && h < 16;
 };
 
 const maskPhone = (value) => {
   let v = value.replace(/\D/g, "");
-
   if (v.length > 11) v = v.slice(0, 11);
   if (v.length > 2) v = `(${v.slice(0, 2)}) ${v.slice(2)}`;
   if (v.length > 10) v = `${v.slice(0, 10)}-${v.slice(10)}`;
-
   return v;
 };
 
@@ -77,6 +78,9 @@ export default function Jukebox() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [currentDayIndex, setCurrentDayIndex] = useState(getLogicalDayIndex());
 
+  const [isOffHours, setIsOffHours] = useState(checkIsOffHours());
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
   const [suggestionId, setSuggestionId] = useState(null);
   const [wantsNotification, setWantsNotification] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -93,73 +97,10 @@ export default function Jukebox() {
     return todasPlaylists.find(p => p.id === activePlaylistId) || null;
   }, [activePlaylistId, todasPlaylists]);
 
-  const availableTracks = useMemo(() => {
-    let filtered = tracks;
-
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      filtered = tracks.filter(track =>
-        track.titulo.toLowerCase().includes(lowerTerm) ||
-        (track.artista && track.artista.toLowerCase().includes(lowerTerm))
-      );
-    }
-
-    return filtered.sort((a, b) => {
-      const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex);
-      const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex);
-      
-      if (aAvailable && !bAvailable) return -1;
-      if (!aAvailable && bAvailable) return 1;
-      
-      return 0;
-    }); 
-  }, [tracks, searchTerm, currentDayIndex]);
-
-  const topArtistasPlaylist = useMemo(() => {
-    if (!playlistDoDia || !tracks.length) return [];
-    
-    let playlistTrackIds = playlistDoDia.tracks_ids;
-
-    if (typeof playlistTrackIds === 'string') {
-      try { 
-        playlistTrackIds = JSON.parse(playlistTrackIds); 
-      } catch (e) { 
-        playlistTrackIds = []; 
-      }
-    }
-
-    if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
-
-    const artistCount = {};
-    
-    playlistTrackIds.forEach(id => {
-      const track = tracks.find(t => t.id == id);
-      if (track && track.artista) {
-        const mainArtist = track.artista.split(/,| feat\.|&/)[0].trim();
-        if (mainArtist) artistCount[mainArtist] = (artistCount[mainArtist] || 0) + 1;
-      }
-    });
-
-    return Object.entries(artistCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name]) => name);
-  }, [playlistDoDia, tracks]);
-
-  const playlistCoverUrl = useMemo(() => {
-    if (!playlistDoDia?.imagem) {
-      return 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=2070&auto=format&fit=crop';
-    }
-    
-    return playlistDoDia.imagem.startsWith('http')
-      ? playlistDoDia.imagem
-      : `${API_URL}${playlistDoDia.imagem}`;
-  }, [playlistDoDia]);
-
   const validateCustomer = async (code) => {
     if (!code) return false;
-    
     const cleanCode = code.toString().trim();
+
     if (cleanCode === MASTER_CODE) return true;
 
     const baseUrl = VALIDATION_API[unitLabel] || VALIDATION_API.SP;
@@ -196,21 +137,163 @@ export default function Jukebox() {
     setWantsNotification(false);
     setPhoneNumber('');
     setPhoneSubmitted(false);
+    
+    if (checkIsOffHours()) {
+      setIsUnlocked(false);
+    }
+    
     if (searchInputRef.current) searchInputRef.current.blur();
   };
 
   const resetInactivityTimer = () => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    
     inactivityTimerRef.current = setTimeout(() => {
-      if (searchTerm || customerCode || selectedTrack || requestStatus !== 'IDLE') {
+      if (searchTerm || customerCode || selectedTrack || requestStatus !== 'IDLE' || (isOffHours && isUnlocked)) {
         resetForm();
       }
     }, INACTIVITY_TIMEOUT_MS);
   };
 
+  useEffect(() => {
+    const dayInterval = setInterval(() => {
+      const newLogicalDay = getLogicalDayIndex();
+      if (newLogicalDay !== currentDayIndex) {
+        setCurrentDayIndex(newLogicalDay);
+      }
+      
+      const currentOffHours = checkIsOffHours();
+      if (currentOffHours !== isOffHours) {
+        setIsOffHours(currentOffHours);
+        if (currentOffHours) setIsUnlocked(false); 
+      }
+    }, 60000);
+    return () => clearInterval(dayInterval);
+  }, [currentDayIndex, isOffHours]);
+
+  useEffect(() => {
+    const handleClickOrFocusOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOrFocusOutside);
+    document.addEventListener('focusin', handleClickOrFocusOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOrFocusOutside);
+      document.removeEventListener('focusin', handleClickOrFocusOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
+    const handleActivity = () => resetInactivityTimer();
+    events.forEach(event => window.addEventListener(event, handleActivity));
+    resetInactivityTimer();
+    return () => {
+      events.forEach(event => window.removeEventListener(event, handleActivity));
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, [searchTerm, customerCode, selectedTrack, requestStatus, wantsNotification, isUnlocked, isOffHours]);
+
+  useEffect(() => {
+    const newSocket = io(API_URL);
+    setSocket(newSocket);
+
+    fetchTracks();
+
+    axios.get(`${API_URL}/api/playlists`)
+      .then(res => setTodasPlaylists(res.data || []))
+      .catch(err => console.error("Erro ao carregar playlists:", err));
+
+    newSocket.on('maestro:estadoCompleto', (estado) => {
+      setMusicaAtual(estado.musicaAtual);
+      setActivePlaylistId(estado.playlistAtualId || null);
+    });
+
+    newSocket.on('maestro:playlistAtualizada', (playlistId) => setActivePlaylistId(playlistId));
+    newSocket.on('maestro:tocarAgora', ({ musicaInfo }) => setMusicaAtual(musicaInfo));
+    newSocket.on('maestro:filaAtualizada', (novaFila) => setFila(novaFila || []));
+    newSocket.on('acervo:atualizado', () => fetchTracks());
+
+    newSocket.on('jukebox:pedidoAceito', () => {
+      setIsValidating(false);
+      setRequestStatus('SUCCESS_REQUEST');
+      setTimeout(() => resetForm(), 5000);
+    });
+
+    newSocket.on('jukebox:sugestaoAceita', (data) => {
+      setIsValidating(false);
+      setSuggestionId(data?.suggestionId || null);
+      setRequestStatus('SUCCESS_SUGGESTION');
+    });
+
+    newSocket.on('jukebox:telefoneAtualizadoSucesso', () => {
+      setPhoneSubmitted(true);
+      setTimeout(() => resetForm(), 4000); 
+    });
+
+    newSocket.on('jukebox:pedidoRecusado', ({ motivo }) => {
+      setIsValidating(false);
+      setRefusalReason(motivo || 'Pedido não pôde ser processado.');
+      setRequestStatus('ERROR_REFUSED');
+      setTimeout(() => resetForm(), 6000);
+    });
+
+    newSocket.on('jukebox:erroPedido', ({ message }) => {
+      setIsValidating(false);
+      setRefusalReason(message || 'Erro desconhecido.');
+      setRequestStatus('ERROR_REFUSED');
+      setTimeout(() => resetForm(), 6000);
+    });
+
+    return () => newSocket.disconnect();
+  }, []);
+
+  const availableTracks = useMemo(() => {
+    let filtered = tracks;
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      filtered = tracks.filter(track =>
+        track.titulo.toLowerCase().includes(lowerTerm) ||
+        (track.artista && track.artista.toLowerCase().includes(lowerTerm))
+      );
+    }
+    return filtered.sort((a, b) => {
+      const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex) && !isOffHours;
+      const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex) && !isOffHours;
+      if (aAvailable && !bAvailable) return -1;
+      if (!aAvailable && bAvailable) return 1;
+      return 0;
+    }); 
+  }, [tracks, searchTerm, currentDayIndex, isOffHours]);
+
+  const topArtistasPlaylist = useMemo(() => {
+    if (!playlistDoDia || !tracks.length) return [];
+    let playlistTrackIds = playlistDoDia.tracks_ids;
+
+    if (typeof playlistTrackIds === 'string') {
+      try { playlistTrackIds = JSON.parse(playlistTrackIds); } catch (e) { playlistTrackIds = []; }
+    }
+
+    if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
+
+    const artistCount = {};
+    playlistTrackIds.forEach(id => {
+      const track = tracks.find(t => t.id == id);
+      if (track && track.artista) {
+        const mainArtist = track.artista.split(/,| feat\.|&/)[0].trim();
+        if (mainArtist) artistCount[mainArtist] = (artistCount[mainArtist] || 0) + 1;
+      }
+    });
+
+    return Object.entries(artistCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+  }, [playlistDoDia, tracks]);
+
   const handleSelectTrack = (track) => {
-    const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex);
+    const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex) && !isOffHours;
     if (!isAvailableToday) return;
 
     setSelectedTrack(track);
@@ -266,99 +349,12 @@ export default function Jukebox() {
     }
   };
 
-  useEffect(() => {
-    const dayInterval = setInterval(() => {
-      const newLogicalDay = getLogicalDayIndex();
-      if (newLogicalDay !== currentDayIndex) {
-        setCurrentDayIndex(newLogicalDay);
-      }
-    }, 60000);
-    
-    return () => clearInterval(dayInterval);
-  }, [currentDayIndex]);
-
-  useEffect(() => {
-    const handleClickOrFocusOutside = (event) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOrFocusOutside);
-    document.addEventListener('focusin', handleClickOrFocusOutside);
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOrFocusOutside);
-      document.removeEventListener('focusin', handleClickOrFocusOutside);
-    };
-  }, []);
-
-  useEffect(() => {
-    const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
-    const handleActivity = () => resetInactivityTimer();
-    
-    events.forEach(event => window.addEventListener(event, handleActivity));
-    resetInactivityTimer();
-    
-    return () => {
-      events.forEach(event => window.removeEventListener(event, handleActivity));
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [searchTerm, customerCode, selectedTrack, requestStatus, wantsNotification]);
-
-  useEffect(() => {
-    const newSocket = io(API_URL);
-    setSocket(newSocket);
-
-    fetchTracks();
-
-    axios.get(`${API_URL}/api/playlists`)
-      .then(res => setTodasPlaylists(res.data || []))
-      .catch(err => console.error("Erro ao carregar playlists:", err));
-
-    newSocket.on('maestro:estadoCompleto', (estado) => {
-      setMusicaAtual(estado.musicaAtual);
-      setActivePlaylistId(estado.playlistAtualId || null);
-    });
-
-    newSocket.on('maestro:playlistAtualizada', (playlistId) => setActivePlaylistId(playlistId));
-    newSocket.on('maestro:tocarAgora', ({ musicaInfo }) => setMusicaAtual(musicaInfo));
-    newSocket.on('maestro:filaAtualizada', (novaFila) => setFila(novaFila || []));
-    newSocket.on('acervo:atualizado', () => fetchTracks());
-
-    newSocket.on('jukebox:pedidoAceito', () => {
-      setIsValidating(false);
-      setRequestStatus('SUCCESS_REQUEST');
-      setTimeout(() => resetForm(), 5000);
-    });
-
-    newSocket.on('jukebox:sugestaoAceita', (data) => {
-      setIsValidating(false);
-      setSuggestionId(data?.suggestionId || null);
-      setRequestStatus('SUCCESS_SUGGESTION');
-    });
-
-    newSocket.on('jukebox:telefoneAtualizadoSucesso', () => {
-      setPhoneSubmitted(true);
-      setTimeout(() => resetForm(), 4000);
-    });
-
-    newSocket.on('jukebox:pedidoRecusado', ({ motivo }) => {
-      setIsValidating(false);
-      setRefusalReason(motivo || 'Pedido não pôde ser processado.');
-      setRequestStatus('ERROR_REFUSED');
-      setTimeout(() => resetForm(), 6000);
-    });
-
-    newSocket.on('jukebox:erroPedido', ({ message }) => {
-      setIsValidating(false);
-      setRefusalReason(message || 'Erro desconhecido.');
-      setRequestStatus('ERROR_REFUSED');
-      setTimeout(() => resetForm(), 6000);
-    });
-
-    return () => newSocket.disconnect();
-  }, []);
+  const playlistCoverUrl = useMemo(() => {
+    if (!playlistDoDia?.imagem) return 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=2070&auto=format&fit=crop';
+    return playlistDoDia.imagem.startsWith('http')
+      ? playlistDoDia.imagem
+      : `${API_URL}${playlistDoDia.imagem}`;
+  }, [playlistDoDia]);
 
   if (requestStatus !== 'IDLE') {
     let icon = '';
@@ -467,8 +463,42 @@ export default function Jukebox() {
     );
   }
 
+  if (isOffHours && !isUnlocked) {
+    return (
+      <div className="h-screen w-screen bg-gradient-warm flex flex-col items-center justify-center p-8 text-center animate-fade-in select-none">
+        <div className="flex justify-center mb-6">
+          <svg className="w-44 h-44 drop-shadow-2xl" viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M276 41.3c-12.4 19.9-79.5 127.5-149.2 239.1C57 392 0 483.7 0 484.2s8.4.7 18.7.6l18.6-.3L168.2 275C240.1 159.8 299.5 65.5 300 65.5c.6 0 59.9 94.3 131.9 209.5l130.8 209.5 18.8.3c15.1.2 18.6 0 18.3-1.1-.2-.7-67.3-108.7-149.3-240C359.6 98.2 300.9 5.1 300 5.1c-.9 0-10.6 14.7-24 36.2z" fill="url(#gradient1)"/>
+            <path d="M175.2 284.4C107.5 393 51.7 482.6 51.4 483.4c-.6 1.5 22.5 1.6 248.5 1.6 137 0 249.1-.2 249.1-.5 0-1.1-6.1-11.4-7.4-12.4-.8-.7-10.1-1.2-25.1-1.3l-23.8-.3-13.2-21c-7.2-11.6-50.1-80.3-95.4-152.8C324.5 201.4 301.3 165 300 165c-1.3 0-26.8 40-92.4 145.1-49.8 79.7-90.6 145.7-90.6 146.5 0 1.2 2 1.4 12.3 1.2l12.2-.3 78.7-126c43.3-69.3 79.1-126.1 79.6-126.3.7-.2 62 97.1 156 248l11.1 17.8H275l-.2-24.7-.3-24.8-12.2-.5-12.1-.5 23.1-37c12.8-20.4 24.1-38.5 25.3-40.3l2.1-3.3 23.8 38.3c13.1 21.1 24.5 39.4 25.4 40.7l1.5 2.3-7.1-.7c-10.6-1-11.3-.4-11.3 9.9 0 6.7.3 8.5 1.6 9 .9.3 11.7.6 24 .6H381v-2.4c0-1.4-15.8-27.7-39.3-65.3-29.7-47.6-39.7-62.8-41.2-62.8-1.4 0-11.4 15.2-41.2 63-21.6 34.6-39.3 64-39.3 65.2v2.3h37.9l.6 4.2c.3 2.4.5 9.2.3 15.3l-.3 11-41.3.3-41.3.2 2.3-3.8C189.3 448.8 299.6 273 300.1 273c.3 0 26.5 41.6 58.3 92.5l57.7 92.5h10c8.1 0 9.9-.3 9.9-1.5 0-.8-30.2-49.9-67.1-109.1-53.5-85.6-67.5-107.4-69-107.2-1.3.2-25.4 38-73.7 115.3l-71.9 115-32.1.3-32.1.2 39.8-63.7c22-35.1 69-110.4 104.5-167.3 35.6-56.9 65.1-103.5 65.6-103.5s46.1 72.2 101.2 160.5l100.3 160.5 14.9.3 14.8.3-.4-2.3C530.1 451.9 301.7 87 300 87c-.9 0-49.9 77.5-124.8 197.4z" fill="url(#gradient1)"/>
+            <defs>
+              <linearGradient id="gradient1" x1="0" y1="0" x2="600" y2="600">
+                <stop offset="0%" stopColor="#ff4d00" />
+                <stop offset="100%" stopColor="#dc2626" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        
+        <p className="text-lg text-white/80 max-w-xl leading-relaxed mb-4">
+          Olá players, o horário para pedidos de músicas é de <br/>
+          <span className="text-primary font-black text-3xl tracking-widest bg-black/40 px-6 py-2 rounded-xl inline-block mt-4 mb-2 border border-primary/30 shadow-lg">16:00 ATÉ 06:00</span>
+        </p>
+        <p className="text-sm text-white/60 mb-10 max-w-lg">
+          Você pode conhecer nosso acervo de músicas e enviar sugestões clicando abaixo.
+        </p>
+        
+        <button
+          onClick={() => setIsUnlocked(true)}
+          className="bg-primary hover:bg-red-600 text-white px-8 py-4 rounded-xl transition-all font-black uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:scale-[1.02]"
+        >
+          ACESSAR ACERVO E ENVIAR SUGESTÕES
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-screen w-screen bg-gradient-warm p-8 flex flex-col overflow-hidden select-none text-white">
+    <div className="h-screen w-screen bg-gradient-warm p-8 flex flex-col overflow-hidden select-none text-white animate-fade-in">
       <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
         <div className="col-span-5 flex flex-col gap-6 h-full min-h-0">
           <div className="liquid-glass p-4 rounded-3xl relative overflow-hidden group flex-shrink-0">
@@ -574,7 +604,7 @@ export default function Jukebox() {
               {searchTerm && !selectedTrack && showDropdown && availableTracks.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-20 overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
                     {availableTracks.map(track => {
-                      const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex);
+                      const isAvailableToday = Array.isArray(track.dias_semana) && track.dias_semana.includes(currentDayIndex) && !isOffHours;
 
                       return (
                         <div
@@ -596,7 +626,6 @@ export default function Jukebox() {
                               const isDayActive = Array.isArray(track.dias_semana) && track.dias_semana.includes(idx);
                               if (!isDayActive) return null;
                               const isToday = idx === currentDayIndex;
-                              
                               return (
                                 <span
                                   key={idx}

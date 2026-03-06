@@ -43,7 +43,7 @@ const io = new Server(httpServer, {
 app.set('io', io)
 initIO(io)
 
-let lastGlobalReloadTime = Date.now()
+let currentSystemVersion = Date.now().toString(36)
 
 const overlayDir = path.join(__dirname, 'src/assets/upload/overlays')
 const scoreboardDir = path.join(__dirname, 'src/assets/upload/scoreboard')
@@ -125,7 +125,7 @@ app.get('/', async (req, res) => {
 })
 
 io.on('connection', (socket) => {
-    socket.emit('system:syncReload', lastGlobalReloadTime)
+    socket.emit('system:syncReload', currentSystemVersion)
 
     socket.on('jukebox:enviarSugestao', (data) => {
         import('./src/controllers/jukeboxController.js')
@@ -147,8 +147,8 @@ io.on('connection', (socket) => {
 
     socket.on('system:forceReload', () => {
         console.log('[System] Comando manual de atualização global recebido. Recarregando as telas...')
-        lastGlobalReloadTime = Date.now()
-        io.emit('system:executeReload')
+        currentSystemVersion = Date.now().toString(36)
+        io.emit('system:executeReload', currentSystemVersion)
     })
 })
 
