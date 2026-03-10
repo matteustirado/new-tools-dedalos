@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -7,10 +7,10 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function PricesDisplay() {
   const { unidade } = useParams();
-  const currentUnit = unidade ? unidade.toUpperCase() : 'SP';
-
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
+  
+  const currentUnit = unidade ? unidade.toUpperCase() : 'SP';
   const forceMode = queryParams.get('force');
 
   const [liveState, setLiveState] = useState(null);
@@ -21,10 +21,13 @@ export default function PricesDisplay() {
   
   const [isTabletMode, setIsTabletMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  
   const [activePeriod, setActivePeriod] = useState('manha');
+  
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
   const [currentPartyBannerIndex, setCurrentPartyBannerIndex] = useState(0);
+  
+  const promoLengthRef = useRef(0);
+  const partyBannerLengthRef = useRef(0);
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -49,52 +52,52 @@ export default function PricesDisplay() {
 
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
+    
     return () => window.removeEventListener('resize', checkScreenSize);
   }, [forceMode]);
 
   useEffect(() => {
     fetchData();
 
-    const interval = setInterval(fetchData, 30000);
     const periodInterval = setInterval(updateActivePeriod, 10000);
     updateActivePeriod();
 
     const socket = io(API_URL);
-    socket.on('connect', () => console.log("Socket conectado"));
+    socket.on('connect', () => console.log("Socket conectado: PricesDisplay"));
+    
     socket.on('prices:updated', (data) => {
       if (!data.unidade || data.unidade === currentUnit) {
+        console.log("[PricesDisplay] Atualização detectada via Socket.");
         fetchData();
       }
     });
 
     return () => {
-      clearInterval(interval);
       clearInterval(periodInterval);
       socket.disconnect();
     };
   }, [currentUnit]);
 
   useEffect(() => {
-    setCurrentPromoIndex(0); 
-    if (promotions.length <= 1) return;
+    promoLengthRef.current = promotions.length;
+    partyBannerLengthRef.current = liveState?.party_banners?.length || 0;
     
-    const promoInterval = setInterval(() => {
-      setCurrentPromoIndex(prev => (prev + 1) % promotions.length);
-    }, 8000);
-    
-    return () => clearInterval(promoInterval);
-  }, [promotions]);
+    setCurrentPromoIndex((prev) => (prev >= promotions.length ? 0 : prev));
+    setCurrentPartyBannerIndex((prev) => (prev >= (liveState?.party_banners?.length || 0) ? 0 : prev));
+  }, [promotions, liveState]);
 
   useEffect(() => {
-    setCurrentPartyBannerIndex(0);
-    if (!liveState?.modo_festa || !liveState?.party_banners || liveState.party_banners.length <= 1) return;
+    const masterSliderInterval = setInterval(() => {
+      if (promoLengthRef.current > 1) {
+        setCurrentPromoIndex((prev) => (prev + 1) % promoLengthRef.current);
+      }
+      if (partyBannerLengthRef.current > 1) {
+        setCurrentPartyBannerIndex((prev) => (prev + 1) % partyBannerLengthRef.current);
+      }
+    }, 8000); 
     
-    const bannerInterval = setInterval(() => {
-      setCurrentPartyBannerIndex(prev => (prev + 1) % liveState.party_banners.length);
-    }, 5000);
-    
-    return () => clearInterval(bannerInterval);
-  }, [liveState?.modo_festa, liveState?.party_banners]);
+    return () => clearInterval(masterSliderInterval);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -106,6 +109,7 @@ export default function PricesDisplay() {
       ]);
 
       const stateData = stateRes.data;
+
       if (typeof stateData.party_banners === 'string') {
         try { 
           stateData.party_banners = JSON.parse(stateData.party_banners); 
@@ -120,21 +124,31 @@ export default function PricesDisplay() {
       setDefaults(defaultsRes.data);
 
       const media = mediaRes.data;
-      const fullMedia = [1, 2, 3].map(qtd =>
-        media.find(m => m.qtd_pessoas === qtd) || { qtd_pessoas: qtd, titulo: 'Categoria', media_url: null, aviso_categoria: '' }
+      const fullMedia = [1, 2, 3].map((qtd) =>
+        media.find((m) => m.qtd_pessoas === qtd) || { qtd_pessoas: qtd, titulo: 'Categoria', media_url: null, aviso_categoria: '' }
       );
+      
       setCategoryMedia(fullMedia);
 
       const today = new Date();
       const dayOfWeek = today.getDay();
-      const activePromos = promoRes.data.filter(p => {
+      
+      const activePromos = (promoRes.data || []).filter((p) => {
         if (!p.dias_ativos || p.dias_ativos.length === 0) return true;
+        
         let dias = p.dias_ativos;
-        if (typeof dias === 'string') dias = JSON.parse(dias);
-        return dias.some(d => String(d) === String(dayOfWeek));
+        if (typeof dias === 'string') {
+            try { 
+              dias = JSON.parse(dias); 
+            } catch(e) { 
+              dias = []; 
+            }
+        }
+        
+        return Array.isArray(dias) && dias.some((d) => String(d) === String(dayOfWeek));
       });
+      
       setPromotions(activePromos);
-
       setLoading(false);
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
@@ -143,9 +157,14 @@ export default function PricesDisplay() {
 
   const updateActivePeriod = () => {
     const h = new Date().getHours();
-    if (h >= 6 && h < 14) setActivePeriod('manha');
-    else if (h >= 14 && h < 20) setActivePeriod('tarde');
-    else setActivePeriod('noite');
+    
+    if (h >= 6 && h < 14) {
+      setActivePeriod('manha');
+    } else if (h >= 14 && h < 20) {
+      setActivePeriod('tarde');
+    } else {
+      setActivePeriod('noite');
+    }
   };
 
   const getOrderedPeriods = () => {
@@ -155,9 +174,27 @@ export default function PricesDisplay() {
       'noite': { key: 'noite', title: 'NOITE/MADRUGADA', time: '20H ÀS 05H59' }
     };
 
-    if (activePeriod === 'manha') return [{ ...periodsData.noite, type: 'past' }, { ...periodsData.manha, type: 'current' }, { ...periodsData.tarde, type: 'future' }];
-    if (activePeriod === 'tarde') return [{ ...periodsData.manha, type: 'past' }, { ...periodsData.tarde, type: 'current' }, { ...periodsData.noite, type: 'future' }];
-    return [{ ...periodsData.tarde, type: 'past' }, { ...periodsData.noite, type: 'current' }, { ...periodsData.manha, type: 'future' }];
+    if (activePeriod === 'manha') {
+      return [
+        { ...periodsData.noite, type: 'past' }, 
+        { ...periodsData.manha, type: 'current' }, 
+        { ...periodsData.tarde, type: 'future' }
+      ];
+    }
+    
+    if (activePeriod === 'tarde') {
+      return [
+        { ...periodsData.manha, type: 'past' }, 
+        { ...periodsData.tarde, type: 'current' }, 
+        { ...periodsData.noite, type: 'future' }
+      ];
+    }
+    
+    return [
+      { ...periodsData.tarde, type: 'past' }, 
+      { ...periodsData.noite, type: 'current' }, 
+      { ...periodsData.manha, type: 'future' }
+    ];
   };
 
   if (loading) return <div className="loading-screen">CARREGANDO...</div>;
@@ -199,7 +236,9 @@ export default function PricesDisplay() {
 
                 return (
                   <div key={colData.key} className={`price-column ${positionClass}`}>
-                    <h3 className="column-title" style={{ fontSize: (isTabletMode || isMobile) ? '1.2rem' : '0.9rem' }}>{colData.title}</h3>
+                    <h3 className="column-title" style={{ fontSize: (isTabletMode || isMobile) ? '1.2rem' : '0.9rem' }}>
+                      {colData.title}
+                    </h3>
                     <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`}>
                       <PriceCard
                         index={0}
@@ -233,7 +272,7 @@ export default function PricesDisplay() {
                     <img
                       key={idx}
                       src={`${API_URL}${bannerUrl}`}
-                      className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === safePartyBannerIndex ? 'opacity-100' : 'opacity-0'}`}
+                      className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === safePartyBannerIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
                       alt="Festa"
                     />
                   ))}
@@ -325,15 +364,16 @@ export default function PricesDisplay() {
             borderRadius: '1rem',
             overflow: 'hidden',
             boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-            position: 'relative'
+            position: 'relative',
+            backgroundColor: '#000'
           }}>
             <div className="slider" style={{ height: '100%', width: '100%', position: 'relative' }}>
               {promotions.map((promo, idx) => (
                 <img
-                  key={idx}
+                  key={promo.id || idx}
                   src={`${API_URL}${promo.image_url}`}
                   alt="Promoção"
-                  className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === safePromoIndex ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${idx === safePromoIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
                 />
               ))}
             </div>
@@ -353,6 +393,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
 
   if (colData.type === 'current') {
     const apiSingle = parseFloat(liveState.valor_atual);
+    
     if (qtdPessoas === 1) {
       finalPrice = apiSingle;
     } else if (defSingle && defSingle.valor > 0) {
@@ -363,6 +404,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
       showQuestionMarks = true;
     } else if (liveState.valor_futuro) {
       const overrideSingle = parseFloat(liveState.valor_futuro);
+      
       if (qtdPessoas === 1) {
         finalPrice = overrideSingle;
       } else if (defSingle && defSingle.valor > 0) {
@@ -372,6 +414,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
   } else if (colData.type === 'past') {
     if (liveState.valor_passado) {
       const overrideSingle = parseFloat(liveState.valor_passado);
+      
       if (qtdPessoas === 1) {
         finalPrice = overrideSingle;
       } else if (defSingle && defSingle.valor > 0) {
