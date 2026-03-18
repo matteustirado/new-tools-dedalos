@@ -12,6 +12,7 @@ const EXTERNAL_SOCKETS = {
 };
 
 let lastCheckinCount = { SP: null, BH: null };
+let isFetchingCrowd = { SP: false, BH: false };
 
 const log = (tag, msg, data = null) => {
   const time = new Date().toISOString().split('T')[1].slice(0, 8);
@@ -19,31 +20,50 @@ const log = (tag, msg, data = null) => {
   console.log(`[📊 PLACAR ${time}] [${tag}] ${msg}${dataStr}`);
 };
 
+const getApiConfig = (unidadeUpper) => {
+  if (unidadeUpper === 'SP') {
+    return {
+      url: process.env.VITE_API_URL_SP || process.env.API_URL_SP || 'https://dedalosadm2-3dab78314381.herokuapp.com',
+      token: process.env.VITE_API_TOKEN_SP || process.env.API_TOKEN_SP || '7a9e64071564f6fee8d96cd209ed3a4e86801552'
+    };
+  }
+  
+  if (unidadeUpper === 'BH') {
+    return {
+      url: process.env.VITE_API_URL_BH || process.env.API_URL_BH || 'https://dedalosadm2bh-09d55dca461e.herokuapp.com',
+      token: process.env.VITE_API_TOKEN_BH || process.env.API_TOKEN_BH || '919d97d7df39ecbd0036631caba657221acab99d'
+    };
+  }
+  
+  return null;
+};
+
+const getHeaders = (token, baseUrl) => {
+  const cleanUrl = baseUrl.replace(/\/$/, '');
+  
+  return {
+    'Authorization': `Token ${token}`,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Origin': cleanUrl,
+    'Referer': `${cleanUrl}/`,
+    'Cookie': `dedalos_app.token=${token}; dedalos_app.id_user=1; dedalos_app.refresh_token=${token}`
+  };
+};
+
 const extractRealBracelet = (clientObj) => {
   if (!clientObj) return null;
+  
   const isValidPulseira = (val) => val && String(val).trim().match(/^\d{5,12}$/);
-
-  const possibleKeys = [
-    'codigo',
-    'cartao',
-    'rfid',
-    'codigo_barras',
-    'serial',
-    'num_pulseira',
-    'pulseira',
-    'id',
-  ];
+  const possibleKeys = ['codigo', 'cartao', 'rfid', 'codigo_barras', 'serial', 'num_pulseira', 'pulseira', 'id'];
 
   for (const key of possibleKeys) {
-    if (isValidPulseira(clientObj[key])) {
-      return String(clientObj[key]).trim();
-    }
+    if (isValidPulseira(clientObj[key])) return String(clientObj[key]).trim();
   }
 
   for (const key in clientObj) {
-    if (isValidPulseira(clientObj[key])) {
-      return String(clientObj[key]).trim();
-    }
+    if (isValidPulseira(clientObj[key])) return String(clientObj[key]).trim();
   }
 
   return null;
@@ -51,13 +71,12 @@ const extractRealBracelet = (clientObj) => {
 
 const fetchFromDedalos = async (unidade) => {
   const unidadeUpper = unidade.toUpperCase();
+  const config = getApiConfig(unidadeUpper);
 
-  const config = {
-    SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
-    BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH },
-  }[unidadeUpper];
-
-  if (!config || !config.url) return null;
+  if (!config || !config.url) {
+    log('PROXY_ERR', `[${unidadeUpper}] Configuração de URL/Token não encontrada.`);
+    return null;
+  }
 
   try {
     const baseUrl = config.url.replace(/\/$/, '');
@@ -65,68 +84,61 @@ const fetchFromDedalos = async (unidade) => {
     let response;
 
     try {
-      response = await axios.get(endpoint, {
-        headers: { Authorization: `Token ${config.token}` },
-        timeout: 5000,
-      });
+      response = await axios.get(endpoint, { headers: getHeaders(config.token, config.url), timeout: 15000 });
     } catch (err) {
+      log('PROXY_WARN', `[${unidadeUpper}] Falha no endpoint principal (${err.message}). Tentando fallback...`);
       const dataHoje = new Date().toISOString().split('T')[0];
       endpoint = `${baseUrl}/api/entradasPorData/${dataHoje}`;
-      response = await axios.get(endpoint, {
-        headers: { Authorization: `Token ${config.token}` },
-        timeout: 5000,
-      });
+      response = await axios.get(endpoint, { headers: getHeaders(config.token, config.url), timeout: 15000 });
     }
 
     const data = response.data;
+    
     if (Array.isArray(data)) {
       if (data.length > 0 && data[0].contador !== undefined) return data[0].contador;
       return data.length;
     }
+    
     if (data.results) return data.results.length;
     if (data.contador !== undefined) return data.contador;
     if (data.count !== undefined) return data.count;
+    
     return 0;
   } catch (error) {
+    log('PROXY_ERR', `[${unidadeUpper}] Falha total na comunicação com API Mãe: ${error.message}`);
     return null;
   }
 };
 
 const fetchLatestCheckin = async (unidadeUpper) => {
-  const config = {
-    SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
-    BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH },
-  }[unidadeUpper];
-
+  const config = getApiConfig(unidadeUpper);
   if (!config || !config.url) return null;
 
   try {
     const baseUrl = config.url.replace(/\/$/, '');
     const response = await axios.get(`${baseUrl}/api/entradasCheckout/`, {
-      headers: { Authorization: `Token ${config.token}` },
-      timeout: 3000,
+      headers: getHeaders(config.token, config.url),
+      timeout: 5000,
     });
+    
     const data = response.data;
     if (Array.isArray(data) && data.length > 0) {
       return data.sort((a, b) => parseInt(b.id || 0) - parseInt(a.id || 0))[0];
     }
   } catch (e) {}
+  
   return null;
 };
 
 const fetchExternalClientByPulseira = async (unidadeUpper, pulseira) => {
-  const config = {
-    SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
-    BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH },
-  }[unidadeUpper];
-
+  const config = getApiConfig(unidadeUpper);
   if (!config || !config.url || !pulseira) return null;
 
   try {
     const baseUrl = config.url.replace(/\/$/, '');
     const response = await axios.get(`${baseUrl}/api/entradasOne/${pulseira}/`, {
-      headers: { Authorization: `Token ${config.token}` },
-      timeout: 4000,
+      headers: getHeaders(config.token, config.url),
+      timeout: 5000,
     });
     return response.data;
   } catch (err) {
@@ -146,23 +158,18 @@ const fetchCurrentVotes = async (unidadeUpper) => {
 };
 
 const iniciarSincronizacaoCheckout = () => {
-  log('SYNC', 'Serviço de Varredura e Extrator Regex Iniciado.');
-
   setInterval(async () => {
     for (const unidade of ['SP', 'BH']) {
       const unidadeUpper = unidade.toUpperCase();
-      const config = {
-        SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
-        BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH },
-      }[unidadeUpper];
+      const config = getApiConfig(unidadeUpper);
 
       if (!config || !config.url) continue;
 
       try {
         const baseUrl = config.url.replace(/\/$/, '');
         const response = await axios.get(`${baseUrl}/api/entradasCheckout/`, {
-          headers: { Authorization: `Token ${config.token}` },
-          timeout: 8000,
+          headers: getHeaders(config.token, config.url),
+          timeout: 10000,
         });
 
         const data = response.data;
@@ -175,9 +182,7 @@ const iniciarSincronizacaoCheckout = () => {
           if (c.id) activeIdsSet.add(String(c.id).trim());
         });
 
-        const activeSystemIds = Array.from(activeIdsSet).filter(
-          (id) => id && id !== 'undefined' && id !== 'null'
-        );
+        const activeSystemIds = Array.from(activeIdsSet).filter(id => id && id !== 'undefined' && id !== 'null');
         let rowsAffected = 0;
 
         if (activeSystemIds.length > 0) {
@@ -194,7 +199,6 @@ const iniciarSincronizacaoCheckout = () => {
         }
 
         if (rowsAffected > 0) {
-          log('SYNC', `[${unidade}] ${rowsAffected} checkouts efetuados via dupla-chave.`);
           getIO().emit('scoreboard:vote_updated', {
             unidade: unidadeUpper,
             votes: await fetchCurrentVotes(unidadeUpper),
@@ -223,27 +227,18 @@ const iniciarSincronizacaoCheckout = () => {
             connection.release();
           }
         }
-      } catch (error) {
-        log('SYNC_ERR', `Falha ao sincronizar: ${error.message}`);
-      }
+      } catch (error) {}
     }
   }, SYNC_INTERVAL);
 };
 
 const iniciarPonteRealTime = () => {
-  log('PONTE', 'Iniciando Ponte Real-Time com Extrator...');
-
   Object.entries(EXTERNAL_SOCKETS).forEach(([unidade, url]) => {
     try {
       const socket = ioClient(url, { transports: ['websocket', 'polling'] });
-      socket.on('connect', () => {
-        log('PONTE', `✅ [${unidade}] Conectado ao servidor externo!`);
-      });
       socket.on('disconnect', () => {});
 
       socket.on('new_id', async (data) => {
-        log('PONTE', `⚡ [${unidade}] CHECK-IN DETECTADO!`);
-
         const unidadeUpper = unidade.toUpperCase();
         let armario = data?.armario ? String(data.armario).trim() : null;
         let realPulseira = extractRealBracelet(data);
@@ -268,7 +263,6 @@ const iniciarPonteRealTime = () => {
         } catch (e) {}
 
         const totalAtual = await fetchFromDedalos(unidade);
-
         if (totalAtual !== null) {
           getIO().emit('checkin:novo', {
             unidade: unidadeUpper,
@@ -312,21 +306,17 @@ iniciarSincronizacaoCheckout();
 
 export const executarMarcoZero = async (req, res) => {
   try {
-    log('MIGRAÇÃO', 'Iniciando Marco Zero...');
     await pool.query('TRUNCATE TABLE scoreboard_votes');
     let relatorio = {};
 
     for (const unidade of ['SP', 'BH']) {
-      const config = {
-        SP: { url: process.env.VITE_API_URL_SP, token: process.env.VITE_API_TOKEN_SP },
-        BH: { url: process.env.VITE_API_URL_BH, token: process.env.VITE_API_TOKEN_BH },
-      }[unidade];
-
+      const config = getApiConfig(unidade);
       if (!config || !config.url) continue;
 
       try {
-        const response = await axios.get(`${config.url.replace(/\/$/, '')}/api/entradasCheckout/`, {
-          headers: { Authorization: `Token ${config.token}` },
+        const baseUrl = config.url.replace(/\/$/, '');
+        const response = await axios.get(`${baseUrl}/api/entradasCheckout/`, {
+          headers: getHeaders(config.token, config.url),
           timeout: 10000,
         });
 
@@ -354,7 +344,8 @@ export const executarMarcoZero = async (req, res) => {
 
     getIO().emit('scoreboard:vote_updated', { unidade: 'SP', votes: [] });
     getIO().emit('scoreboard:vote_updated', { unidade: 'BH', votes: [] });
-    res.json({ message: 'Marco Zero executado com Regex!', detalhes: relatorio });
+    
+    res.json({ message: 'Marco Zero executado!', detalhes: relatorio });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -362,20 +353,41 @@ export const executarMarcoZero = async (req, res) => {
 
 export const getCrowdCount = async (req, res) => {
   const { unidade } = req.params;
-  const count = await fetchFromDedalos(unidade);
-  if (count !== null) return res.json({ count });
-  res.status(502).json({ error: 'Falha externa' });
+  const unidadeUpper = unidade.toUpperCase();
+
+  if (lastCheckinCount[unidadeUpper] !== null) {
+    return res.status(200).json({ count: lastCheckinCount[unidadeUpper] });
+  }
+
+  if (!isFetchingCrowd[unidadeUpper]) {
+    isFetchingCrowd[unidadeUpper] = true;
+    log('API', `Cache vazio para ${unidadeUpper}. Iniciando procura em background...`);
+    
+    fetchFromDedalos(unidadeUpper).then(count => {
+      if (count !== null) {
+          lastCheckinCount[unidadeUpper] = count;
+          log('API_SUCCESS', `[${unidadeUpper}] Sucesso! Cache preenchido com: ${count} pessoas.`);
+      }
+      isFetchingCrowd[unidadeUpper] = false;
+    }).catch(() => {
+      isFetchingCrowd[unidadeUpper] = false;
+    });
+  }
+
+  return res.status(200).json({ count: 0 });
 };
 
 export const testarTrigger = async (req, res) => {
   const { unidade } = req.params;
   const unidadeUpper = unidade ? unidade.toUpperCase() : 'SP';
   const fakeId = 'TESTE-' + Math.floor(Math.random() * 1000);
+  
   try {
     await pool.query(
       `INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status, expires_at) VALUES (?, ?, NULL, NULL, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
       [unidadeUpper, fakeId]
     );
+    
     getIO().emit('checkin:novo', {
       unidade: unidadeUpper,
       total: 999,
@@ -383,7 +395,8 @@ export const testarTrigger = async (req, res) => {
       cliente_id: fakeId,
       timestamp: new Date(),
     });
-    res.json({ message: `Teste enviado` });
+    
+    res.status(200).json({ message: `Teste enviado` });
   } catch (error) {
     res.status(500).json({ error: 'Erro interno.' });
   }
@@ -391,14 +404,18 @@ export const testarTrigger = async (req, res) => {
 
 export const getActiveConfig = async (req, res) => {
   const { unidade } = req.params;
+  
   try {
     const [rows] = await pool.query('SELECT * FROM scoreboard_active WHERE unidade = ?', [
       unidade.toUpperCase(),
     ]);
+    
     if (rows.length === 0) return res.status(404).json({ error: 'Não encontrada.' });
+    
     const config = rows[0];
     if (typeof config.opcoes === 'string') config.opcoes = JSON.parse(config.opcoes);
-    res.json(config);
+    
+    res.status(200).json(config);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -406,10 +423,13 @@ export const getActiveConfig = async (req, res) => {
 
 export const updateActiveConfig = async (req, res) => {
   const { unidade, titulo, layout, opcoes, status } = req.body;
-  if (!unidade || !titulo || !opcoes)
+  
+  if (!unidade || !titulo || !opcoes) {
     return res.status(400).json({ error: 'Dados incompletos.' });
+  }
 
   const connection = await pool.getConnection();
+  
   try {
     await connection.beginTransaction();
     const opcoesString = JSON.stringify(opcoes);
@@ -420,15 +440,18 @@ export const updateActiveConfig = async (req, res) => {
        ON DUPLICATE KEY UPDATE titulo = VALUES(titulo), layout = VALUES(layout), opcoes = VALUES(opcoes), status = VALUES(status)`,
       [unidadeUpper, titulo, layout, opcoesString, status]
     );
+    
     await connection.query(
       `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`,
       [unidadeUpper]
     );
+    
     await connection.commit();
 
     getIO().emit('scoreboard:config_updated', { unidade: unidadeUpper });
     getIO().emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: [] });
-    res.json({ message: 'Placar atualizado!' });
+    
+    res.status(200).json({ message: 'Placar atualizado!' });
   } catch (err) {
     await connection.rollback();
     res.status(500).json({ error: err.message });
@@ -469,15 +492,7 @@ export const castVote = async (req, res) => {
          SET option_index = ?, cliente_pulseira = COALESCE(?, cliente_pulseira), cliente_nome = COALESCE(?, cliente_nome) 
          WHERE unidade = ? AND status = 'DENTRO' AND (cliente_pulseira = ? OR cliente_id = ? OR cliente_id = ?) 
          ORDER BY id DESC LIMIT 1`,
-        [
-          optionIndex,
-          pulseiraValidaParaSalvar,
-          fetchedNome,
-          unidadeUpper,
-          typedString,
-          typedString,
-          fetchedArmario,
-        ]
+        [optionIndex, pulseiraValidaParaSalvar, fetchedNome, unidadeUpper, typedString, typedString, fetchedArmario]
       );
 
       if (result.affectedRows === 0) {
@@ -497,8 +512,9 @@ export const castVote = async (req, res) => {
 
     const io = getIO();
     const rows = await fetchCurrentVotes(unidadeUpper);
+    
     io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: rows });
-    res.json({ message: 'Voto computado.' });
+    res.status(200).json({ message: 'Voto computado.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -506,9 +522,10 @@ export const castVote = async (req, res) => {
 
 export const getVotes = async (req, res) => {
   const { unidade } = req.params;
+  
   try {
     const rows = await fetchCurrentVotes(unidade.toUpperCase());
-    res.json(rows);
+    res.status(200).json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -516,31 +533,28 @@ export const getVotes = async (req, res) => {
 
 export const resetVotes = async (req, res) => {
   const { unidade } = req.body;
+  
   try {
     await pool.query(
       `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`,
       [unidade.toUpperCase()]
     );
+    
     getIO().emit('scoreboard:vote_updated', { unidade: unidade.toUpperCase(), votes: [] });
-    res.json({ message: 'Votos zerados e sessão renovada.' });
+    res.status(200).json({ message: 'Votos zerados e sessão renovada.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-export const savePreset = async (req, res) => {
-  res.json({ message: 'ok' });
-};
-export const getPresets = async (req, res) => {
-  res.json([]);
-};
-export const deletePreset = async (req, res) => {
-  res.json({ message: 'ok' });
-};
+export const savePreset = async (req, res) => res.status(200).json({ message: 'ok' });
+export const getPresets = async (req, res) => res.status(200).json([]);
+export const deletePreset = async (req, res) => res.status(200).json({ message: 'ok' });
 
 export const getScoreboardHistory = async (req, res) => {
   const { unidade } = req.params;
   const { month, year } = req.query;
+  
   if (!month || !year) return res.status(400).json({ error: 'Mês e Ano obrigatórios.' });
 
   try {
@@ -551,7 +565,7 @@ export const getScoreboardHistory = async (req, res) => {
       ORDER BY created_at DESC
     `;
     const [rows] = await pool.query(sql, [unidade.toUpperCase(), month, year]);
-    res.json(rows);
+    res.status(200).json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
