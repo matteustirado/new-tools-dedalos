@@ -426,224 +426,32 @@ export default function MusicCollection() {
             </div>
           </div>
 
-          {!showForm ? (
-            <div className="liquid-glass rounded-xl p-6 mb-6">
-              <h2 className="text-xl font-bold text-white mb-4">Adicionar Nova Mídia</h2>
-              <div className="flex gap-4">
-                <input
-                  type="text"
-                  value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
-                  className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary"
-                  placeholder="Cole o link do YouTube aqui..."
-                />
-                <button
-                  onClick={handleFetchData}
-                  disabled={loading && !tracks.length}
-                  className="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-all shadow-lg hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading && !tracks.length ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  ) : (
-                    <span className="material-symbols-outlined">search</span>
-                  )}
-                  Buscar
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="liquid-glass rounded-xl p-6 mb-6">
-              <h2 className="text-xl font-bold text-white mb-4">
-                {editingTrack ? 'Editar Mídia' : 'Configurar Nova Mídia'}
-              </h2>
-              
-              <div className="flex gap-6 mb-6 border-b border-white/10 pb-6">
-                {formData.thumbnail_url ? (
-                  <img
-                    src={formData.thumbnail_url}
-                    alt="Thumbnail"
-                    className="w-32 h-32 object-cover rounded-lg flex-shrink-0 border border-white/10"
-                  />
+          {/* O Card de Adicionar URL agora fica sempre visível e não é mais substituído pelo form */}
+          <div className="liquid-glass rounded-xl p-6 mb-6">
+            <h2 className="text-xl font-bold text-white mb-4">Adicionar Nova Mídia</h2>
+            <div className="flex gap-4">
+              <input
+                type="text"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted focus:ring-2 focus:ring-primary"
+                placeholder="Cole o link do YouTube aqui..."
+                onKeyDown={(e) => e.key === 'Enter' && handleFetchData()}
+              />
+              <button
+                onClick={handleFetchData}
+                disabled={loading && !tracks.length}
+                className="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-all shadow-lg hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading && !tracks.length ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                 ) : (
-                  <div className="w-32 h-32 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 border border-white/10">
-                    <span className="material-symbols-outlined text-5xl text-text-muted">music_video</span>
-                  </div>
+                  <span className="material-symbols-outlined">search</span>
                 )}
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-white truncate">{formData.titulo || 'Novo Título...'}</h3>
-                  <p className="text-sm text-text-muted truncate">{formData.artista || 'Novo Artista...'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Nome da Música</label>
-                  <input 
-                    type="text" 
-                    name="titulo" 
-                    value={formData.titulo} 
-                    onChange={handleFormChange} 
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white" 
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Artista ou Banda</label>
-                  <input 
-                    type="text" 
-                    name="artista" 
-                    value={formData.artista} 
-                    onChange={handleFormChange} 
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white" 
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Artistas Participantes</label>
-                  <input 
-                    type="text" 
-                    name="artistas_participantes" 
-                    placeholder="(Opcional, separados por vírgula)" 
-                    value={formData.artistas_participantes.join(', ')} 
-                    onChange={(e) => setFormData(p => ({ 
-                      ...p, 
-                      artistas_participantes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) 
-                    }))} 
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50" 
-                  />
-                </div>
-                <div className="col-span-1 grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">Álbum</label>
-                    <input 
-                      type="text" 
-                      name="album" 
-                      placeholder="(Opcional)" 
-                      value={formData.album || ''} 
-                      onChange={handleFormChange} 
-                      className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">Ano</label>
-                    <input
-                      type="text"
-                      name="ano"
-                      inputMode="numeric"
-                      maxLength={4}
-                      placeholder="(Opcional)"
-                      value={formData.ano || ''}
-                      onChange={(e) => {
-                        const onlyNums = e.target.value.replace(/\D/g, '');
-                        setFormData(prev => ({ ...prev, ano: onlyNums }));
-                      }}
-                      className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50"
-                    />
-                  </div>
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Gravadora</label>
-                  <input 
-                    type="text" 
-                    name="gravadora" 
-                    placeholder="(Opcional)" 
-                    value={formData.gravadora || ''} 
-                    onChange={handleFormChange} 
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50" 
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Diretor</label>
-                  <input 
-                    type="text" 
-                    name="diretor" 
-                    placeholder="(Opcional)" 
-                    value={formData.diretor || ''} 
-                    onChange={handleFormChange} 
-                    className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50" 
-                  />
-                </div>
-                
-                <div className="col-span-1 grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">Início (MM:SS)</label>
-                    <input
-                      type="text"
-                      name="start_segundos"
-                      inputMode="numeric"
-                      value={formatTimeForInput(formData.start_segundos)}
-                      onChange={(e) => {
-                        const seconds = parseInputToSeconds(e.target.value);
-                        setFormData(prev => ({ ...prev, start_segundos: seconds }));
-                      }}
-                      className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white font-mono tracking-wider text-center focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-muted mb-1">Fim (MM:SS)</label>
-                    <input
-                      type="text"
-                      name="end_segundos"
-                      inputMode="numeric"
-                      value={formatTimeForInput(formData.end_segundos)}
-                      onChange={(e) => {
-                        const seconds = parseInputToSeconds(e.target.value);
-                        setFormData(prev => ({ ...prev, end_segundos: seconds }));
-                      }}
-                      className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white font-mono tracking-wider text-center focus:ring-2 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-
-                <div className="col-span-1">
-                  <label className="block text-sm font-medium text-text-muted mb-1">Dias Disponíveis</label>
-                  <div className="flex gap-2 items-center">
-                    <button
-                      onClick={() => handleDayToggle('TODOS')}
-                      className={`px-4 h-10 rounded-lg font-semibold transition-all ${allDaysSelected ? 'bg-primary text-white' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
-                    >
-                      TODOS
-                    </button>
-                    <div className="h-6 w-px bg-white/20"></div>
-                    {WEEK_DAYS.map((day, index) => (
-                      <button
-                        key={index}
-                        onClick={() => handleDayToggle(index)}
-                        className={`w-10 h-10 rounded-full font-semibold transition-all ${!allDaysSelected && formData.dias_semana.includes(index) ? 'bg-primary text-white' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="col-span-2 flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="checkbox" 
-                      name="is_commercial" 
-                      checked={formData.is_commercial} 
-                      onChange={handleFormChange} 
-                      id="is_commercial" 
-                      className="w-4 h-4 rounded bg-white/20 border-white/30 text-primary focus:ring-primary" 
-                    />
-                    <label htmlFor="is_commercial" className="text-sm font-medium text-white">É um comercial?</label>
-                  </div>
-                  <div className="flex gap-4">
-                    <button onClick={closeForm} disabled={loading} className="bg-white/10 text-white px-6 py-3 rounded-lg font-semibold hover:bg-white/20 transition-colors disabled:opacity-50">Cancelar</button>
-                    <button onClick={handleSaveTrack} disabled={loading} className="bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary/80 transition-colors disabled:opacity-50">
-                      {loading ? (
-                        <div className="flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          {editingTrack ? 'Atualizando...' : 'Salvando...'}
-                        </div>
-                      ) : (
-                        editingTrack ? 'Atualizar Mídia' : 'Salvar no Acervo'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                Buscar
+              </button>
             </div>
-          )}
+          </div>
 
           <div className="liquid-glass rounded-xl p-6">
             <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
@@ -807,8 +615,218 @@ export default function MusicCollection() {
         </div>
       </main>
 
+      {/* MODAL LIQUID GLASS: Formulário de Adição/Edição */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="liquid-glass bg-bg-dark-primary/95 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-white/20 overflow-hidden">
+            
+            {/* Modal Header Fixo */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 flex-shrink-0">
+              <h2 className="text-xl font-bold text-white">
+                {editingTrack ? 'Editar Mídia' : 'Configurar Nova Mídia'}
+              </h2>
+              <button 
+                onClick={closeForm} 
+                className="text-text-muted hover:text-white transition-colors p-1 rounded-full hover:bg-white/10"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {/* Modal Body Rolável */}
+            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+              <div className="flex gap-6 mb-6 border-b border-white/10 pb-6">
+                {formData.thumbnail_url ? (
+                  <img
+                    src={formData.thumbnail_url}
+                    alt="Thumbnail"
+                    className="w-32 h-32 object-cover rounded-lg flex-shrink-0 border border-white/10"
+                  />
+                ) : (
+                  <div className="w-32 h-32 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 border border-white/10">
+                    <span className="material-symbols-outlined text-5xl text-text-muted">music_video</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                  <h3 className="text-xl font-semibold text-white truncate">{formData.titulo || 'Novo Título...'}</h3>
+                  <p className="text-base text-text-muted truncate mt-1">{formData.artista || 'Novo Artista...'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Nome da Música</label>
+                  <input 
+                    type="text" 
+                    name="titulo" 
+                    value={formData.titulo} 
+                    onChange={handleFormChange} 
+                    className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Artista ou Banda</label>
+                  <input 
+                    type="text" 
+                    name="artista" 
+                    value={formData.artista} 
+                    onChange={handleFormChange} 
+                    className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Artistas Participantes</label>
+                  <input 
+                    type="text" 
+                    name="artistas_participantes" 
+                    placeholder="(Opcional, separados por vírgula)" 
+                    value={formData.artistas_participantes.join(', ')} 
+                    onChange={(e) => setFormData(p => ({ 
+                      ...p, 
+                      artistas_participantes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) 
+                    }))} 
+                    className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                  />
+                </div>
+                <div className="col-span-1 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-1">Álbum</label>
+                    <input 
+                      type="text" 
+                      name="album" 
+                      placeholder="(Opcional)" 
+                      value={formData.album || ''} 
+                      onChange={handleFormChange} 
+                      className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-1">Ano</label>
+                    <input
+                      type="text"
+                      name="ano"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="(Opcional)"
+                      value={formData.ano || ''}
+                      onChange={(e) => {
+                        const onlyNums = e.target.value.replace(/\D/g, '');
+                        setFormData(prev => ({ ...prev, ano: onlyNums }));
+                      }}
+                      className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Gravadora</label>
+                  <input 
+                    type="text" 
+                    name="gravadora" 
+                    placeholder="(Opcional)" 
+                    value={formData.gravadora || ''} 
+                    onChange={handleFormChange} 
+                    className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Diretor</label>
+                  <input 
+                    type="text" 
+                    name="diretor" 
+                    placeholder="(Opcional)" 
+                    value={formData.diretor || ''} 
+                    onChange={handleFormChange} 
+                    className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-text-muted/50 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" 
+                  />
+                </div>
+                
+                <div className="col-span-1 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-1">Início (MM:SS)</label>
+                    <input
+                      type="text"
+                      name="start_segundos"
+                      inputMode="numeric"
+                      value={formatTimeForInput(formData.start_segundos)}
+                      onChange={(e) => {
+                        const seconds = parseInputToSeconds(e.target.value);
+                        setFormData(prev => ({ ...prev, start_segundos: seconds }));
+                      }}
+                      className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white font-mono tracking-wider text-center focus:ring-2 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-muted mb-1">Fim (MM:SS)</label>
+                    <input
+                      type="text"
+                      name="end_segundos"
+                      inputMode="numeric"
+                      value={formatTimeForInput(formData.end_segundos)}
+                      onChange={(e) => {
+                        const seconds = parseInputToSeconds(e.target.value);
+                        setFormData(prev => ({ ...prev, end_segundos: seconds }));
+                      }}
+                      className="w-full bg-black/40 border border-white/20 rounded-lg px-4 py-2 text-white font-mono tracking-wider text-center focus:ring-2 focus:ring-primary outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium text-text-muted mb-1">Dias Disponíveis</label>
+                  <div className="flex gap-2 items-center">
+                    <button
+                      onClick={() => handleDayToggle('TODOS')}
+                      className={`px-4 h-10 rounded-lg font-semibold transition-all ${allDaysSelected ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
+                    >
+                      TODOS
+                    </button>
+                    <div className="h-6 w-px bg-white/20"></div>
+                    {WEEK_DAYS.map((day, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleDayToggle(index)}
+                        className={`w-10 h-10 rounded-full font-semibold transition-all ${!allDaysSelected && formData.dias_semana.includes(index) ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'bg-white/10 text-text-muted hover:bg-white/20'}`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Fixo */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-white/10 bg-black/40 flex-shrink-0">
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => setFormData(p => ({ ...p, is_commercial: !p.is_commercial }))}>
+                <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${formData.is_commercial ? 'bg-primary border-primary' : 'bg-black/40 border border-white/30'}`}>
+                  {formData.is_commercial && <span className="material-symbols-outlined text-[16px] text-white">check</span>}
+                </div>
+                <label className="text-sm font-medium text-white cursor-pointer select-none">É um comercial?</label>
+              </div>
+              <div className="flex gap-4">
+                <button onClick={closeForm} disabled={loading} className="bg-white/10 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-white/20 transition-colors disabled:opacity-50">
+                  Cancelar
+                </button>
+                <button onClick={handleSaveTrack} disabled={loading} className="bg-primary text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-primary/80 transition-all shadow-lg hover:shadow-primary/30 disabled:opacity-50 min-w-[140px]">
+                  {loading ? (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Salvando...
+                    </div>
+                  ) : (
+                    editingTrack ? 'Atualizar Mídia' : 'Salvar no Acervo'
+                  )}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EXCLUSÃO (Mantido intacto) */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[60]">
           <div className="liquid-glass rounded-xl p-8 max-w-md w-full mx-4">
             <h3 className="text-xl font-bold text-white mb-4">Confirmar Exclusão</h3>
             <p className="text-text-muted mb-6">
