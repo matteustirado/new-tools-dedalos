@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import axios from 'axios';
+import { getIO } from '../socket.js';
 
 const log = (tag, msg, data = null) => {
     const time = new Date().toISOString().split('T')[1].slice(0, 8);
@@ -33,36 +34,18 @@ const getHoraBrasil = () => {
 const getPeriodo = (hora) => {
     if (hora >= 6 && hora < 14) return 'manha';
     if (hora >= 14 && hora < 20) return 'tarde';
-    
     return 'noite';
-};
-
-const getTipoDia = (data) => {
-    const diaSemana = data.getDay(); 
-    
-    if (diaSemana === 6 || diaSemana === 0) return 'fim_de_semana';
-    
-    return 'semana';
-};
-
-const getProximoPeriodo = (periodoAtual, tipoDiaAtual, diaSemanaAtual) => {
-    if (periodoAtual === 'manha') return { periodo: 'tarde', tipo: tipoDiaAtual };
-    if (periodoAtual === 'tarde') return { periodo: 'noite', tipo: tipoDiaAtual };
-    
-    let proximoTipo = tipoDiaAtual;
-    
-    if (diaSemanaAtual === 5) proximoTipo = 'fim_de_semana'; 
-    if (diaSemanaAtual === 0) proximoTipo = 'semana';        
-
-    return { periodo: 'manha', tipo: proximoTipo };
 };
 
 const getBhDayAndRound = (agora) => {
     const hora = agora.getHours();
     let round = "Round 3";
     
-    if (hora >= 6 && hora < 14) round = "Round 1";
-    else if (hora >= 14 && hora < 20) round = "Round 2";
+    if (hora >= 6 && hora < 14) {
+        round = "Round 1";
+    } else if (hora >= 14 && hora < 20) {
+        round = "Round 2";
+    }
     
     const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
     const day = dayNames[agora.getDay()];
@@ -88,11 +71,10 @@ const fetchLivePriceFromExternalApi = async (unidadeUpper, apiConfig, agora) => 
         
         if (unidadeUpper === 'BH') {
             const { day, round } = getBhDayAndRound(agora);
-            
             const urlDay = encodeURIComponent(day);
             const urlRound = encodeURIComponent(round);
-
             const bhUrl = `${apiConfig.url}/recepcao/api/newcheckin/getprice/?day=${urlDay}&round=${urlRound}`;
+            
             log('BH_FETCH', `Buscando em: ${bhUrl}`);
             
             const response = await axios.get(bhUrl, {
@@ -127,8 +109,14 @@ const fetchLivePriceFromExternalApi = async (unidadeUpper, apiConfig, agora) => 
         log('API_ERR', `Falha ao conectar na busca de preços de ${unidadeUpper}: ${errorMsg}`);
         return null;
     }
-    
     return null;
+};
+
+const formatDateYMD = (dateObj) => {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
 export const getPricesState = async (req, res) => {
@@ -137,6 +125,49 @@ export const getPricesState = async (req, res) => {
     const agora = getHoraBrasil();
     
     try {
+        const hojeStr = formatDateYMD(agora);
+        
+        const amanhã = new Date(agora);
+        amanhã.setDate(amanhã.getDate() + 1);
+        const amanhãStr = formatDateYMD(amanhã);
+
+        const [holidaysRows] = await pool.query(
+            'SELECT data_feriado FROM holidays WHERE unidade = ? AND (data_feriado = ? OR data_feriado = ?)', 
+            [unidadeUpper, hojeStr, amanhãStr]
+        );
+
+        const holidayDates = holidaysRows.map(h => {
+            if (h.data_feriado instanceof Date) return formatDateYMD(h.data_feriado);
+            return String(h.data_feriado).substring(0, 10);
+        });
+
+        const isHolidayHoje = holidayDates.includes(hojeStr);
+        const isHolidayAmanha = holidayDates.includes(amanhãStr);
+
+        const getTipoDia = (data, isHoliday) => {
+            if (isHoliday) return 'fim_de_semana';
+            const diaSemana = data.getDay(); 
+            if (diaSemana === 6 || diaSemana === 0) return 'fim_de_semana';
+            return 'semana';
+        };
+
+        const getProximoPeriodo = (periodoAtual, tipoDiaAtual, diaSemanaAtual) => {
+            if (periodoAtual === 'manha') return { periodo: 'tarde', tipo: tipoDiaAtual };
+            if (periodoAtual === 'tarde') return { periodo: 'noite', tipo: tipoDiaAtual };
+            
+            let proximoTipo = 'semana';
+            const diaSemanaAmanha = (diaSemanaAtual + 1) % 7;
+            
+            if (diaSemanaAmanha === 6 || diaSemanaAmanha === 0 || isHolidayAmanha) {
+                proximoTipo = 'fim_de_semana';
+            }
+
+            return { periodo: 'manha', tipo: proximoTipo };
+        };
+
+        const tipoDia = getTipoDia(agora, isHolidayHoje);
+        const periodo = getPeriodo(agora.getHours());
+
         const [stateRows] = await pool.query('SELECT * FROM price_live_state WHERE unidade = ?', [unidadeUpper]);
         let state = stateRows[0];
         
@@ -146,9 +177,6 @@ export const getPricesState = async (req, res) => {
         }
 
         let valorRealApi = state.valor_atual;
-
-        const tipoDia = getTipoDia(agora);
-        const periodo = getPeriodo(agora.getHours());
 
         const [regrasAtuais] = await pool.query(
             'SELECT valor FROM price_defaults WHERE tipo_dia = ? AND periodo = ? AND qtd_pessoas = 1 AND unidade = ?',
@@ -163,10 +191,8 @@ export const getPricesState = async (req, res) => {
             
             if (externalPrice !== null) {
                 valorRealApi = externalPrice;
-            } else {
-                if (valorPadraoAgora > 0) {
-                    valorRealApi = valorPadraoAgora;
-                }
+            } else if (valorPadraoAgora > 0) {
+                valorRealApi = valorPadraoAgora;
             }
 
             if (valorRealApi !== parseFloat(state.valor_atual)) {
@@ -371,3 +397,34 @@ export const addPromotion = async (req, res) => {
         conn.release(); 
     }
 };
+
+let lastPeriodState = { SP: null, BH: null };
+
+const runPriceMonitor = () => {
+    try {
+        let io;
+        try {
+            io = getIO();
+        } catch(e) { 
+            return;
+        }
+
+        const agora = getHoraBrasil();
+        const periodoAtual = getPeriodo(agora.getHours());
+        const unidades = ['SP', 'BH'];
+        
+        for (const und of unidades) {
+            if (lastPeriodState[und] !== periodoAtual) {
+                if (lastPeriodState[und] !== null) {
+                    log('MONITOR', `Mudança de turno (${lastPeriodState[und]} -> ${periodoAtual}) na unidade ${und}. Atualizando telas remotas.`);
+                    io.emit('prices:updated', { unidade: und });
+                }
+                lastPeriodState[und] = periodoAtual;
+            }
+        }
+    } catch (error) {
+        console.error("Erro no Price Monitor:", error.message);
+    }
+};
+
+setInterval(runPriceMonitor, 30000);

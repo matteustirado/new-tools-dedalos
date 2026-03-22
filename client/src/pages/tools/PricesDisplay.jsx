@@ -21,13 +21,14 @@ export default function PricesDisplay() {
 
   const [isTabletMode, setIsTabletMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [activePeriod, setActivePeriod] = useState('manha');
 
   const [currentPromoIndex, setCurrentPromoIndex] = useState(0);
   const [currentPartyBannerIndex, setCurrentPartyBannerIndex] = useState(0);
 
   const promoLengthRef = useRef(0);
   const partyBannerLengthRef = useRef(0);
+
+  const activePeriod = liveState?.periodo_atual || 'manha';
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -59,20 +60,18 @@ export default function PricesDisplay() {
   useEffect(() => {
     fetchData();
 
-    const periodInterval = setInterval(updateActivePeriod, 10000);
-    updateActivePeriod();
-
     const socket = io(API_URL);
+    
     socket.on('connect', () => console.log('Socket conectado: PricesDisplay'));
 
     socket.on('prices:updated', (data) => {
       if (!data.unidade || data.unidade === currentUnit) {
+        console.log('Atualização de preços recebida do servidor!');
         fetchData();
       }
     });
 
     return () => {
-      clearInterval(periodInterval);
       socket.disconnect();
     };
   }, [currentUnit]);
@@ -90,6 +89,7 @@ export default function PricesDisplay() {
       if (promoLengthRef.current > 1) {
         setCurrentPromoIndex((prev) => (prev + 1) % promoLengthRef.current);
       }
+      
       if (partyBannerLengthRef.current > 1) {
         setCurrentPartyBannerIndex((prev) => (prev + 1) % partyBannerLengthRef.current);
       }
@@ -157,18 +157,6 @@ export default function PricesDisplay() {
       setLoading(false);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-    }
-  };
-
-  const updateActivePeriod = () => {
-    const h = new Date().getHours();
-
-    if (h >= 6 && h < 14) {
-      setActivePeriod('manha');
-    } else if (h >= 14 && h < 20) {
-      setActivePeriod('tarde');
-    } else {
-      setActivePeriod('noite');
     }
   };
 
@@ -259,6 +247,7 @@ export default function PricesDisplay() {
                     >
                       {colData.title}
                     </h3>
+                    
                     <div className={`price-cards ${isColumnActive ? 'active-view' : 'inactive-view'}`}>
                       <PriceCard
                         index={0}
@@ -484,6 +473,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
   const defSingle = defaults.find(
     (d) => d.tipo_dia === liveState.tipo_dia && d.periodo === colData.key && d.qtd_pessoas === 1
   );
+  
   const defCombo = defaults.find(
     (d) => d.tipo_dia === liveState.tipo_dia && d.periodo === colData.key && d.qtd_pessoas === qtdPessoas
   );
@@ -551,6 +541,7 @@ const PriceCard = ({ index, qtdPessoas, colData, liveState, defaults, mediaData,
     return (
       <div className="price-card inactive" style={isTablet ? { padding: '1rem', minHeight: '120px' } : {}}>
         <h3 style={isTablet ? { fontSize: '1rem', marginBottom: 0 } : {}}>{title}</h3>
+        
         {qtdPessoas === 1 ? (
           <div className="price-value" style={isTablet ? { fontSize: '1.8rem', margin: '0.2rem 0' } : {}}>
             {mainDisplayPrice}
