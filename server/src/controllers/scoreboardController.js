@@ -17,6 +17,7 @@ let isFetchingCrowd = { SP: false, BH: false };
 const log = (tag, msg, data = null) => {
   const time = new Date().toISOString().split('T')[1].slice(0, 8);
   const dataStr = data ? ` | DADOS: ${JSON.stringify(data).substring(0, 200)}...` : '';
+  
   console.log(`[📊 PLACAR ${time}] [${tag}] ${msg}${dataStr}`);
 };
 
@@ -59,11 +60,15 @@ const extractRealBracelet = (clientObj) => {
   const possibleKeys = ['codigo', 'cartao', 'rfid', 'codigo_barras', 'serial', 'num_pulseira', 'pulseira', 'id'];
 
   for (const key of possibleKeys) {
-    if (isValidPulseira(clientObj[key])) return String(clientObj[key]).trim();
+    if (isValidPulseira(clientObj[key])) {
+      return String(clientObj[key]).trim();
+    }
   }
 
   for (const key in clientObj) {
-    if (isValidPulseira(clientObj[key])) return String(clientObj[key]).trim();
+    if (isValidPulseira(clientObj[key])) {
+      return String(clientObj[key]).trim();
+    }
   }
 
   return null;
@@ -84,18 +89,28 @@ const fetchFromDedalos = async (unidade) => {
     let response;
 
     try {
-      response = await axios.get(endpoint, { headers: getHeaders(config.token, config.url), timeout: 15000 });
+      response = await axios.get(endpoint, { 
+        headers: getHeaders(config.token, config.url), 
+        timeout: 15000 
+      });
     } catch (err) {
       log('PROXY_WARN', `[${unidadeUpper}] Falha no endpoint principal (${err.message}). Tentando fallback...`);
+      
       const dataHoje = new Date().toISOString().split('T')[0];
       endpoint = `${baseUrl}/api/entradasPorData/${dataHoje}`;
-      response = await axios.get(endpoint, { headers: getHeaders(config.token, config.url), timeout: 15000 });
+      
+      response = await axios.get(endpoint, { 
+        headers: getHeaders(config.token, config.url), 
+        timeout: 15000 
+      });
     }
 
     const data = response.data;
     
     if (Array.isArray(data)) {
-      if (data.length > 0 && data[0].contador !== undefined) return data[0].contador;
+      if (data.length > 0 && data[0].contador !== undefined) {
+        return data[0].contador;
+      }
       return data.length;
     }
     
@@ -122,6 +137,7 @@ const fetchLatestCheckin = async (unidadeUpper) => {
     });
     
     const data = response.data;
+    
     if (Array.isArray(data) && data.length > 0) {
       return data.sort((a, b) => parseInt(b.id || 0) - parseInt(a.id || 0))[0];
     }
@@ -140,6 +156,7 @@ const fetchExternalClientByPulseira = async (unidadeUpper, pulseira) => {
       headers: getHeaders(config.token, config.url),
       timeout: 5000,
     });
+    
     return response.data;
   } catch (err) {
     return null;
@@ -150,10 +167,15 @@ const fetchCurrentVotes = async (unidadeUpper) => {
   const sql = `
     SELECT option_index, COUNT(*) as count 
     FROM scoreboard_votes 
-    WHERE unidade = ? AND status = 'DENTRO' AND option_index IS NOT NULL AND (expires_at IS NULL OR expires_at > NOW())
+    WHERE unidade = ? 
+      AND status = 'DENTRO' 
+      AND option_index IS NOT NULL 
+      AND (expires_at IS NULL OR expires_at > NOW())
     GROUP BY option_index
   `;
+  
   const [rows] = await pool.query(sql, [unidadeUpper]);
+  
   return rows;
 };
 
@@ -176,6 +198,7 @@ const iniciarSincronizacaoCheckout = () => {
         if (!Array.isArray(data)) continue;
 
         const activeIdsSet = new Set();
+        
         data.forEach((c) => {
           if (c.armario) activeIdsSet.add(String(c.armario).trim());
           if (c.pulseira) activeIdsSet.add(String(c.pulseira).trim());
@@ -187,14 +210,27 @@ const iniciarSincronizacaoCheckout = () => {
 
         if (activeSystemIds.length > 0) {
           const placeholders = activeSystemIds.map(() => '?').join(',');
-          const sqlUpdate = `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO' AND cliente_id IS NOT NULL AND cliente_id NOT IN (${placeholders})`;
+          const sqlUpdate = `
+            UPDATE scoreboard_votes 
+            SET status = 'SAIU' 
+            WHERE unidade = ? 
+              AND status = 'DENTRO' 
+              AND cliente_id IS NOT NULL 
+              AND cliente_id NOT IN (${placeholders})
+          `;
+          
           const [result] = await pool.query(sqlUpdate, [unidadeUpper, ...activeSystemIds]);
           rowsAffected = result.affectedRows;
         } else if (data.length === 0) {
-          const [result] = await pool.query(
-            `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO' AND cliente_id IS NOT NULL`,
-            [unidadeUpper]
-          );
+          const sqlUpdateAll = `
+            UPDATE scoreboard_votes 
+            SET status = 'SAIU' 
+            WHERE unidade = ? 
+              AND status = 'DENTRO' 
+              AND cliente_id IS NOT NULL
+          `;
+          
+          const [result] = await pool.query(sqlUpdateAll, [unidadeUpper]);
           rowsAffected = result.affectedRows;
         }
 
@@ -207,6 +243,7 @@ const iniciarSincronizacaoCheckout = () => {
 
         if (data.length > 0) {
           const connection = await pool.getConnection();
+          
           try {
             for (const c of data) {
               const arm = c.armario ? String(c.armario).trim() : null;
@@ -214,12 +251,16 @@ const iniciarSincronizacaoCheckout = () => {
               const nm = c.nome || c.cliente_nome || c.name || null;
 
               if (nm && (arm || realPulseira)) {
-                await connection.query(
-                  `UPDATE scoreboard_votes 
-                   SET cliente_nome = ?, cliente_pulseira = COALESCE(?, cliente_pulseira) 
-                   WHERE unidade = ? AND status = 'DENTRO' AND (cliente_id = ? OR cliente_id = ?) AND (cliente_nome IS NULL OR cliente_pulseira IS NULL)`,
-                  [nm, realPulseira, unidadeUpper, arm, c.id || c.pulseira]
-                );
+                const sqlUpdateClient = `
+                  UPDATE scoreboard_votes 
+                  SET cliente_nome = ?, cliente_pulseira = COALESCE(?, cliente_pulseira) 
+                  WHERE unidade = ? 
+                    AND status = 'DENTRO' 
+                    AND (cliente_id = ? OR cliente_id = ?) 
+                    AND (cliente_nome IS NULL OR cliente_pulseira IS NULL)
+                `;
+                
+                await connection.query(sqlUpdateClient, [nm, realPulseira, unidadeUpper, arm, c.id || c.pulseira]);
               }
             }
           } catch (e) {
@@ -236,6 +277,7 @@ const iniciarPonteRealTime = () => {
   Object.entries(EXTERNAL_SOCKETS).forEach(([unidade, url]) => {
     try {
       const socket = ioClient(url, { transports: ['websocket', 'polling'] });
+      
       socket.on('disconnect', () => {});
 
       socket.on('new_id', async (data) => {
@@ -246,6 +288,7 @@ const iniciarPonteRealTime = () => {
 
         if (!realPulseira && !armario) {
           const latest = await fetchLatestCheckin(unidadeUpper);
+          
           if (latest) {
             armario = latest.armario ? String(latest.armario).trim() : armario;
             realPulseira = extractRealBracelet(latest) || realPulseira;
@@ -256,14 +299,19 @@ const iniciarPonteRealTime = () => {
         const systemId = armario || String(data?.id) || String(Date.now());
 
         try {
-          await pool.query(
-            `INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) VALUES (?, ?, ?, ?, NULL, "DENTRO")`,
-            [unidadeUpper, systemId, realPulseira, clienteNome]
-          );
+          const sqlInsert = `
+            INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) 
+            VALUES (?, ?, ?, ?, NULL, "DENTRO")
+          `;
+          
+          await pool.query(sqlInsert, [unidadeUpper, systemId, realPulseira, clienteNome]);
         } catch (e) {}
 
         const totalAtual = await fetchFromDedalos(unidade);
+        
         if (totalAtual !== null) {
+          lastCheckinCount[unidadeUpper] = totalAtual;
+          
           getIO().emit('checkin:novo', {
             unidade: unidadeUpper,
             total: totalAtual,
@@ -281,18 +329,16 @@ const iniciarSentinela = () => {
   setInterval(async () => {
     for (const unidade of ['SP', 'BH']) {
       const totalAtual = await fetchFromDedalos(unidade);
+      
       if (totalAtual !== null) {
-        if (lastCheckinCount[unidade] === null) {
-          lastCheckinCount[unidade] = totalAtual;
-          continue;
-        }
-        if (totalAtual > lastCheckinCount[unidade]) {
+        if (lastCheckinCount[unidade] !== totalAtual) {
           getIO().emit('checkin:novo', {
             unidade: unidade,
             total: totalAtual,
             origem: 'sentinela_http',
             timestamp: new Date(),
           });
+          
           lastCheckinCount[unidade] = totalAtual;
         }
       }
@@ -322,6 +368,7 @@ export const executarMarcoZero = async (req, res) => {
 
         if (Array.isArray(response.data)) {
           const activeData = response.data.filter((c) => c.armario || c.pulseira);
+          
           if (activeData.length > 0) {
             for (const c of activeData) {
               const armario = c.armario ? String(c.armario).trim() : null;
@@ -329,10 +376,12 @@ export const executarMarcoZero = async (req, res) => {
               const nome = c.nome || c.cliente_nome || c.name || null;
               const systemId = armario || String(c.id || Date.now());
 
-              await pool.query(
-                `INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) VALUES (?, ?, ?, ?, NULL, "DENTRO")`,
-                [unidade, systemId, realPulseira, nome]
-              );
+              const sqlInsert = `
+                INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) 
+                VALUES (?, ?, ?, ?, NULL, "DENTRO")
+              `;
+              
+              await pool.query(sqlInsert, [unidade, systemId, realPulseira, nome]);
             }
           }
           relatorio[unidade] = `${activeData.length} clientes inseridos.`;
@@ -365,8 +414,8 @@ export const getCrowdCount = async (req, res) => {
     
     fetchFromDedalos(unidadeUpper).then(count => {
       if (count !== null) {
-          lastCheckinCount[unidadeUpper] = count;
-          log('API_SUCCESS', `[${unidadeUpper}] Sucesso! Cache preenchido com: ${count} pessoas.`);
+        lastCheckinCount[unidadeUpper] = count;
+        log('API_SUCCESS', `[${unidadeUpper}] Sucesso! Cache preenchido com: ${count} pessoas.`);
       }
       isFetchingCrowd[unidadeUpper] = false;
     }).catch(() => {
@@ -383,10 +432,12 @@ export const testarTrigger = async (req, res) => {
   const fakeId = 'TESTE-' + Math.floor(Math.random() * 1000);
   
   try {
-    await pool.query(
-      `INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status, expires_at) VALUES (?, ?, NULL, NULL, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
-      [unidadeUpper, fakeId]
-    );
+    const sqlInsert = `
+      INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, option_index, status, expires_at) 
+      VALUES (?, ?, NULL, NULL, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))
+    `;
+    
+    await pool.query(sqlInsert, [unidadeUpper, fakeId]);
     
     getIO().emit('checkin:novo', {
       unidade: unidadeUpper,
@@ -410,10 +461,14 @@ export const getActiveConfig = async (req, res) => {
       unidade.toUpperCase(),
     ]);
     
-    if (rows.length === 0) return res.status(404).json({ error: 'Não encontrada.' });
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Não encontrada.' });
+    }
     
     const config = rows[0];
-    if (typeof config.opcoes === 'string') config.opcoes = JSON.parse(config.opcoes);
+    if (typeof config.opcoes === 'string') {
+      config.opcoes = JSON.parse(config.opcoes);
+    }
     
     res.status(200).json(config);
   } catch (err) {
@@ -432,20 +487,29 @@ export const updateActiveConfig = async (req, res) => {
   
   try {
     await connection.beginTransaction();
+    
     const opcoesString = JSON.stringify(opcoes);
     const unidadeUpper = unidade.toUpperCase();
 
-    await connection.query(
-      `INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status) VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE titulo = VALUES(titulo), layout = VALUES(layout), opcoes = VALUES(opcoes), status = VALUES(status)`,
-      [unidadeUpper, titulo, layout, opcoesString, status]
-    );
+    const sqlUpsert = `
+      INSERT INTO scoreboard_active (unidade, titulo, layout, opcoes, status) 
+      VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE 
+        titulo = VALUES(titulo), 
+        layout = VALUES(layout), 
+        opcoes = VALUES(opcoes), 
+        status = VALUES(status)
+    `;
     
-    await connection.query(
-      `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`,
-      [unidadeUpper]
-    );
+    await connection.query(sqlUpsert, [unidadeUpper, titulo, layout, opcoesString, status]);
     
+    const sqlResetVotes = `
+      UPDATE scoreboard_votes 
+      SET status = 'SAIU' 
+      WHERE unidade = ? AND status = 'DENTRO'
+    `;
+    
+    await connection.query(sqlResetVotes, [unidadeUpper]);
     await connection.commit();
 
     getIO().emit('scoreboard:config_updated', { unidade: unidadeUpper });
@@ -462,7 +526,10 @@ export const updateActiveConfig = async (req, res) => {
 
 export const castVote = async (req, res) => {
   const { unidade, optionIndex, cliente_id } = req.body;
-  if (!unidade || optionIndex === undefined) return res.status(400).json({ error: 'Voto inválido.' });
+  
+  if (!unidade || optionIndex === undefined) {
+    return res.status(400).json({ error: 'Voto inválido.' });
+  }
 
   try {
     const unidadeUpper = unidade.toUpperCase();
@@ -484,36 +551,55 @@ export const castVote = async (req, res) => {
 
       const isPulseiraValida = typedString.match(/^\d{5,12}$/);
       const pulseiraValidaParaSalvar = finalPulseiraToSave || (isPulseiraValida ? typedString : null);
-
       const systemId = fetchedArmario || typedString;
 
-      const [result] = await pool.query(
-        `UPDATE scoreboard_votes 
-         SET option_index = ?, cliente_pulseira = COALESCE(?, cliente_pulseira), cliente_nome = COALESCE(?, cliente_nome) 
-         WHERE unidade = ? AND status = 'DENTRO' AND (cliente_pulseira = ? OR cliente_id = ? OR cliente_id = ?) 
-         ORDER BY id DESC LIMIT 1`,
-        [optionIndex, pulseiraValidaParaSalvar, fetchedNome, unidadeUpper, typedString, typedString, fetchedArmario]
-      );
+      const sqlUpdateVote = `
+        UPDATE scoreboard_votes 
+        SET option_index = ?, 
+            cliente_pulseira = COALESCE(?, cliente_pulseira), 
+            cliente_nome = COALESCE(?, cliente_nome) 
+        WHERE unidade = ? 
+          AND status = 'DENTRO' 
+          AND (cliente_pulseira = ? OR cliente_id = ? OR cliente_id = ?) 
+        ORDER BY id DESC LIMIT 1
+      `;
+
+      const [result] = await pool.query(sqlUpdateVote, [
+        optionIndex, 
+        pulseiraValidaParaSalvar, 
+        fetchedNome, 
+        unidadeUpper, 
+        typedString, 
+        typedString, 
+        fetchedArmario
+      ]);
 
       if (result.affectedRows === 0) {
-        await pool.query(
-          `INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) 
-           VALUES (?, ?, ?, ?, ?, "DENTRO")`,
-          [unidadeUpper, systemId, pulseiraValidaParaSalvar, fetchedNome, optionIndex]
-        );
+        const sqlInsertVote = `
+          INSERT INTO scoreboard_votes (unidade, cliente_id, cliente_pulseira, cliente_nome, option_index, status) 
+          VALUES (?, ?, ?, ?, ?, "DENTRO")
+        `;
+        
+        await pool.query(sqlInsertVote, [
+          unidadeUpper, 
+          systemId, 
+          pulseiraValidaParaSalvar, 
+          fetchedNome, 
+          optionIndex
+        ]);
       }
     } else {
-      await pool.query(
-        `INSERT INTO scoreboard_votes (unidade, option_index, status, expires_at) 
-         VALUES (?, ?, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))`,
-        [unidadeUpper, optionIndex]
-      );
+      const sqlInsertAnonymousVote = `
+        INSERT INTO scoreboard_votes (unidade, option_index, status, expires_at) 
+        VALUES (?, ?, "DENTRO", DATE_ADD(NOW(), INTERVAL 30 MINUTE))
+      `;
+      
+      await pool.query(sqlInsertAnonymousVote, [unidadeUpper, optionIndex]);
     }
 
-    const io = getIO();
     const rows = await fetchCurrentVotes(unidadeUpper);
+    getIO().emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: rows });
     
-    io.emit('scoreboard:vote_updated', { unidade: unidadeUpper, votes: rows });
     res.status(200).json({ message: 'Voto computado.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -535,10 +621,13 @@ export const resetVotes = async (req, res) => {
   const { unidade } = req.body;
   
   try {
-    await pool.query(
-      `UPDATE scoreboard_votes SET status = 'SAIU' WHERE unidade = ? AND status = 'DENTRO'`,
-      [unidade.toUpperCase()]
-    );
+    const sqlReset = `
+      UPDATE scoreboard_votes 
+      SET status = 'SAIU' 
+      WHERE unidade = ? AND status = 'DENTRO'
+    `;
+    
+    await pool.query(sqlReset, [unidade.toUpperCase()]);
     
     getIO().emit('scoreboard:vote_updated', { unidade: unidade.toUpperCase(), votes: [] });
     res.status(200).json({ message: 'Votos zerados e sessão renovada.' });
@@ -555,7 +644,9 @@ export const getScoreboardHistory = async (req, res) => {
   const { unidade } = req.params;
   const { month, year } = req.query;
   
-  if (!month || !year) return res.status(400).json({ error: 'Mês e Ano obrigatórios.' });
+  if (!month || !year) {
+    return res.status(400).json({ error: 'Mês e Ano obrigatórios.' });
+  }
 
   try {
     const sql = `
@@ -564,6 +655,7 @@ export const getScoreboardHistory = async (req, res) => {
       WHERE unidade = ? AND MONTH(created_at) = ? AND YEAR(created_at) = ?
       ORDER BY created_at DESC
     `;
+    
     const [rows] = await pool.query(sql, [unidade.toUpperCase(), month, year]);
     res.status(200).json(rows);
   } catch (err) {

@@ -58,6 +58,12 @@ export default function ScoreboardDisplay() {
             }
         });
 
+        localSocket.on('checkin:novo', (data) => {
+            if (data.unidade.toLowerCase() === currentUnit) {
+                setCrowdCount(data.total);
+            }
+        });
+
         const externalSocket = io(legacyConfig.socket, {
             transports: ['websocket', 'polling']
         });
