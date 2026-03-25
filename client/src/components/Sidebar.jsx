@@ -48,6 +48,8 @@ export default function Sidebar({
       { id: 'models', label: 'Modelos', icon: 'style', path: '/people/models' },
       { type: 'label', label: 'BENEFÍCIOS' },
       { id: 'conference', label: 'Conferência', icon: 'assignment_turned_in', path: '/people/benefits' },
+      { type: 'label', label: 'BEM-ESTAR' },
+      { id: 'gym-ranking', label: 'Banana\'s Gym', icon: 'fitness_center', path: '/people/gym-ranking' },
     ],
     cx: [
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
@@ -95,6 +97,7 @@ export default function Sidebar({
   };
 
   const currentMenu = menus[group] || menus[group === 'people' ? 'identification' : 'radio'] || menus.radio;
+  
   const theme = themeColors[group] || themeColors.radio;
 
   const getGroupSubtitle = () => {
