@@ -34,13 +34,8 @@ const formatDateToYYYYMMDD = (date) => {
 };
 
 const safeJsonParse = (input) => {
-  if (Array.isArray(input)) {
-    return input;
-  }
-
-  if (!input || typeof input !== 'string') {
-    return [];
-  }
+  if (Array.isArray(input)) return input;
+  if (!input || typeof input !== 'string') return [];
 
   try {
     const parsed = JSON.parse(input);
@@ -100,8 +95,8 @@ const atualizarStatusPedido = async (pedidoDbId, status) => {
 const carregarCacheConfig = async () => {
   try {
     const [rows] = await pool.query("SELECT * FROM radio_config");
-
     const fallbackRow = rows.find(r => r.config_key === 'fallback_playlist_ids');
+    
     if (fallbackRow && fallbackRow.config_value) {
       cacheFallbacks = Array.isArray(fallbackRow.config_value) ? {} : fallbackRow.config_value;
     }
@@ -125,11 +120,11 @@ const carregarPlaylist = async (playlistId, isAgendada = true) => {
     estadoRadio.playlistAtiva = trackIds;
     estadoRadio.playlistAgendadaAtual = isAgendada ? playlistId : null;
     estadoRadio.playlistAtualId = playlistId;
-
     estadoRadio.overlayUrl = overlay;
-    getIO().emit('maestro:overlayAtualizado', overlay);
 
+    getIO().emit('maestro:overlayAtualizado', overlay);
     getIO().emit('maestro:playlistAtualizada', playlistId);
+    
     return true;
   }
 
@@ -138,10 +133,9 @@ const carregarPlaylist = async (playlistId, isAgendada = true) => {
   }
 
   estadoRadio.playlistAtualId = null;
-
   estadoRadio.overlayUrl = null;
-  getIO().emit('maestro:overlayAtualizado', null);
 
+  getIO().emit('maestro:overlayAtualizado', null);
   getIO().emit('maestro:playlistAtualizada', null);
 
   return false;
@@ -212,16 +206,17 @@ const obterProximoId = async () => {
 
 const tocarProximaMusica = async () => {
   estadoRadio.isPreloading = false;
-
   const proximo = await obterProximoId();
 
   if (!proximo) {
     estadoRadio.musicaAtual = null;
     estadoRadio.tempoAtualSegundos = 0;
+    
     getIO().emit('maestro:pararTudo');
 
     const filaVisual = await comporFilaVisual();
     getIO().emit('maestro:filaAtualizada', filaVisual);
+    
     return;
   }
 
@@ -280,18 +275,33 @@ const verificarAgendamento = async (slotAtual) => {
     if (rows.length > 0) {
       const playlistIdAgendada = rows[0].playlist_id;
 
-      if (playlistIdAgendada === null) {
-        if (estadoRadio.playlistAgendadaAtual !== null) {
-          estadoRadio.playlistAtiva = [];
-          estadoRadio.playlistAgendadaAtual = null;
-          estadoRadio.playlistAtualId = null;
-          getIO().emit('maestro:playlistAtualizada', null);
-        }
-      } else if (playlistIdAgendada !== estadoRadio.playlistAgendadaAtual) {
-        const sucesso = await carregarPlaylist(playlistIdAgendada, true);
+      if (playlistIdAgendada !== null && playlistIdAgendada !== estadoRadio.playlistAgendadaAtual) {
+        const { trackIds, overlay } = await buscarTracksDaPlaylist(playlistIdAgendada);
 
-        if (sucesso && !estadoRadio.musicaAtual) {
-          tocarProximaMusica();
+        if (trackIds.length > 0) {
+          estadoRadio.filaDePedidos = [];
+          estadoRadio.filaComercialManual = [];
+          
+          estadoRadio.playlistAtiva = trackIds;
+          estadoRadio.playlistAgendadaAtual = playlistIdAgendada;
+          estadoRadio.playlistAtualId = playlistIdAgendada;
+          estadoRadio.overlayUrl = overlay;
+
+          await pool.query(
+            `UPDATE jukebox_pedidos SET status = 'VETADO' WHERE status IN ('PENDENTE', 'SUGERIDA')`
+          );
+
+          getIO().emit('maestro:overlayAtualizado', overlay);
+          getIO().emit('maestro:playlistAtualizada', playlistIdAgendada);
+
+          const filaVisual = await comporFilaVisual();
+          getIO().emit('maestro:filaAtualizada', filaVisual);
+          
+          if (!estadoRadio.musicaAtual) {
+            tocarProximaMusica();
+          }
+          
+          console.log(`[Maestro] Nova Grade Iniciada (Slot ${slotAtual}): Playlist ${playlistIdAgendada} assumiu a transmissão.`);
         }
       }
     }
@@ -327,10 +337,11 @@ const iniciarTicker = () => {
     });
 
     const tempoPreload = 15;
+    
     if (!estadoRadio.isPreloading && estadoRadio.tempoAtualSegundos >= (fimMusicaSegundos - tempoPreload)) {
       estadoRadio.isPreloading = true; 
-
       let peekId = null;
+
       if (estadoRadio.filaComercialManual.length > 0) {
         peekId = estadoRadio.filaComercialManual[0];
       } else if (estadoRadio.contadorComercial >= 10 && cacheComerciais.length > 0) {
@@ -367,6 +378,7 @@ export const verificarDisponibilidadeTrack = (trackId) => {
   }
 
   const proximas5 = estadoRadio.filaDePedidos.slice(0, 5);
+  
   if (proximas5.some(p => String(p.trackId) === idToCheck)) {
     return { allowed: false, motivo: 'Esta música já vai tocar em breve!' };
   }
@@ -398,6 +410,7 @@ export const comporFilaVisual = async () => {
     if (proximas5.length >= 5) return;
 
     const info = await buscarDetalhesTrack(id);
+    
     proximas5.push({
       id: objInfo ? `pedido_${objInfo.id}` : `auto_${id}_${Math.random()}`,
       titulo: info ? info.titulo : "Carregando...",
@@ -432,12 +445,14 @@ export const iniciarMaestro = async () => {
     if (clientesConectados === 1) {
       const agora = new Date();
       const slot = (agora.getUTCHours() * 6) + Math.floor(agora.getUTCMinutes() / 10);
+      
       verificarAgendamento(slot).then(() => {
         if (!estadoRadio.musicaAtual) tocarProximaMusica();
       });
     }
 
     socket.emit('maestro:estadoCompleto', estadoRadio);
+    
     comporFilaVisual().then(fila => socket.emit('maestro:filaAtualizada', fila));
 
     socket.on('disconnect', () => {
@@ -448,6 +463,7 @@ export const iniciarMaestro = async () => {
 
     socket.on('dj:tocarComercialAgora', async () => {
       if (cacheComerciais.length === 0) return;
+      
       const comercialId = cacheComerciais[Math.floor(Math.random() * cacheComerciais.length)];
       estadoRadio.filaComercialManual.push(comercialId);
 
@@ -460,6 +476,7 @@ export const iniciarMaestro = async () => {
 
     socket.on('dj:carregarPlaylistManual', async (playlistId) => {
       await carregarPlaylist(playlistId, false);
+      
       if (!estadoRadio.musicaAtual) {
         tocarProximaMusica();
       } else {

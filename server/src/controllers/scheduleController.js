@@ -5,7 +5,6 @@ import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const SLOTS_PER_DAY = 144;
 
 const getDatesForDayOfWeekInMonth = (year, month, dayOfWeek) => {
@@ -134,6 +133,7 @@ export const getScheduleByDate = async (req, res) => {
 
         if (playlistIds.length > 0) {
             const placeholders = playlistIds.map(() => '?').join(',');
+            
             [playlistsInfo] = await pool.query(
                 `SELECT id, nome, tracks_ids FROM playlists WHERE id IN (${placeholders})`,
                 playlistIds
@@ -157,6 +157,7 @@ export const getScheduleByDate = async (req, res) => {
         scheduleRows.forEach(row => {
             if (row.playlist_id !== null) {
                 const playlistData = playlistsInfo.find(p => p.id === row.playlist_id);
+                
                 if (playlistData) {
                     const durationSeconds = calculatePlaylistDuration(row.playlist_id, playlistsInfo, allTracksInfo);
                     schedule[row.slot_index] = {
@@ -200,6 +201,7 @@ export const saveSchedule = async (req, res) => {
     }
 
     const validRepeticao = ['NENHUMA', 'DIA_SEMANA_MES'];
+    
     if (!regra_repeticao || !validRepeticao.includes(regra_repeticao)) {
         return res.status(400).json({ error: 'Regra de repetição inválida ou ausente.' });
     }
@@ -237,11 +239,14 @@ export const saveSchedule = async (req, res) => {
         }
 
         const inserts = [];
+        
         for (const dateToInsert of datesToProcess) {
             for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
                 const slotStr = String(slot);
+                
                 if (schedule[slotStr] && schedule[slotStr].playlist_id) {
                     const playlistId = Number(schedule[slotStr].playlist_id);
+                    
                     if (!isNaN(playlistId)) {
                         inserts.push([
                             dateToInsert,
@@ -289,7 +294,7 @@ export const getScheduleReport = async (req, res) => {
 
     try {
         const [rows] = await pool.query(
-            `SELECT a.slot_index, p.nome as playlist_nome, p.descricao as playlist_descricao, p.id as playlist_id
+            `SELECT a.slot_index, p.nome as playlist_nome
              FROM agendamentos a
              LEFT JOIN playlists p ON a.playlist_id = p.id
              WHERE a.data_agendamento = ?
@@ -297,29 +302,28 @@ export const getScheduleReport = async (req, res) => {
             [data]
         );
 
-        let report = `Relatório de Agendamento - ${data}\n\n`;
+        let report = `📻 RELATÓRIO DE GRADE DE TRANSMISSÃO - DÉDALOS\n`;
+        report += `📅 Data: ${data.split('-').reverse().join('/')}\n`;
+        report += `---------------------------------------------------\n\n`;
         
         if (rows.length === 0) {
-            report += "Nenhuma playlist agendada para este dia.";
+            report += "Nenhuma programação definida para este dia.\n(A rádio rodará no modo Fallback/Aleatório).";
         } else {
-            const scheduleMap = {};
-            for (let i = 0; i < SLOTS_PER_DAY; i++) {
-                scheduleMap[i] = 'Tempo Vazio';
+            for (let i = 0; i < rows.length; i++) {
+                const currentRow = rows[i];
+                const startTime = slotToTime(currentRow.slot_index);
+                const nextRow = rows[i + 1];
+                const endTime = nextRow ? slotToTime(nextRow.slot_index) : "Fim do Dia (23:59)";
+                const playlistName = currentRow.playlist_nome || 'Playlist Deletada/Desconhecida';
+                
+                report += `▶ [${startTime} às ${endTime}] - ${playlistName}\n`;
             }
-            
-            rows.forEach(row => {
-                scheduleMap[row.slot_index] = row.playlist_id
-                    ? `Playlist: ${row.playlist_nome || 'N/A'} (ID: ${row.playlist_id})`
-                    : 'Tempo Vazio (Playlist Deletada)';
-            });
-
-            for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
-                report += `${slotToTime(slot)} - ${scheduleMap[slot]}\n`;
-            }
+            report += `\n---------------------------------------------------\n`;
+            report += `* Regra da Rádio: Uma playlist toca continuamente até o horário do próximo programa.`;
         }
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename=agendamento_${data}.txt`);
+        res.setHeader('Content-Disposition', `attachment; filename=Grade_Dedalos_${data}.txt`);
         res.send(report);
     } catch (err) {
         console.error(`Erro ao gerar relatório para ${data}:`, err);
