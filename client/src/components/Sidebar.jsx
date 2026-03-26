@@ -50,6 +50,7 @@ export default function Sidebar({
       { id: 'conference', label: 'Conferência', icon: 'assignment_turned_in', path: '/people/benefits' },
       { type: 'label', label: 'BEM-ESTAR' },
       { id: 'gym-ranking', label: 'Banana\'s Gym', icon: 'fitness_center', path: '/people/gym-ranking' },
+      { id: 'gym-control', label: 'Gym Control', icon: 'admin_panel_settings', path: '/people/gym-control' },
     ],
     cx: [
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },

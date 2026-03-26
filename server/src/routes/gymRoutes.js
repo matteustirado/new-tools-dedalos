@@ -1,14 +1,21 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+
 import { 
     postCheckin, 
     getFeed, 
     toggleLike, 
     postComment, 
     getRankings, 
-    getOrphanLocations,
-    moderateCheckin
+    getPendingModeration,
+    moderateCheckin,
+    getGymLocations,
+    addGymLocation,
+    syncEmployeesToGym,
+    getGymUsers,
+    toggleBlockUser,
+    resetPassword
 } from '../controllers/gymController.js';
 
 const router = express.Router();
@@ -34,6 +41,7 @@ const upload = multer({
         if (mimetype && extname) {
             return cb(null, true);
         }
+        
         cb(new Error("Apenas imagens (jpeg, jpg, png, webp) são permitidas."));
     }
 });
@@ -44,7 +52,15 @@ router.post('/like', toggleLike);
 router.post('/comment', postComment);
 
 router.get('/rankings', getRankings);
-router.get('/orphans', getOrphanLocations);
+
+router.get('/pending', getPendingModeration);
 router.put('/moderate/:id', moderateCheckin);
+router.get('/locations', getGymLocations);
+router.post('/locations', addGymLocation);
+
+router.post('/sync-users', syncEmployeesToGym);
+router.get('/users', getGymUsers);
+router.put('/users/:cpf/toggle-block', toggleBlockUser);
+router.put('/users/:cpf/reset-password', resetPassword);
 
 export default router;

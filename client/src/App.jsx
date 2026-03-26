@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { io } from 'socket.io-client';
 
@@ -8,6 +8,12 @@ import 'react-toastify/dist/ReactToastify.css';
 import ConnectionGuardian from './components/ConnectionGuardian';
 import NotFound from './components/NotFound';
 import Home from './pages/Home';
+
+import BadgeModelEditor from './pages/people/BadgeModelEditor';
+import BenefitsCheck from './pages/people/BenefitsCheck';
+import GymControl from './pages/people/GymControl';
+import GymRanking from './pages/people/GymRanking';
+import NameTagGenerator from './pages/people/NameTagGenerator';
 
 import DJController from './pages/radio/DJController';
 import Jukebox from './pages/radio/Jukebox';
@@ -25,11 +31,6 @@ import ScoreboardDisplay from './pages/tools/ScoreboardDisplay';
 import ScoreboardEdit from './pages/tools/ScoreboardEdit';
 import ScoreboardGame from './pages/tools/ScoreboardGame';
 
-import BadgeModelEditor from './pages/people/BadgeModelEditor';
-import BenefitsCheck from './pages/people/BenefitsCheck';
-import GymRanking from './pages/people/GymRanking';
-import NameTagGenerator from './pages/people/NameTagGenerator';
-
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 function App() {
@@ -37,7 +38,7 @@ function App() {
     const socket = io(API_URL);
 
     socket.on('system:executeReload', () => {
-      console.log("[Socket] Comando manual de Reload Global recebido!");
+      console.log('[Socket] Comando manual de Reload Global recebido!');
       window.location.reload(true);
     });
 
@@ -77,8 +78,8 @@ function App() {
           <Route path="/radio/jukebox" element={<Jukebox />} />
           <Route path="/radio/jukebox/:unidade" element={<Jukebox />} />
 
-          <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
           <Route path="/tools/thursday" element={<GoldenThursday />} />
+          <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
           <Route path="/tools/scoreboard/maintenance/:unidade" element={<ScoreboardEdit />} />
           <Route path="/tools/scoreboard/display/:unidade" element={<ScoreboardDisplay />} />
           <Route path="/tools/scoreboard/game/:unidade" element={<ScoreboardGame />} />
@@ -90,9 +91,24 @@ function App() {
           <Route path="/people/nametag" element={<NameTagGenerator />} />
           <Route path="/people/benefits" element={<BenefitsCheck />} />
           <Route path="/people/gym-ranking" element={<GymRanking />} />
+          <Route path="/people/gym-control" element={<GymControl />} />
 
-          <Route path="/cx/pesquisa" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Pesquisa de Satisfação (Em Breve)</div>} />
-          <Route path="/cx/avaliacoes" element={<div className="text-white p-10 flex justify-center mt-20 text-2xl">Avaliações (Em Breve)</div>} />
+          <Route
+            path="/cx/pesquisa"
+            element={
+              <div className="text-white p-10 flex justify-center mt-20 text-2xl">
+                Pesquisa de Satisfação (Em Breve)
+              </div>
+            }
+          />
+          <Route
+            path="/cx/avaliacoes"
+            element={
+              <div className="text-white p-10 flex justify-center mt-20 text-2xl">
+                Avaliações (Em Breve)
+              </div>
+            }
+          />
 
           <Route path="*" element={<NotFound />} />
         </Routes>
