@@ -15,7 +15,10 @@ import {
     syncEmployeesToGym,
     getGymUsers,
     toggleBlockUser,
-    resetPassword
+    resetPassword,
+    loginGymUser,
+    changeUserPassword,
+    addManualUser
 } from '../controllers/gymController.js';
 
 const router = express.Router();
@@ -46,6 +49,9 @@ const upload = multer({
     }
 });
 
+router.post('/login', loginGymUser);
+router.put('/change-password', changeUserPassword);
+
 router.post('/checkin', upload.single('foto_treino'), postCheckin);
 router.get('/feed', getFeed);
 router.post('/like', toggleLike);
@@ -55,10 +61,12 @@ router.get('/rankings', getRankings);
 
 router.get('/pending', getPendingModeration);
 router.put('/moderate/:id', moderateCheckin);
+
 router.get('/locations', getGymLocations);
 router.post('/locations', addGymLocation);
 
 router.post('/sync-users', syncEmployeesToGym);
+router.post('/users/manual', addManualUser);
 router.get('/users', getGymUsers);
 router.put('/users/:cpf/toggle-block', toggleBlockUser);
 router.put('/users/:cpf/reset-password', resetPassword);

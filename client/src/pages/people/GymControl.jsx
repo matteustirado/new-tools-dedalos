@@ -16,7 +16,6 @@ const calcularDistanciaMetros = (lat1, lon1, lat2, lon2) => {
     
     const a = Math.sin(deltaP / 2) * Math.sin(deltaP / 2) + 
               Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-    
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     
     return Math.round(R * c);
@@ -31,6 +30,10 @@ export default function GymControl() {
     const [photoModal, setPhotoModal] = useState(null);
     const [locationModal, setLocationModal] = useState(null);
     const [newGymName, setNewGymName] = useState('');
+
+    const [addUserModal, setAddUserModal] = useState(false);
+    const [manualUserName, setManualUserName] = useState('');
+    const [manualUserCpf, setManualUserCpf] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
@@ -58,13 +61,13 @@ export default function GymControl() {
     const handleModerate = async (id, field, value) => {
         try {
             await axios.put(`${API_URL}/api/gym/moderate/${id}`, { [field]: value });
-            toast.success("Opção registada.");
+            toast.success("Opção registrada.");
             
             setPending(prev => prev.map(p => {
                 if (p.id === id) {
                     const updated = { ...p, [field]: value };
                     if (updated.imagem_valida !== null && updated.localizacao_valida !== null) {
-                        return null;
+                        return null; 
                     }
                     return updated;
                 }
@@ -81,6 +84,7 @@ export default function GymControl() {
                 localizacao_valida: 1, 
                 gym_location_id: locationId 
             });
+            
             toast.success("Academia vinculada com sucesso!");
             setLocationModal(null);
             fetchData();
@@ -117,11 +121,44 @@ export default function GymControl() {
         }
     };
 
+    const handleCpfChange = (e) => {
+        let value = e.target.value.replace(/\D/g, '');
+        if (value.length > 11) value = value.slice(0, 11);
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d)/, '$1.$2');
+        value = value.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+        setManualUserCpf(value);
+    };
+
+    const handleAddManualUser = async (e) => {
+        e.preventDefault();
+        
+        if (!manualUserName || manualUserCpf.length < 14) {
+            return toast.warning("Preencha o nome e um CPF válido.");
+        }
+        
+        try {
+            await axios.post(`${API_URL}/api/gym/users/manual`, {
+                nome: manualUserName,
+                cpf: manualUserCpf
+            });
+            
+            toast.success("Convidado adicionado com sucesso!");
+            setAddUserModal(false);
+            setManualUserName('');
+            setManualUserCpf('');
+            fetchData();
+        } catch (err) {
+            toast.error(err.response?.data?.error || "Erro ao adicionar convidado.");
+        }
+    };
+
     const handleToggleBlock = async (cpf, currentStatus) => {
         try {
             const newStatus = !currentStatus;
             await axios.put(`${API_URL}/api/gym/users/${cpf}/toggle-block`, { is_blocked: newStatus });
-            toast.info(newStatus ? "Utilizador bloqueado." : "Utilizador desbloqueado.");
+            
+            toast.info(newStatus ? "Usuário bloqueado." : "Usuário desbloqueado.");
             setUsers(users.map(u => u.cpf === cpf ? { ...u, is_blocked: newStatus } : u));
         } catch (err) {
             toast.error("Erro ao alterar bloqueio.");
@@ -129,14 +166,14 @@ export default function GymControl() {
     };
 
     const handleResetPassword = async (cpf) => {
-        if (!window.confirm("Deseja repor a palavra-passe para o padrão (Nome + 5 dígitos do CPF)?")) return;
+        if (!window.confirm("Deseja redefinir a senha para o padrão (Nome + 5 dígitos do CPF)?")) return;
         
         try {
             const res = await axios.put(`${API_URL}/api/gym/users/${cpf}/reset-password`);
-            toast.success(`Palavra-passe reposta! Nova: ${res.data.defaultPassword}`);
+            toast.success(`Senha redefinida! Nova: ${res.data.defaultPassword}`);
             setUsers(users.map(u => u.cpf === cpf ? { ...u, must_change_password: 1 } : u));
         } catch (err) {
-            toast.error("Erro ao repor a palavra-passe.");
+            toast.error("Erro ao redefinir a senha.");
         }
     };
 
@@ -151,6 +188,53 @@ export default function GymControl() {
                             <span className="material-symbols-outlined">close</span>
                         </button>
                         <img src={`${API_URL}${photoModal}`} className="w-full h-full object-contain" alt="Treino Expandido" />
+                    </div>
+                </div>
+            )}
+
+            {addUserModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+                    <div className="liquid-glass w-full max-w-md bg-bg-dark-primary/90 rounded-3xl border border-white/10 shadow-2xl flex flex-col relative">
+                        <div className="p-6 border-b border-white/10 bg-gradient-to-r from-yellow-900/40 to-transparent flex justify-between items-center rounded-t-3xl">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-yellow-400">person_add</span>
+                                Adicionar Convidado
+                            </h2>
+                            <button onClick={() => setAddUserModal(false)} className="text-white/50 hover:text-white"><span className="material-symbols-outlined">close</span></button>
+                        </div>
+                        <form onSubmit={handleAddManualUser} className="p-6 space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-white/70 uppercase tracking-wider">Nome Completo</label>
+                                <input 
+                                    type="text" 
+                                    value={manualUserName} 
+                                    onChange={e => setManualUserName(e.target.value)} 
+                                    placeholder="Ex: João Silva" 
+                                    className="w-full mt-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-yellow-500 transition-colors" 
+                                    required 
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-white/70 uppercase tracking-wider">CPF</label>
+                                <input 
+                                    type="tel" 
+                                    value={manualUserCpf} 
+                                    onChange={handleCpfChange} 
+                                    placeholder="000.000.000-00" 
+                                    className="w-full mt-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-yellow-500 transition-colors" 
+                                    required 
+                                />
+                            </div>
+                            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+                                <p className="text-xs text-yellow-400 font-medium flex items-start gap-2">
+                                    <span className="material-symbols-outlined text-[16px]">info</span>
+                                    A senha padrão será gerada automaticamente usando o primeiro nome minúsculo + os últimos 5 dígitos do CPF.
+                                </p>
+                            </div>
+                            <button type="submit" className="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-xl shadow-lg transition-colors flex justify-center items-center gap-2 mt-2">
+                                <span className="material-symbols-outlined">save</span> Cadastrar e Gerar Senha
+                            </button>
+                        </form>
                     </div>
                 </div>
             )}
@@ -226,6 +310,7 @@ export default function GymControl() {
                 </header>
 
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-12">
+                    
                     <section>
                         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                             <span className="material-symbols-outlined text-orange-500">pending_actions</span>
@@ -304,15 +389,21 @@ export default function GymControl() {
                     </section>
 
                     <section>
-                        <div className="flex items-center justify-between mb-6">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
                             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                <span className="material-symbols-outlined text-blue-400">group_manage</span>
+                                <span className="material-symbols-outlined text-blue-400">manage_accounts</span>
                                 Gestão de Contas (PWA)
                             </h2>
-                            <button onClick={handleSyncUsers} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-600/50 hover:bg-blue-600 hover:text-white transition-colors text-sm font-bold shadow-lg">
-                                <span className="material-symbols-outlined">sync</span>
-                                Sincronizar RH
-                            </button>
+                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                <button onClick={() => setAddUserModal(true)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-yellow-600/20 text-yellow-400 border border-yellow-600/50 hover:bg-yellow-600 hover:text-black transition-colors text-sm font-bold shadow-lg">
+                                    <span className="material-symbols-outlined">person_add</span>
+                                    Adicionar Convidado
+                                </button>
+                                <button onClick={handleSyncUsers} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-600/50 hover:bg-blue-600 hover:text-white transition-colors text-sm font-bold shadow-lg">
+                                    <span className="material-symbols-outlined">sync</span>
+                                    Sincronizar RH
+                                </button>
+                            </div>
                         </div>
 
                         <div className="liquid-glass rounded-3xl border border-white/10 overflow-hidden bg-black/40 shadow-2xl">
@@ -320,7 +411,7 @@ export default function GymControl() {
                                 <table className="w-full text-left border-collapse">
                                     <thead className="bg-[#0d0d0d]/90 border-b border-white/10">
                                         <tr className="text-xs text-text-muted font-black uppercase tracking-widest">
-                                            <th className="p-4 pl-6">Colaborador</th>
+                                            <th className="p-4 pl-6">Colaborador / Convidado</th>
                                             <th className="p-4">CPF (Login)</th>
                                             <th className="p-4 text-center">Estado da Conta</th>
                                             <th className="p-4 text-right pr-6">Ações</th>
@@ -360,19 +451,20 @@ export default function GymControl() {
                                                         className="px-4 py-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/30 transition-all text-xs font-bold uppercase tracking-wider flex items-center gap-2 ml-auto"
                                                     >
                                                         <span className="material-symbols-outlined text-sm">lock_reset</span>
-                                                        Reset Senha
+                                                        Resetar Senha
                                                     </button>
                                                 </td>
                                             </tr>
                                         ))}
                                         {users.length === 0 && (
-                                            <tr><td colSpan="4" className="text-center p-12 text-text-muted">Nenhum utilizador encontrado. Clique em "Sincronizar RH".</td></tr>
+                                            <tr><td colSpan="4" className="text-center p-12 text-text-muted">Nenhum usuário encontrado. Clique em "Sincronizar RH".</td></tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </section>
+
                 </div>
             </main>
         </div>

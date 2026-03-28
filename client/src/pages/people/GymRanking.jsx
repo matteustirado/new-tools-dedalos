@@ -20,9 +20,11 @@ const PodiumItem = ({ user, place }) => {
     
     const heightClass = isGold ? 'h-32' : isSilver ? 'h-24' : 'h-16';
     
-    const bgClass = isGold ? 'bg-gradient-to-t from-yellow-600/40 to-yellow-400/80 border-yellow-400' 
-                  : isSilver ? 'bg-gradient-to-t from-gray-500/40 to-gray-300/80 border-gray-300' 
-                  : 'bg-gradient-to-t from-amber-800/40 to-amber-600/80 border-amber-600';
+    const bgClass = isGold 
+        ? 'bg-gradient-to-t from-yellow-600/40 to-yellow-400/80 border-yellow-400' 
+        : isSilver 
+        ? 'bg-gradient-to-t from-gray-500/40 to-gray-300/80 border-gray-300' 
+        : 'bg-gradient-to-t from-amber-800/40 to-amber-600/80 border-amber-600';
     
     const shadowClass = isGold ? 'shadow-[0_0_30px_rgba(250,204,21,0.4)]' : '';
 
@@ -34,22 +36,32 @@ const PodiumItem = ({ user, place }) => {
                         workspace_premium
                     </span>
                 )}
+                
                 <div className={`w-16 h-16 rounded-full border-2 overflow-hidden bg-black/50 ${bgClass.split(' ')[2]} ${shadowClass} group-hover:scale-110 transition-transform duration-300`}>
                     {user.foto_perfil ? (
-                        <img src={`${API_URL}${user.foto_perfil}`} alt={user.nome} className="w-full h-full object-cover" />
+                        <img 
+                            src={`${API_URL}${user.foto_perfil}`} 
+                            alt={user.nome} 
+                            className="w-full h-full object-cover" 
+                        />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-white/50 bg-black/50">
                             <span className="material-symbols-outlined text-2xl">person</span>
                         </div>
                     )}
                 </div>
-                <div className={`absolute -bottom-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-black bg-white shadow-lg`}>
+                
+                <div className="absolute -bottom-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-black bg-white shadow-lg">
                     {place}
                 </div>
             </div>
             
-            <p className="text-white font-bold text-xs text-center truncate w-full px-1">{user.nome.split(' ')[0]}</p>
-            <p className="text-white/60 text-[10px] font-black tracking-widest">{user.total_checkins} TREINOS</p>
+            <p className="text-white font-bold text-xs text-center truncate w-full px-1">
+                {user.nome.split(' ')[0]}
+            </p>
+            <p className="text-white/60 text-[10px] font-black tracking-widest">
+                {user.total_checkins} TREINOS
+            </p>
             
             <div className={`w-full rounded-t-xl border-t border-x mt-2 backdrop-blur-md ${bgClass} ${heightClass} flex items-start justify-center pt-2 opacity-90`}>
                 <span className="text-white/40 font-black text-3xl drop-shadow-md">{place}</span>
@@ -78,7 +90,12 @@ const PodiumCard = ({ title, data }) => {
 };
 
 export default function GymRanking() {
-    const [rankings, setRankings] = useState({ topAnual: [], topMensalSP: [], topMensalBH: [], rankingGeral: [] });
+    const [rankings, setRankings] = useState({ 
+        topAnual: [], 
+        topMensalSP: [], 
+        topMensalBH: [], 
+        rankingGeral: [] 
+    });
     const [feed, setFeed] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -88,6 +105,7 @@ export default function GymRanking() {
                 axios.get(`${API_URL}/api/gym/rankings`),
                 axios.get(`${API_URL}/api/gym/feed?limit=20`)
             ]);
+            
             setRankings(rankRes.data);
             setFeed(feedRes.data);
         } catch (err) {
@@ -105,7 +123,7 @@ export default function GymRanking() {
 
         socket.on('gym:new_post', (data) => {
             fetchData(); 
-            toast.success(`💪 Novo treino registado na unidade ${data.unidade}!`, { icon: "🍌" });
+            toast.success(`💪 Novo treino registrado na unidade ${data.unidade}!`, { icon: "🍌" });
         });
 
         socket.on('gym:ranking_updated', () => {
@@ -117,12 +135,19 @@ export default function GymRanking() {
 
     const formatDate = (dateString) => {
         if (!dateString) return '--';
+        
         const d = new Date(dateString);
-        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return d.toLocaleDateString('pt-BR', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
     };
 
     const timeAgo = (dateString) => {
         const diff = Math.floor((new Date() - new Date(dateString)) / 1000);
+        
         if (diff < 60) return 'Agora';
         if (diff < 3600) return `${Math.floor(diff / 60)}m atrás`;
         if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
@@ -148,9 +173,13 @@ export default function GymRanking() {
                                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.4)]">
                                     <span className="material-symbols-outlined text-white text-2xl">fitness_center</span>
                                 </div>
-                                <h1 className="text-4xl font-black text-white tracking-tight drop-shadow-md">Banana's Gym</h1>
+                                <h1 className="text-4xl font-black text-white tracking-tight drop-shadow-md">
+                                    Banana's Gym
+                                </h1>
                             </div>
-                            <p className="text-text-muted text-sm ml-16 font-medium">Ranking oficial de assiduidade e Feed de treinos da equipa Dédalos.</p>
+                            <p className="text-text-muted text-sm ml-16 font-medium">
+                                Ranking oficial de assiduidade e Feed de treinos da equipe Dédalos.
+                            </p>
                         </div>
                     </header>
 
@@ -186,34 +215,60 @@ export default function GymRanking() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {rankings.rankingGeral.map((user, idx) => (
-                                                <tr key={user.colaborador_id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                                    <td className="p-4 pl-6">
-                                                        <span className={`font-black text-sm w-8 h-8 flex items-center justify-center rounded-full shadow-lg ${idx === 0 ? 'bg-yellow-500 text-black shadow-yellow-500/30' : idx === 1 ? 'bg-gray-300 text-black' : idx === 2 ? 'bg-amber-600 text-white' : 'bg-white/5 text-white/50 border border-white/10'}`}>
-                                                            {idx + 1}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-4">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-10 h-10 rounded-full bg-black/50 overflow-hidden border border-white/10 shadow-inner">
-                                                                {user.foto_perfil ? <img src={`${API_URL}${user.foto_perfil}`} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-white/30 flex items-center justify-center w-full h-full">person</span>}
+                                            {rankings.rankingGeral.map((user, idx) => {
+                                                const positionClasses = idx === 0 
+                                                    ? 'bg-yellow-500 text-black shadow-yellow-500/30' 
+                                                    : idx === 1 
+                                                    ? 'bg-gray-300 text-black' 
+                                                    : idx === 2 
+                                                    ? 'bg-amber-600 text-white' 
+                                                    : 'bg-white/5 text-white/50 border border-white/10';
+
+                                                return (
+                                                    <tr key={user.colaborador_id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
+                                                        <td className="p-4 pl-6">
+                                                            <span className={`font-black text-sm w-8 h-8 flex items-center justify-center rounded-full shadow-lg ${positionClasses}`}>
+                                                                {idx + 1}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-full bg-black/50 overflow-hidden border border-white/10 shadow-inner">
+                                                                    {user.foto_perfil ? (
+                                                                        <img src={`${API_URL}${user.foto_perfil}`} className="w-full h-full object-cover" alt={user.nome} />
+                                                                    ) : (
+                                                                        <span className="material-symbols-outlined text-white/30 flex items-center justify-center w-full h-full">person</span>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-white font-bold text-sm group-hover:text-yellow-400 transition-colors">
+                                                                    {user.nome}
+                                                                </span>
                                                             </div>
-                                                            <span className="text-white font-bold text-sm group-hover:text-yellow-400 transition-colors">{user.nome}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-4">
-                                                        <span className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white/70 tracking-widest border border-white/5">{user.unidade}</span>
-                                                    </td>
-                                                    <td className="p-4 text-center">
-                                                        <span className="text-yellow-500 font-black text-xl">{user.total_checkins}</span>
-                                                    </td>
-                                                    <td className="p-4 text-right pr-6">
-                                                        <span className="text-text-muted text-xs font-mono">{formatDate(user.ultimo_checkin)}</span>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <span className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white/70 tracking-widest border border-white/5">
+                                                                {user.unidade}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-center">
+                                                            <span className="text-yellow-500 font-black text-xl">
+                                                                {user.total_checkins}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4 text-right pr-6">
+                                                            <span className="text-text-muted text-xs font-mono">
+                                                                {formatDate(user.ultimo_checkin)}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {rankings.rankingGeral.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="5" className="text-center p-12 text-text-muted">
+                                                        Nenhum check-in registrado neste mês. A equipe está descansando!
                                                     </td>
                                                 </tr>
-                                            ))}
-                                            {rankings.rankingGeral.length === 0 && (
-                                                <tr><td colSpan="5" className="text-center p-12 text-text-muted">Nenhum check-in registado neste mês. A equipa está a descansar!</td></tr>
                                             )}
                                         </tbody>
                                     </table>
@@ -237,20 +292,24 @@ export default function GymRanking() {
                                 </span>
                             </div>
                         </div>
-                        <p className="text-white/50 text-xs font-medium">Acompanhe quem está a treinar agora mesmo.</p>
+                        <p className="text-white/50 text-xs font-medium">
+                            Acompanhe quem está treinando agora mesmo.
+                        </p>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar relative z-10">
                         {loading ? (
                             <div className="space-y-5 animate-pulse">
-                                {[1,2,3].map(i => (
+                                {[1, 2, 3].map(i => (
                                     <div key={i} className="bg-white/5 rounded-2xl h-80 border border-white/5"></div>
                                 ))}
                             </div>
                         ) : feed.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-white/30 p-6 text-center">
                                 <span className="material-symbols-outlined text-6xl mb-4 opacity-50">motion_photos_off</span>
-                                <p className="text-sm font-medium">A timeline está vazia.<br/>O primeiro a treinar inaugura o feed!</p>
+                                <p className="text-sm font-medium">
+                                    A timeline está vazia.<br/>O primeiro a treinar inaugura o feed!
+                                </p>
                             </div>
                         ) : (
                             feed.map((post) => (
@@ -259,16 +318,22 @@ export default function GymRanking() {
                                     <div className="p-4 flex items-center justify-between bg-white/5">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-black/80 overflow-hidden border-2 border-white/10 shadow-inner">
-                                                {post.colaborador_foto ? <img src={`${API_URL}${post.colaborador_foto}`} className="w-full h-full object-cover" /> : <span className="material-symbols-outlined text-white/30 flex items-center justify-center w-full h-full">person</span>}
+                                                {post.colaborador_foto ? (
+                                                    <img src={`${API_URL}${post.colaborador_foto}`} className="w-full h-full object-cover" alt={post.colaborador_nome} />
+                                                ) : (
+                                                    <span className="material-symbols-outlined text-white/30 flex items-center justify-center w-full h-full">person</span>
+                                                )}
                                             </div>
                                             <div>
                                                 <p className="text-white text-sm font-bold leading-tight">{post.colaborador_nome}</p>
                                                 <p className="text-yellow-500 text-[10px] font-bold uppercase tracking-wider mt-0.5">
-                                                    {post.academia_nome || 'A treinar sem localização oficial'}
+                                                    {post.academia_nome || 'Treinando sem localização oficial'}
                                                 </p>
                                             </div>
                                         </div>
-                                        <span className="text-white/40 text-[10px] font-black uppercase tracking-widest bg-black/50 px-2 py-1 rounded-md">{timeAgo(post.created_at)}</span>
+                                        <span className="text-white/40 text-[10px] font-black uppercase tracking-widest bg-black/50 px-2 py-1 rounded-md">
+                                            {timeAgo(post.created_at)}
+                                        </span>
                                     </div>
 
                                     <div className="w-full aspect-square bg-[#0a0a0a] relative group overflow-hidden">

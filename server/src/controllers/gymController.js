@@ -4,15 +4,15 @@ import bcrypt from 'bcrypt';
 
 const calcularDistanciaMetros = (lat1, lon1, lat2, lon2) => {
     const R = 6371e3;
-    const p1 = lat1 * Math.PI / 180;
-    const p2 = lat2 * Math.PI / 180;
-    const deltaP = (lat2 - lat1) * Math.PI / 180;
-    const deltaLon = (lon2 - lon1) * Math.PI / 180;
+    const p1 = (lat1 * Math.PI) / 180;
+    const p2 = (lat2 * Math.PI) / 180;
+    const deltaP = ((lat2 - lat1) * Math.PI) / 180;
+    const deltaLon = ((lon2 - lon1) * Math.PI) / 180;
 
-    const a = Math.sin(deltaP / 2) * Math.sin(deltaP / 2) +
-        Math.cos(p1) * Math.cos(p2) *
-        Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-    
+    const a =
+        Math.sin(deltaP / 2) * Math.sin(deltaP / 2) +
+        Math.cos(p1) * Math.cos(p2) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;
@@ -25,16 +25,16 @@ export const syncEmployeesToGym = async (req, res) => {
 
         for (const emp of employees) {
             const cpf = emp.cpf ? String(emp.cpf).replace(/\D/g, '') : null;
-            
+
             if (!cpf || cpf.length !== 11) continue;
 
             const [existing] = await pool.query("SELECT cpf FROM gym_users WHERE cpf = ?", [cpf]);
-            
+
             if (existing.length === 0) {
                 const firstName = emp.name.split(' ')[0].toLowerCase();
                 const last5Cpf = cpf.slice(-5);
                 const defaultPassword = `${firstName}${last5Cpf}`;
-                
+
                 const salt = await bcrypt.genSalt(10);
                 const hashed = await bcrypt.hash(defaultPassword, salt);
 
@@ -42,7 +42,7 @@ export const syncEmployeesToGym = async (req, res) => {
                     "INSERT INTO gym_users (cpf, nome, senha_hash, foto_perfil) VALUES (?, ?, ?, ?)",
                     [cpf, emp.name, hashed, emp.photo || null]
                 );
-                
+
                 addedCount++;
             }
         }
@@ -52,6 +52,7 @@ export const syncEmployeesToGym = async (req, res) => {
         }
     } catch (err) {
         console.error("[GYM] Erro na sincronização de usuários:", err);
+        
         if (res) {
             res.status(500).json({ error: "Erro interno na sincronização." });
         }
@@ -76,7 +77,7 @@ export const postCheckin = async (req, res) => {
         await connection.beginTransaction();
 
         const [user] = await connection.query("SELECT is_blocked FROM gym_users WHERE cpf = ?", [colaborador_cpf]);
-        
+
         if (user.length === 0 || user[0].is_blocked) {
             await connection.rollback();
             return res.status(403).json({ error: "Acesso negado. Conta bloqueada ou inexistente." });
@@ -84,10 +85,10 @@ export const postCheckin = async (req, res) => {
 
         if (!isNaN(lat) && !isNaN(lng)) {
             const [locations] = await connection.query("SELECT * FROM gym_locations");
-            
+
             for (const loc of locations) {
                 const dist = calcularDistanciaMetros(lat, lng, loc.latitude, loc.longitude);
-                
+
                 if (dist <= loc.raio_metros) {
                     gym_location_id = loc.id;
                     break;
@@ -104,7 +105,7 @@ export const postCheckin = async (req, res) => {
         await connection.commit();
 
         const io = getIO();
-        
+
         if (io) {
             io.emit('gym:new_post', {
                 id: result.insertId,
@@ -145,7 +146,7 @@ export const getFeed = async (req, res) => {
         `;
 
         const [feed] = await pool.query(query, [Number(limit), Number(offset)]);
-        
+
         res.json(feed);
     } catch (err) {
         console.error("[GYM] Erro ao buscar feed:", err);
@@ -179,7 +180,7 @@ export const toggleLike = async (req, res) => {
         }
 
         const io = getIO();
-        
+
         if (io) {
             io.emit('gym:new_like', { checkin_id, action, colaborador_cpf });
         }
@@ -204,7 +205,7 @@ export const postComment = async (req, res) => {
         );
 
         const io = getIO();
-        
+
         if (io) {
             io.emit('gym:new_comment', { checkin_id, comment_id: result.insertId });
         }
@@ -226,32 +227,32 @@ export const getRankings = async (req, res) => {
 
         const [topAnual] = await pool.query(`
             ${baseQuery} AND YEAR(c.created_at) = YEAR(CURRENT_DATE) 
-            GROUP BY c.colaborador_cpf 
+            GROUP BY c.colaborador_cpf, u.nome, u.foto_perfil
             ORDER BY total_checkins DESC LIMIT 3
         `);
 
         const [topMensalSP] = await pool.query(`
             ${baseQuery} AND MONTH(c.created_at) = MONTH(CURRENT_DATE) 
             AND YEAR(c.created_at) = YEAR(CURRENT_DATE) AND c.unidade = 'SP' 
-            GROUP BY c.colaborador_cpf 
+            GROUP BY c.colaborador_cpf, u.nome, u.foto_perfil
             ORDER BY total_checkins DESC LIMIT 3
         `);
 
         const [topMensalBH] = await pool.query(`
             ${baseQuery} AND MONTH(c.created_at) = MONTH(CURRENT_DATE) 
             AND YEAR(c.created_at) = YEAR(CURRENT_DATE) AND c.unidade = 'BH' 
-            GROUP BY c.colaborador_cpf 
+            GROUP BY c.colaborador_cpf, u.nome, u.foto_perfil
             ORDER BY total_checkins DESC LIMIT 3
         `);
 
         const [rankingGeral] = await pool.query(`
-            SELECT c.colaborador_cpf as colaborador_id, u.nome, u.foto_perfil, c.unidade, 
+            SELECT c.colaborador_cpf as colaborador_id, u.nome, u.foto_perfil, MAX(c.unidade) as unidade, 
                    COUNT(*) as total_checkins, MAX(c.created_at) as ultimo_checkin
             FROM gym_checkins c
             LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
             WHERE MONTH(c.created_at) = MONTH(CURRENT_DATE) AND YEAR(c.created_at) = YEAR(CURRENT_DATE) 
               AND (c.imagem_valida IS NULL OR c.imagem_valida = 1)
-            GROUP BY c.colaborador_cpf
+            GROUP BY c.colaborador_cpf, u.nome, u.foto_perfil
             ORDER BY total_checkins DESC
         `);
 
@@ -272,7 +273,7 @@ export const getPendingModeration = async (req, res) => {
             WHERE c.imagem_valida IS NULL OR c.localizacao_valida IS NULL
             ORDER BY c.created_at ASC
         `);
-        
+
         res.json(pending);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -291,12 +292,12 @@ export const moderateCheckin = async (req, res) => {
             updateQuery += "imagem_valida = ?, ";
             queryParams.push(imagem_valida);
         }
-        
+
         if (localizacao_valida !== undefined) {
             updateQuery += "localizacao_valida = ?, ";
             queryParams.push(localizacao_valida);
         }
-        
+
         if (gym_location_id !== undefined) {
             updateQuery += "gym_location_id = ?, ";
             queryParams.push(gym_location_id);
@@ -306,9 +307,9 @@ export const moderateCheckin = async (req, res) => {
         queryParams.push(id);
 
         await pool.query(updateQuery, queryParams);
-        
+
         const io = getIO();
-        
+
         if (io) {
             io.emit('gym:ranking_updated');
         }
@@ -322,7 +323,7 @@ export const moderateCheckin = async (req, res) => {
 export const getGymLocations = async (req, res) => {
     try {
         const [locations] = await pool.query("SELECT * FROM gym_locations");
-        
+
         res.json(locations);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -331,13 +332,13 @@ export const getGymLocations = async (req, res) => {
 
 export const addGymLocation = async (req, res) => {
     const { nome, unidade, latitude, longitude, raio_metros } = req.body;
-    
+
     try {
         const [result] = await pool.query(
             "INSERT INTO gym_locations (nome, unidade, latitude, longitude, raio_metros) VALUES (?, ?, ?, ?, ?)",
             [nome, unidade || 'SP', latitude, longitude, raio_metros || 100]
         );
-        
+
         res.status(201).json({ message: "Localização cadastrada!", location_id: result.insertId });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -347,7 +348,7 @@ export const addGymLocation = async (req, res) => {
 export const getGymUsers = async (req, res) => {
     try {
         const [users] = await pool.query("SELECT cpf, nome, foto_perfil, is_blocked, must_change_password, created_at FROM gym_users ORDER BY nome ASC");
-        
+
         res.json(users);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -360,7 +361,7 @@ export const toggleBlockUser = async (req, res) => {
 
     try {
         await pool.query("UPDATE gym_users SET is_blocked = ? WHERE cpf = ?", [is_blocked, cpf]);
-        
+
         res.json({ message: `Status de bloqueio alterado.` });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -372,20 +373,146 @@ export const resetPassword = async (req, res) => {
 
     try {
         const [users] = await pool.query("SELECT nome FROM gym_users WHERE cpf = ?", [cpf]);
-        
-        if (users.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
+
+        if (users.length === 0) {
+            return res.status(404).json({ error: "Usuário não encontrado." });
+        }
 
         const firstName = users[0].nome.split(' ')[0].toLowerCase();
         const last5Cpf = String(cpf).slice(-5);
         const defaultPassword = `${firstName}${last5Cpf}`;
-        
+
         const salt = await bcrypt.genSalt(10);
         const hashed = await bcrypt.hash(defaultPassword, salt);
 
         await pool.query("UPDATE gym_users SET senha_hash = ?, must_change_password = 1 WHERE cpf = ?", [hashed, cpf]);
-        
+
         res.json({ message: "Senha redefinida com sucesso.", defaultPassword });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+
+export const loginGymUser = async (req, res) => {
+    const { cpf, senha } = req.body;
+
+    if (!cpf || !senha) {
+        return res.status(400).json({ error: "CPF e senha são obrigatórios." });
+    }
+
+    try {
+        const cleanCpf = String(cpf).replace(/\D/g, '');
+
+        const [users] = await pool.query("SELECT * FROM gym_users WHERE cpf = ?", [cleanCpf]);
+        
+        if (users.length === 0) {
+            return res.status(401).json({ error: "CPF não encontrado no sistema." });
+        }
+
+        const user = users[0];
+
+        if (user.is_blocked) {
+            return res.status(403).json({ error: "Acesso bloqueado. Procure o RH." });
+        }
+
+        const validPassword = await bcrypt.compare(senha, user.senha_hash);
+        
+        if (!validPassword) {
+            return res.status(401).json({ error: "Senha incorreta." });
+        }
+
+        res.json({
+            message: "Login efetuado com sucesso.",
+            user: {
+                cpf: user.cpf,
+                nome: user.nome,
+                foto_perfil: user.foto_perfil,
+                must_change_password: user.must_change_password
+            }
+        });
+    } catch (err) {
+        console.error("[GYM LOGIN]", err);
+        res.status(500).json({ error: "Erro interno no servidor." });
+    }
+};
+
+export const changeUserPassword = async (req, res) => {
+    const { cpf, senha_atual, nova_senha } = req.body;
+
+    if (!cpf || !senha_atual || !nova_senha) {
+        return res.status(400).json({ error: "CPF, senha atual e nova senha são obrigatórios." });
+    }
+
+    try {
+        const cleanCpf = String(cpf).replace(/\D/g, '');
+
+        const [users] = await pool.query("SELECT * FROM gym_users WHERE cpf = ?", [cleanCpf]);
+        
+        if (users.length === 0) {
+            return res.status(404).json({ error: "Usuário não encontrado." });
+        }
+
+        const user = users[0];
+
+        const validPassword = await bcrypt.compare(senha_atual, user.senha_hash);
+        
+        if (!validPassword) {
+            return res.status(401).json({ error: "Senha atual incorreta." });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashed = await bcrypt.hash(nova_senha, salt);
+
+        await pool.query(
+            "UPDATE gym_users SET senha_hash = ?, must_change_password = 0 WHERE cpf = ?",
+            [hashed, cleanCpf]
+        );
+
+        res.json({ message: "Senha atualizada com sucesso!" });
+    } catch (err) {
+        console.error("[GYM CHANGE PASSWORD]", err);
+        res.status(500).json({ error: "Erro interno ao atualizar a senha." });
+    }
+};
+
+export const addManualUser = async (req, res) => {
+    const { cpf, nome } = req.body;
+
+    if (!cpf || !nome) {
+        return res.status(400).json({ error: "CPF e Nome são obrigatórios." });
+    }
+
+    try {
+        const cleanCpf = String(cpf).replace(/\D/g, '');
+        
+        if (cleanCpf.length !== 11) {
+            return res.status(400).json({ error: "CPF inválido." });
+        }
+
+        const [existing] = await pool.query("SELECT cpf FROM gym_users WHERE cpf = ?", [cleanCpf]);
+        
+        if (existing.length > 0) {
+            return res.status(400).json({ error: "Este CPF já está cadastrado no sistema." });
+        }
+
+        const firstName = nome.split(' ')[0].toLowerCase();
+        const last5Cpf = cleanCpf.slice(-5);
+        const defaultPassword = `${firstName}${last5Cpf}`;
+
+        const salt = await bcrypt.genSalt(10);
+        const hashed = await bcrypt.hash(defaultPassword, salt);
+
+        await pool.query(
+            "INSERT INTO gym_users (cpf, nome, senha_hash, must_change_password) VALUES (?, ?, ?, 1)",
+            [cleanCpf, nome, hashed]
+        );
+
+        res.status(201).json({
+            message: "Convidado adicionado com sucesso!",
+            defaultPassword
+        });
+    } catch (err) {
+        console.error("[GYM ADD MANUAL USER]", err);
+        res.status(500).json({ error: "Erro interno ao adicionar usuário." });
     }
 };
