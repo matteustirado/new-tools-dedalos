@@ -18,7 +18,10 @@ import {
     resetPassword,
     loginGymUser,
     changeUserPassword,
-    addManualUser
+    addManualUser,
+    getUserProfile,
+    getCommunity,
+    editUserProfile 
 } from '../controllers/gymController.js';
 
 const router = express.Router();
@@ -29,19 +32,22 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'gym-' + uniqueSuffix + path.extname(file.originalname));
+        const fileExtension = path.extname(file.originalname);
+        cb(null, `gym-${uniqueSuffix}${fileExtension}`);
     }
 });
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: { 
+        fileSize: 5 * 1024 * 1024 
+    },
     fileFilter: (req, file, cb) => {
-        const filetypes = /jpeg|jpg|png|webp/;
-        const mimetype = filetypes.test(file.mimetype);
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+        const allowedFileTypes = /jpeg|jpg|png|webp/;
+        const isMimeTypeValid = allowedFileTypes.test(file.mimetype);
+        const isExtNameValid = allowedFileTypes.test(path.extname(file.originalname).toLowerCase());
 
-        if (mimetype && extname) {
+        if (isMimeTypeValid && isExtNameValid) {
             return cb(null, true);
         }
         
@@ -56,6 +62,10 @@ router.post('/checkin', upload.single('foto_treino'), postCheckin);
 router.get('/feed', getFeed);
 router.post('/like', toggleLike);
 router.post('/comment', postComment);
+
+router.put('/profile/edit', upload.single('foto_perfil'), editUserProfile);
+router.get('/profile/:cpf', getUserProfile);
+router.get('/community', getCommunity);
 
 router.get('/rankings', getRankings);
 

@@ -13,7 +13,7 @@ export default function MainLayout() {
 
       <TopBar />
 
-      <main className="relative z-10 flex-1 pt-24 pb-32 px-4 max-w-md mx-auto w-full animate-fade-in-up">
+      <main className="relative z-10 flex-1 pt-24 pb-32 max-w-md mx-auto w-full animate-fade-in-up">
         <Outlet />
       </main>
 
