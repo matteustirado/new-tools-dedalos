@@ -27,7 +27,7 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
   const handleDrop = (e, slot) => {
     e.preventDefault();
     setDragOverSlot(null);
-    onDropPlaylist(slot, e.dataTransfer.getData("playlistData"));
+    onDropPlaylist(slot, e.dataTransfer.getData('playlistData'));
   };
 
   const formatSlotTime = (slotIndex) => {
@@ -64,7 +64,7 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
 
   return (
     <div className="relative space-y-0">
-      {slots.map(slot => {
+      {slots.map((slot) => {
         const scheduledItem = scheduleData ? scheduleData[slot] : null;
         const timeString = formatSlotTime(slot);
         const isDragOver = dragOverSlot === slot;
@@ -72,15 +72,19 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
 
         let playlistHeight = SLOT_HEIGHT;
         let slotsOccupied = 0;
+        let isCut = false;
 
         if (scheduledItem) {
+          const durationInSlots = Math.ceil((scheduledItem.duration_seconds || 0) / SLOT_DURATION_SECONDS);
           const currentIndex = activeSlots.indexOf(slot);
+          
           const nextSlot = (currentIndex !== -1 && currentIndex < activeSlots.length - 1) 
             ? activeSlots[currentIndex + 1] 
             : SLOTS_PER_DAY; 
           
           slotsOccupied = nextSlot - slot;
           playlistHeight = Math.max(slotsOccupied * SLOT_HEIGHT, SLOT_HEIGHT);
+          isCut = durationInSlots > slotsOccupied;
         }
 
         const durationString = scheduledItem ? formatDuration(scheduledItem.duration_seconds) : '';
@@ -109,21 +113,33 @@ const SlotScheduleList = ({ scheduleData, onDropPlaylist, onRemovePlaylist, load
 
             {scheduledItem && (
               <div
-                className="absolute left-[44px] right-0 top-0 z-10 p-1 pl-2 bg-primary/30 border-l-[3px] border-primary/70 rounded-r-md text-sm group overflow-hidden shadow-lg backdrop-blur-sm transition-all hover:bg-primary/40 hover:z-30"
+                className={`absolute left-[44px] right-0 top-0 z-10 p-1 pl-2 bg-primary/30 border-l-[3px] border-l-primary/70 rounded-r-md text-sm group overflow-hidden shadow-lg backdrop-blur-sm transition-all hover:bg-primary/40 hover:z-30 ${
+                  isCut ? 'border-b-2 border-b-red-500/80 border-dashed rounded-br-none' : ''
+                }`}
                 style={{
                   height: `${playlistHeight - 2}px`,
                   marginTop: '1px'
                 }}
                 title={`${scheduledItem.playlist_nome} (Duração original: ${durationString})`}
               >
-                <div className="flex justify-between items-start h-full">
-                  <div className='min-w-0 flex-1 -mt-1'>
+                {isCut && (
+                  <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-red-500/20 to-transparent pointer-events-none"></div>
+                )}
+                
+                <div className="flex justify-between items-start h-full relative z-10">
+                  <div className="min-w-0 flex-1 -mt-1">
                     <p className="text-white font-bold text-xs truncate leading-tight drop-shadow-md">
                       {scheduledItem.playlist_nome}
                     </p>
                     {slotsOccupied > 2 && (
-                      <p className='text-[10px] font-semibold text-primary/80 truncate leading-none mt-1'>
+                      <p className="text-[10px] font-semibold text-primary/80 truncate leading-none mt-1">
                         Toca até {formatSlotTime(slot + slotsOccupied)}
+                      </p>
+                    )}
+                    {isCut && slotsOccupied > 3 && (
+                      <p className="text-[9px] text-red-300 font-bold uppercase tracking-wider mt-1 flex items-center gap-1 drop-shadow-md">
+                        <span className="material-symbols-outlined text-[10px]">content_cut</span>
+                        Cortada pela próxima
                       </p>
                     )}
                   </div>
@@ -207,17 +223,21 @@ const getDatesForDayOfWeekInMonth = (year, month, dayOfWeek) => {
 
 export default function Schedule() {
   const navigate = useNavigate();
+  
   const [playlists, setPlaylists] = useState([]);
   const [allTracks, setAllTracks] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);
+  
   const [originalClickedDate, setOriginalClickedDate] = useState(getTodayAtMidnightLocal());
   const [viewMode, setViewMode] = useState('selectingDays');
   const [selectedDates, setSelectedDates] = useState([getTodayAtMidnightLocal()]);
+  
   const [currentSchedule, setCurrentSchedule] = useState({});
   const [repeatRule, setRepeatRule] = useState('NENHUMA');
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  
   const [activeStartDate, setActiveStartDate] = useState(new Date());
   const [scheduledDatesInMonth, setScheduledDatesInMonth] = useState([]);
   const [loadingMonthSummary, setLoadingMonthSummary] = useState(false);
@@ -263,6 +283,7 @@ export default function Schedule() {
         setLoadingMonthSummary(false);
       }
     };
+    
     const timer = setTimeout(fetchMonthSummary, 100);
     return () => clearTimeout(timer);
   }, [activeStartDate]);
@@ -274,7 +295,7 @@ export default function Schedule() {
     const trackIds = Array.isArray(playlist.tracks_ids) ? playlist.tracks_ids : [];
     let totalDurationSeconds = 0;
     
-    trackIds.forEach(id => {
+    trackIds.forEach((id) => {
       const track = allTracks.find(t => t.id === Number(id));
       if (track) {
         const end = track.end_segundos ?? track.duracao_segundos;
@@ -332,7 +353,7 @@ export default function Schedule() {
         const response = await axios.get(`${API_URL}/api/agendamentos/${dateString}`);
         setCurrentSchedule(response.data || {});
       } catch (err) {
-        toast.error(`Não foi possível carregar o agendamento.`);
+        toast.error("Não foi possível carregar o agendamento.");
         setCurrentSchedule({});
       } finally {
         setLoadingSchedule(false);
@@ -359,7 +380,7 @@ export default function Schedule() {
       const durationSeconds = calculateDurationStringToSeconds(details.duration);
       if (durationSeconds <= 0) return;
 
-      setCurrentSchedule(prev => ({
+      setCurrentSchedule((prev) => ({
         ...prev,
         [targetSlot]: {
           playlist_id: playlistData.playlist_id,
@@ -373,7 +394,7 @@ export default function Schedule() {
   };
 
   const handleRemovePlaylistFromSlot = (slot) => {
-    setCurrentSchedule(prev => {
+    setCurrentSchedule((prev) => {
       const newSchedule = { ...prev };
       delete newSchedule[slot];
       return newSchedule;
@@ -382,8 +403,8 @@ export default function Schedule() {
 
   const openAddModal = (playlist) => {
     if (viewMode !== 'editingGrade') {
-        toast.warn("Por favor, selecione um dia no calendário e clique em 'Gerenciar Agendamento' antes de adicionar.");
-        return;
+      toast.warn("Por favor, selecione um dia no calendário e clique em 'Gerenciar Agendamento' antes de adicionar.");
+      return;
     }
     setTargetPlaylist(playlist);
     setModalTime('12:00');
@@ -411,7 +432,7 @@ export default function Schedule() {
     setSavingSchedule(true);
     try {
       const scheduleToSend = {};
-      Object.keys(currentSchedule).forEach(slot => {
+      Object.keys(currentSchedule).forEach((slot) => {
         if (currentSchedule[slot]?.playlist_id) {
           scheduleToSend[slot] = { playlist_id: currentSchedule[slot].playlist_id };
         }
@@ -452,7 +473,7 @@ export default function Schedule() {
 
   const handleClearSchedule = () => {
     if (window.confirm("Isso irá remover toda a programação visual desta grade. Continuar?")) {
-        setCurrentSchedule({});
+      setCurrentSchedule({});
     }
   };
 
@@ -523,11 +544,11 @@ export default function Schedule() {
                           <p className="text-text-muted text-xs">{details.count} músicas • {details.duration}</p>
                         </div>
                         <button 
-                            onClick={() => openAddModal(playlist)}
-                            className="w-8 h-8 rounded-full bg-primary/20 text-primary hover:bg-primary hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-primary/30 shrink-0"
-                            title="Agendar horário manual"
+                          onClick={() => openAddModal(playlist)}
+                          className="w-8 h-8 rounded-full bg-primary/20 text-primary hover:bg-primary hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-primary/30 shrink-0"
+                          title="Agendar horário manual"
                         >
-                            <span className="material-symbols-outlined text-sm">add</span>
+                          <span className="material-symbols-outlined text-sm">add</span>
                         </button>
                         <span className="material-symbols-outlined text-text-muted/30 text-lg group-hover:text-primary transition-colors cursor-grab active:cursor-grabbing">drag_indicator</span>
                       </div>
@@ -651,46 +672,45 @@ export default function Schedule() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="liquid-glass bg-[#121212]/95 border border-white/20 rounded-3xl p-8 max-w-sm w-full shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary">schedule</span>
-                        Definir Horário
-                    </h2>
-                    <button onClick={() => setShowAddModal(false)} className="text-text-muted hover:text-white transition-colors">
-                        <span className="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-                
-                <div className="bg-black/30 rounded-xl p-4 mb-6 border border-white/5">
-                    <p className="text-white font-bold truncate text-sm">{targetPlaylist?.nome}</p>
-                    <p className="text-text-muted text-xs mt-1">A playlist entrará no ar neste momento exato.</p>
-                </div>
-
-                <div className="mb-8">
-                    <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-2 ml-1">Hora de Início</label>
-                    <input 
-                        type="time" 
-                        step="600"
-                        className="w-full bg-black/50 border border-white/20 rounded-xl px-4 py-3 text-white text-xl text-center font-mono outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-                        value={modalTime}
-                        onChange={(e) => setModalTime(e.target.value)}
-                    />
-                    <p className="text-[10px] text-text-muted text-center mt-2">A grade é dividida em blocos de 10 minutos.</p>
-                </div>
-
-                <div className="flex gap-3">
-                    <button onClick={() => setShowAddModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-colors border border-white/10">
-                        Cancelar
-                    </button>
-                    <button onClick={confirmModalAdd} className="flex-1 bg-primary hover:bg-primary/80 shadow-lg shadow-primary/30 text-white font-bold py-3 rounded-xl transition-all">
-                        Injetar na Grade
-                    </button>
-                </div>
+          <div className="liquid-glass bg-[#121212]/95 border border-white/20 rounded-3xl p-8 max-w-sm w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">schedule</span>
+                Definir Horário
+              </h2>
+              <button onClick={() => setShowAddModal(false)} className="text-text-muted hover:text-white transition-colors">
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
+            
+            <div className="bg-black/30 rounded-xl p-4 mb-6 border border-white/5">
+              <p className="text-white font-bold truncate text-sm">{targetPlaylist?.nome}</p>
+              <p className="text-text-muted text-xs mt-1">A playlist entrará no ar neste momento exato.</p>
+            </div>
+
+            <div className="mb-8">
+              <label className="block text-xs font-bold text-text-muted uppercase tracking-widest mb-2 ml-1">Hora de Início</label>
+              <input 
+                type="time" 
+                step="600"
+                className="w-full bg-black/50 border border-white/20 rounded-xl px-4 py-3 text-white text-xl text-center font-mono outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                value={modalTime}
+                onChange={(e) => setModalTime(e.target.value)}
+              />
+              <p className="text-[10px] text-text-muted text-center mt-2">A grade é dividida em blocos de 10 minutos.</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowAddModal(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-3 rounded-xl transition-colors border border-white/10">
+                Cancelar
+              </button>
+              <button onClick={confirmModalAdd} className="flex-1 bg-primary hover:bg-primary/80 shadow-lg shadow-primary/30 text-white font-bold py-3 rounded-xl transition-all">
+                Injetar na Grade
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
     </div>
   );
 }

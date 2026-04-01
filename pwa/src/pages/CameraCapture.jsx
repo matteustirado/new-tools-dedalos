@@ -68,12 +68,33 @@ export default function CameraCapture() {
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const targetRatio = 4 / 5;
+    const videoRatio = video.videoWidth / video.videoHeight;
+    
+    let cropWidth;
+    let cropHeight;
+
+    if (videoRatio > targetRatio) {
+      cropHeight = video.videoHeight;
+      cropWidth = cropHeight * targetRatio;
+    } else {
+      cropWidth = video.videoWidth;
+      cropHeight = cropWidth / targetRatio;
+    }
+    
+    const startX = (video.videoWidth - cropWidth) / 2;
+    const startY = (video.videoHeight - cropHeight) / 2;
+
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
+    
+    ctx.drawImage(
+      video,
+      startX, startY, cropWidth, cropHeight, 
+      0, 0, cropWidth, cropHeight            
+    );
     
     const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
@@ -87,7 +108,6 @@ export default function CameraCapture() {
 
   return (
     <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-      
       <div className="absolute top-6 left-6 z-10">
         <button 
           onClick={() => navigate(-1)} 
@@ -112,13 +132,15 @@ export default function CameraCapture() {
           </div>
         )}
         
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          className={`w-full h-full object-cover ${!hasPermission ? 'hidden' : ''}`}
-        />
+        <div className="w-full aspect-[4/5] relative overflow-hidden bg-black flex items-center justify-center">
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline 
+            muted 
+            className={`absolute min-w-full min-h-full object-cover ${!hasPermission ? 'hidden' : ''}`}
+          />
+        </div>
         
         <canvas ref={canvasRef} className="hidden" />
       </div>
@@ -133,7 +155,6 @@ export default function CameraCapture() {
           </button>
         )}
       </div>
-
     </div>
   );
 }

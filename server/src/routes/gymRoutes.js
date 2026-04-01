@@ -5,7 +5,8 @@ import path from 'path';
 import { 
     postCheckin, 
     getFeed, 
-    toggleLike, 
+    toggleLike,
+    toggleBanana, 
     postComment, 
     getRankings, 
     getPendingModeration,
@@ -21,7 +22,13 @@ import {
     addManualUser,
     getUserProfile,
     getCommunity,
-    editUserProfile 
+    editUserProfile,
+    backfillUsernames,
+    getPostById,
+    updatePost,
+    archivePost,
+    unarchivePost,
+    deleteComment
 } from '../controllers/gymController.js';
 
 const router = express.Router();
@@ -40,7 +47,7 @@ const storage = multer.diskStorage({
 const upload = multer({ 
     storage,
     limits: { 
-        fileSize: 5 * 1024 * 1024 
+        fileSize: 15 * 1024 * 1024 
     },
     fileFilter: (req, file, cb) => {
         const allowedFileTypes = /jpeg|jpg|png|webp/;
@@ -60,8 +67,14 @@ router.put('/change-password', changeUserPassword);
 
 router.post('/checkin', upload.single('foto_treino'), postCheckin);
 router.get('/feed', getFeed);
+router.get('/post/:id', getPostById);
+router.put('/post/:id/edit', updatePost);
+router.put('/post/:id/archive', archivePost);
+router.put('/post/:id/unarchive', unarchivePost);
 router.post('/like', toggleLike);
+router.post('/banana', toggleBanana); 
 router.post('/comment', postComment);
+router.delete('/comment/:id', deleteComment);
 
 router.put('/profile/edit', upload.single('foto_perfil'), editUserProfile);
 router.get('/profile/:cpf', getUserProfile);
@@ -77,6 +90,7 @@ router.post('/locations', addGymLocation);
 
 router.post('/sync-users', syncEmployeesToGym);
 router.post('/users/manual', addManualUser);
+router.post('/backfill-usernames', backfillUsernames);
 router.get('/users', getGymUsers);
 router.put('/users/:cpf/toggle-block', toggleBlockUser);
 router.put('/users/:cpf/reset-password', resetPassword);

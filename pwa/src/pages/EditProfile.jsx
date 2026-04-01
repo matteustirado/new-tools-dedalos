@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronLeft, Camera, LogOut, AlertOctagon, Save, X, Lock, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -8,6 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function EditProfile() {
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef(null);
 
   const [user, setUser] = useState(null);
@@ -36,6 +37,7 @@ export default function EditProfile() {
 
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
+  const [removerFoto, setRemoverFoto] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gym_user');
@@ -47,8 +49,42 @@ export default function EditProfile() {
     
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
-    fetchCurrentData(parsedUser.cpf);
-  }, [navigate]);
+
+    const tempData = sessionStorage.getItem('temp_profile_data');
+    const tempPreview = sessionStorage.getItem('temp_profile_preview');
+    
+    if (tempData) {
+      setFormData(JSON.parse(tempData));
+      sessionStorage.removeItem('temp_profile_data');
+    }
+    
+    if (location.state?.croppedImage) {
+      const croppedBase64 = location.state.croppedImage;
+      setFotoPreview(croppedBase64);
+      setRemoverFoto(false);
+      sessionStorage.removeItem('temp_profile_preview');
+      
+      const arr = croppedBase64.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      
+      const file = new File([u8arr], "perfil.jpg", { type: mime });
+      setFotoFile(file);
+    } else if (tempData) {
+      if (tempPreview) {
+        setFotoPreview(tempPreview);
+        sessionStorage.removeItem('temp_profile_preview');
+      }
+    } else {
+      fetchCurrentData(parsedUser.cpf);
+    }
+  }, [navigate, location.state]);
 
   const fetchCurrentData = async (cpf) => {
     try {
@@ -67,7 +103,7 @@ export default function EditProfile() {
       }));
 
       if (data.foto_perfil) {
-        setFotoPreview(`${API_URL}${data.foto_perfil}`);
+        setUser(prev => prev ? { ...prev, foto_perfil: data.foto_perfil } : prev);
       }
     } catch (err) {
       toast.error('Erro ao carregar seus dados.');
@@ -82,11 +118,39 @@ export default function EditProfile() {
     fileInputRef.current.click();
   };
 
+  const handleRemovePhoto = () => {
+    setFotoPreview(null);
+    setFotoFile(null);
+    setRemoverFoto(true);
+  };
+
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
+    
     if (file) {
-      setFotoFile(file);
-      setFotoPreview(URL.createObjectURL(file));
+      if (!file.type.startsWith('image/')) {
+        toast.error('Por favor, selecione apenas imagens.');
+        return;
+      }
+
+      sessionStorage.setItem('temp_profile_data', JSON.stringify(formData));
+      
+      if (fotoPreview) {
+        sessionStorage.setItem('temp_profile_preview', fotoPreview);
+      }
+
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        navigate('/crop', { 
+          state: { 
+            photo: reader.result, 
+            returnTo: '/edit-profile' 
+          } 
+        });
+      };
+      
+      reader.readAsDataURL(file);
     }
   };
 
@@ -138,6 +202,10 @@ export default function EditProfile() {
         data.append('foto_perfil', fotoFile);
       }
 
+      if (removerFoto) {
+        data.append('remover_foto', 'true');
+      }
+
       const res = await axios.put(`${API_URL}/api/gym/profile/edit`, data, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -146,7 +214,7 @@ export default function EditProfile() {
         ...user, 
         nome: formData.nome || user.nome,
         username: formData.username || user.username,
-        foto_perfil: res.data.nova_foto_url || user.foto_perfil 
+        foto_perfil: removerFoto ? null : (res.data.nova_foto_url || user.foto_perfil) 
       };
       
       localStorage.setItem('gym_user', JSON.stringify(updatedUser));
@@ -190,6 +258,13 @@ export default function EditProfile() {
 
   if (!user) return null;
 
+  let displayPhoto = null;
+  if (fotoPreview) {
+    displayPhoto = fotoPreview;
+  } else if (user?.foto_perfil && !removerFoto) {
+    displayPhoto = `${API_URL}${user.foto_perfil}`;
+  }
+
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col relative overflow-x-hidden pb-10">
       
@@ -210,8 +285,8 @@ export default function EditProfile() {
             onClick={handlePhotoClick}
             className="w-24 h-24 rounded-full bg-white/5 border-2 border-white/10 overflow-hidden relative cursor-pointer group shadow-lg"
           >
-            {fotoPreview ? (
-              <img src={fotoPreview} alt="Preview" className="w-full h-full object-cover" />
+            {displayPhoto ? (
+              <img src={displayPhoto} alt="Preview" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-white/30 font-black text-2xl">
                 {user.username ? user.username.charAt(0).toUpperCase() : user.nome.charAt(0)}
@@ -221,9 +296,17 @@ export default function EditProfile() {
               <Camera size={24} className="text-white" />
             </div>
           </div>
-          <button onClick={handlePhotoClick} className="text-sm font-bold text-yellow-500 mt-3">
+          
+          <button type="button" onClick={handlePhotoClick} className="text-sm font-bold text-yellow-500 mt-4 hover:underline">
             Alterar foto de perfil
           </button>
+
+          {displayPhoto && (
+            <button type="button" onClick={handleRemovePhoto} className="text-sm font-bold text-red-500 mt-2 hover:underline transition-colors">
+              Remover foto de perfil
+            </button>
+          )}
+
           <input 
             type="file" 
             ref={fileInputRef} 

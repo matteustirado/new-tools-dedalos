@@ -104,6 +104,13 @@ export default function Ranking() {
       setFilteredRanking(mock);
     } finally {
       setLoading(false);
+      
+      setTimeout(() => {
+        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+        if (savedPosition) {
+          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+        }
+      }, 50);
     }
   };
 
@@ -129,7 +136,7 @@ export default function Ranking() {
   const third = ranking[2] || null;
 
   return (
-    <div className="w-full relative overflow-x-hidden min-h-screen pb-24 flex flex-col bg-[#050505]">
+    <div className="w-full relative overflow-x-hidden min-h-screen pb-24 flex flex-col bg-[#050505] animate-page-transition">
       <div className="w-full pt-10 pb-6 bg-[#050505] flex items-center justify-center gap-6 md:gap-10 border-b border-white/5 shadow-lg relative z-20">
         <TopCircle user={second} position={2} />
         <TopCircle user={first} position={1} />

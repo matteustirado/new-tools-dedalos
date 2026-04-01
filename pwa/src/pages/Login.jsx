@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { User, Lock, Eye, EyeOff, LogIn, X, Send, KeyRound } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, LogIn, X, Send, KeyRound, Check } from 'lucide-react';
+
+// Importando o nosso novo ícone de Banana
+import BananasIcon from '../components/BananasIcon';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -12,6 +15,7 @@ export default function Login() {
   const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberData, setRememberData] = useState(false); // Novo estado do Checkbox
   const [loading, setLoading] = useState(false);
 
   const [showResetModal, setShowResetModal] = useState(false);
@@ -22,7 +26,21 @@ export default function Login() {
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
-  }, []);
+
+    // 1. REDIRECIONAMENTO AUTOMÁTICO (Resolve o problema de "esquecer" o login)
+    const storedUser = localStorage.getItem('gym_user');
+    if (storedUser) {
+      navigate('/feed');
+      return; // Para a execução da tela de login aqui
+    }
+
+    // 2. BUSCA O CPF SALVO (Caso o usuário tenha deslogado mas marcado "Lembrar CPF")
+    const savedCpf = localStorage.getItem('gym_saved_cpf');
+    if (savedCpf) {
+      setCpf(savedCpf);
+      setRememberData(true);
+    }
+  }, [navigate]);
 
   const handleCpfChange = (e, setter) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -49,12 +67,23 @@ export default function Login() {
     try {
       const res = await axios.post(`${API_URL}/api/gym/login`, { cpf, senha });
       
+      // Salva o usuário no localStorage para mantê-lo conectado
       localStorage.setItem('gym_user', JSON.stringify(res.data.user));
+
+      // Lógica do Checkbox: Salva ou remove apenas o CPF da memória
+      if (rememberData) {
+        localStorage.setItem('gym_saved_cpf', cpf);
+      } else {
+        localStorage.removeItem('gym_saved_cpf');
+      }
+
       toast.success(`Bem-vindo, ${res.data.user.nome.split(' ')[0]}!`);
       
       if (res.data.user.must_change_password) {
         navigate('/change-password');
       } else {
+        // Gatilho para a Splash Screen rodar lá no Feed!
+        sessionStorage.setItem('just_logged_in', 'true');
         navigate('/feed');
       }
     } catch (err) {
@@ -107,9 +136,11 @@ export default function Login() {
 
       <div className="relative z-10 w-full max-w-md mx-auto animate-fade-in-up flex-1 flex flex-col justify-center">
         <div className="flex flex-col items-center mb-10">
+          
           <div className="w-24 h-24 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-3xl flex items-center justify-center shadow-[0_0_40px_rgba(234,179,8,0.3)] mb-6 transform rotate-6 animate-float border-2 border-yellow-300/50">
-            <span className="text-5xl drop-shadow-md -rotate-6">🍌</span>
+            <BananasIcon type="filled" size={75} className="drop-shadow-md -rotate-6" />
           </div>
+
           <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-md">Banana's Gym</h1>
           <p className="text-white/60 text-sm mt-2 font-medium">O seu app de treinos do ecossistema Dédalos.</p>
         </div>
@@ -150,10 +181,25 @@ export default function Login() {
             </div>
           </div>
 
+          {/* CHECKBOX CUSTOMIZADO: LEMBRAR MEUS DADOS */}
+          <div 
+            className="flex items-center gap-2 mt-2 px-1 cursor-pointer w-max"
+            onClick={() => setRememberData(!rememberData)}
+          >
+            <div className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+              rememberData ? 'bg-yellow-500 border-yellow-500' : 'bg-black/50 border border-white/20'
+            }`}>
+              {rememberData && <Check size={14} className="text-black stroke-[3px]" />}
+            </div>
+            <span className="text-xs font-bold text-white/70 select-none hover:text-white transition-colors">
+              Lembrar meu CPF
+            </span>
+          </div>
+
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl shadow-[0_10px_20px_rgba(234,179,8,0.2)] transition-all flex items-center justify-center gap-2 mt-4 active:scale-95 disabled:opacity-70 disabled:active:scale-100"
+            className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-xl shadow-[0_10px_20px_rgba(234,179,8,0.2)] transition-all flex items-center justify-center gap-2 mt-2 active:scale-95 disabled:opacity-70 disabled:active:scale-100"
           >
             {loading ? (
               <div className="w-6 h-6 border-2 border-black/30 border-t-black rounded-full animate-spin"></div>

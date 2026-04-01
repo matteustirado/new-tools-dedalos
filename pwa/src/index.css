@@ -3,8 +3,11 @@
 @tailwind utilities;
 
 @layer base {
-  html, body {
-    @apply bg-light-base dark:bg-dark-base text-light-text dark:text-dark-text antialiased transition-colors duration-300;
+  html, body, #root {
+    background-color: #050505;
+    color: #ffffff;
+    min-height: 100vh;
+    @apply antialiased transition-colors duration-300;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
   }
@@ -22,5 +25,20 @@
 @layer components {
   .liquid-glass {
     @apply bg-light-glass dark:bg-dark-glass border border-light-border dark:border-dark-border backdrop-blur-xl shadow-glass-light dark:shadow-glass-dark;
+  }
+}
+
+@layer utilities {
+  .animate-page-transition {
+    animation: pageTransition 0.25s ease-out forwards;
+  }
+
+  @keyframes pageTransition {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
   }
 }

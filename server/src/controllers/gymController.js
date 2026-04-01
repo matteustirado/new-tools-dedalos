@@ -136,8 +136,9 @@ export const postCheckin = async (req, res) => {
 };
 
 export const getFeed = async (req, res) => {
-  const { page = 1, limit = 20 } = req.query;
+  const { page = 1, limit = 20, cpf } = req.query;
   const offset = (page - 1) * limit;
+  const cleanCpf = cpf ? String(cpf).replace(/\D/g, '') : null;
 
   try {
     const query = `
@@ -147,18 +148,33 @@ export const getFeed = async (req, res) => {
         u.nome AS colaborador_nome, u.username AS colaborador_username, u.foto_perfil AS colaborador_foto,
         l.nome AS academia_nome,
         (SELECT COUNT(*) FROM gym_likes WHERE checkin_id = c.id) AS likes_count,
+        (SELECT COUNT(*) FROM gym_bananas WHERE checkin_id = c.id) AS bananas_count,
         (SELECT COUNT(*) FROM gym_comments WHERE checkin_id = c.id) AS comments_count
+        ${cleanCpf ? `, EXISTS(SELECT 1 FROM gym_likes WHERE checkin_id = c.id AND colaborador_id = ?) AS likedByMe` : ''}
+        ${cleanCpf ? `, EXISTS(SELECT 1 FROM gym_bananas WHERE checkin_id = c.id AND colaborador_cpf = ?) AS bananadByMe` : ''}
       FROM gym_checkins c
       LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
       LEFT JOIN gym_locations l ON c.gym_location_id = l.id
-      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1)
+      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1) AND (c.arquivado IS NULL OR c.arquivado = 0)
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?
     `;
 
-    const [feed] = await pool.query(query, [Number(limit), Number(offset)]);
+    let params = [];
+    if (cleanCpf) {
+      params.push(cleanCpf, cleanCpf);
+    }
+    params.push(Number(limit), Number(offset));
 
-    res.json(feed);
+    const [feed] = await pool.query(query, params);
+
+    const formattedFeed = feed.map(post => ({
+      ...post,
+      likedByMe: post.likedByMe === 1,
+      bananadByMe: post.bananadByMe === 1
+    }));
+
+    res.json(formattedFeed);
   } catch (err) {
     console.error("[GYM] Erro ao buscar feed:", err);
     res.status(500).json({ error: err.message });
@@ -174,7 +190,7 @@ export const toggleLike = async (req, res) => {
 
   try {
     const [existing] = await pool.query(
-      "SELECT id FROM gym_likes WHERE checkin_id = ? AND colaborador_cpf = ?",
+      "SELECT id FROM gym_likes WHERE checkin_id = ? AND colaborador_id = ?",
       [checkin_id, colaborador_cpf]
     );
 
@@ -185,7 +201,7 @@ export const toggleLike = async (req, res) => {
       action = 'unliked';
     } else {
       await pool.query(
-        "INSERT INTO gym_likes (checkin_id, colaborador_cpf) VALUES (?, ?)",
+        "INSERT INTO gym_likes (checkin_id, colaborador_id) VALUES (?, ?)",
         [checkin_id, colaborador_cpf]
       );
     }
@@ -202,8 +218,40 @@ export const toggleLike = async (req, res) => {
   }
 };
 
+export const toggleBanana = async (req, res) => {
+  const { checkin_id, colaborador_cpf } = req.body;
+
+  if (!checkin_id || !colaborador_cpf) {
+    return res.status(400).json({ error: "Dados inválidos." });
+  }
+
+  try {
+    const [existing] = await pool.query(
+      "SELECT id FROM gym_bananas WHERE checkin_id = ? AND colaborador_cpf = ?",
+      [checkin_id, colaborador_cpf]
+    );
+
+    let action = 'bananad';
+
+    if (existing.length > 0) {
+      await pool.query("DELETE FROM gym_bananas WHERE id = ?", [existing[0].id]);
+      action = 'unbananad';
+    } else {
+      await pool.query(
+        "INSERT INTO gym_bananas (checkin_id, colaborador_cpf) VALUES (?, ?)",
+        [checkin_id, colaborador_cpf]
+      );
+    }
+
+    res.json({ success: true, action });
+  } catch (err) {
+    console.error("[GYM BANANA ERROR]", err);
+    res.status(500).json({ error: "Erro ao processar banana." });
+  }
+};
+
 export const postComment = async (req, res) => {
-  const { checkin_id, colaborador_cpf, texto } = req.body;
+  const { checkin_id, colaborador_cpf, texto, parent_id } = req.body;
 
   if (!checkin_id || !colaborador_cpf || !texto) {
     return res.status(400).json({ error: "Dados inválidos." });
@@ -211,18 +259,19 @@ export const postComment = async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "INSERT INTO gym_comments (checkin_id, colaborador_cpf, texto) VALUES (?, ?, ?)",
-      [checkin_id, colaborador_cpf, texto]
+      "INSERT INTO gym_comments (checkin_id, colaborador_id, texto, parent_id) VALUES (?, ?, ?, ?)",
+      [checkin_id, colaborador_cpf, texto, parent_id || null]
     );
 
     const io = getIO();
 
     if (io) {
-      io.emit('gym:new_comment', { checkin_id, comment_id: result.insertId });
+      io.emit('gym:new_comment', { checkin_id, comment_id: result.insertId, parent_id: parent_id || null });
     }
 
     res.status(201).json({ success: true, comment_id: result.insertId });
   } catch (err) {
+    console.error("[GYM POST COMMENT ERROR]", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -559,7 +608,7 @@ export const getUserProfile = async (req, res) => {
     const userCpf = user.cpf;
 
     const [ranking] = await pool.query(`
-      SELECT colaborador_cpf, COUNT(*) as total_checkins, COALESCE(SUM(pontos), 0) as total_pontos
+      SELECT colaborador_cpf, COALESCE(SUM(pontos), 0) as total_pontos
       FROM gym_checkins
       WHERE MONTH(created_at) = MONTH(CURRENT_DATE) 
         AND YEAR(created_at) = YEAR(CURRENT_DATE)
@@ -568,11 +617,17 @@ export const getUserProfile = async (req, res) => {
       ORDER BY total_pontos DESC
     `);
 
-    let userRank = ranking.find(r => r.colaborador_cpf === userCpf);
     let posicaoNum = ranking.findIndex(r => r.colaborador_cpf === userCpf) + 1;
-    
     let posicaoStr = posicaoNum > 0 ? `${posicaoNum}º` : '-';
-    const totalCheckins = userRank ? userRank.total_checkins : 0;
+
+    const [allTimeStats] = await pool.query(`
+      SELECT COUNT(*) as total_all_time
+      FROM gym_checkins
+      WHERE colaborador_cpf = ?
+        AND (imagem_valida IS NULL OR imagem_valida = 1)
+    `, [userCpf]);
+
+    const totalCheckins = allTimeStats[0].total_all_time || 0;
 
     let classificacao = 'Iniciante';
     if (totalCheckins >= 30) classificacao = 'Diamante';
@@ -586,8 +641,18 @@ export const getUserProfile = async (req, res) => {
       FROM gym_checkins 
       WHERE colaborador_cpf = ? 
         AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND (arquivado IS NULL OR arquivado = 0)
       ORDER BY created_at DESC
       LIMIT 21
+    `, [userCpf]);
+
+    const [archivedPosts] = await pool.query(`
+      SELECT id, foto_treino_url, created_at, pontos, arquivado 
+      FROM gym_checkins 
+      WHERE colaborador_cpf = ? 
+        AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND arquivado = 1
+      ORDER BY created_at DESC
     `, [userCpf]);
 
     res.json({
@@ -602,7 +667,8 @@ export const getUserProfile = async (req, res) => {
       classificacao,
       bio: user.bio || 'Focado nos treinos! 💪',
       instagram: user.instagram || null,
-      posts
+      posts,
+      archivedPosts
     });
 
   } catch (err) {
@@ -645,7 +711,7 @@ export const getCommunity = async (req, res) => {
 };
 
 export const editUserProfile = async (req, res) => {
-  const { cpf, nome, username, bio, instagram, telefone, departamento, contato_emergencia, senha_atual, nova_senha } = req.body;
+  const { cpf, nome, username, bio, instagram, telefone, departamento, contato_emergencia, senha_atual, nova_senha, remover_foto } = req.body;
   
   if (!cpf) {
     return res.status(400).json({ error: "CPF é obrigatório para atualização." });
@@ -687,6 +753,9 @@ export const editUserProfile = async (req, res) => {
       novaFotoUrl = `/uploads/${req.file.filename}`;
       updateQuery += ", foto_perfil = ?";
       queryParams.push(novaFotoUrl);
+    } else if (remover_foto === 'true') {
+      novaFotoUrl = null;
+      updateQuery += ", foto_perfil = NULL"; 
     }
 
     if (nova_senha && nova_senha.trim() !== '') {
@@ -725,7 +794,6 @@ export const backfillUsernames = async (req, res) => {
 
     for (const user of users) {
       const cleanCpf = String(user.cpf).replace(/\D/g, '');
-      
       const newUsername = generateUsername(user.nome, null, cleanCpf);
 
       await pool.query("UPDATE gym_users SET username = ? WHERE cpf = ?", [newUsername, user.cpf]);
@@ -736,5 +804,177 @@ export const backfillUsernames = async (req, res) => {
   } catch (err) {
     console.error("[GYM BACKFILL USERS]", err);
     res.status(500).json({ error: "Erro interno ao atualizar usernames." });
+  }
+};
+
+export const getPostById = async (req, res) => {
+  const { id } = req.params;
+  const { cpf } = req.query;
+
+  try {
+    const postQuery = `
+      SELECT 
+        c.id, c.colaborador_cpf, c.arquivado, c.academia_digitada as unidade, c.foto_treino_url, c.mensagem, c.created_at, c.pontos,
+        u.nome AS colaborador_nome, u.username AS colaborador_username, u.foto_perfil AS colaborador_foto,
+        (SELECT COUNT(*) FROM gym_likes WHERE checkin_id = c.id) AS likes_count,
+        (SELECT COUNT(*) FROM gym_comments WHERE checkin_id = c.id) AS comments_count,
+        (SELECT COUNT(*) FROM gym_bananas WHERE checkin_id = c.id) AS bananas_count
+      FROM gym_checkins c
+      LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
+      WHERE c.id = ? AND (c.imagem_valida IS NULL OR c.imagem_valida = 1)
+    `;
+    const [posts] = await pool.query(postQuery, [id]);
+
+    if (posts.length === 0) {
+      return res.status(404).json({ error: "Post não encontrado." });
+    }
+
+    const post = posts[0];
+    post.likedByMe = false;
+    post.bananadByMe = false;
+
+    if (cpf) {
+      const cleanCpf = String(cpf).replace(/\D/g, '');
+      const [likes] = await pool.query("SELECT id FROM gym_likes WHERE checkin_id = ? AND colaborador_id = ?", [id, cleanCpf]);
+      post.likedByMe = likes.length > 0;
+      
+      const [bananas] = await pool.query("SELECT id FROM gym_bananas WHERE checkin_id = ? AND colaborador_cpf = ?", [id, cleanCpf]);
+      post.bananadByMe = bananas.length > 0;
+    }
+
+    const commentsQuery = `
+      SELECT 
+        gc.id, gc.colaborador_id as colaborador_cpf, gc.texto, gc.created_at, gc.parent_id,
+        u.username, u.foto_perfil
+      FROM gym_comments gc
+      LEFT JOIN gym_users u ON gc.colaborador_id = u.cpf
+      WHERE gc.checkin_id = ?
+      ORDER BY gc.created_at ASC
+    `;
+    const [comments] = await pool.query(commentsQuery, [id]);
+
+    res.json({ post, comments });
+  } catch (err) {
+    console.error("[GYM POST GET]", err);
+    res.status(500).json({ error: "Erro interno ao buscar post." });
+  }
+};
+
+export const updatePost = async (req, res) => {
+  const { id } = req.params;
+  const { colaborador_cpf, mensagem, academia_digitada } = req.body;
+
+  if (!colaborador_cpf) {
+    return res.status(400).json({ error: "CPF é obrigatório." });
+  }
+
+  try {
+    const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
+    
+    const [result] = await pool.query(
+      "UPDATE gym_checkins SET mensagem = ?, academia_digitada = ?, unidade = ? WHERE id = ? AND colaborador_cpf = ?",
+      [mensagem || '', academia_digitada || 'Não informada', academia_digitada || 'Não informada', id, cleanCpf]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Post não encontrado ou você não tem permissão para editá-lo." });
+    }
+
+    res.json({ message: "Post atualizado com sucesso." });
+  } catch (err) {
+    console.error("[GYM UPDATE POST]", err);
+    res.status(500).json({ error: "Erro interno ao atualizar post." });
+  }
+};
+
+export const archivePost = async (req, res) => {
+  const { id } = req.params;
+  const { colaborador_cpf } = req.body;
+
+  if (!colaborador_cpf) {
+    return res.status(400).json({ error: "CPF é obrigatório." });
+  }
+
+  try {
+    const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
+    
+    const [result] = await pool.query(
+      "UPDATE gym_checkins SET arquivado = 1 WHERE id = ? AND colaborador_cpf = ?",
+      [id, cleanCpf]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Post não encontrado ou você não tem permissão para arquivá-lo." });
+    }
+
+    res.json({ message: "Post arquivado com sucesso." });
+  } catch (err) {
+    console.error("[GYM ARCHIVE POST]", err);
+    res.status(500).json({ error: "Erro interno ao arquivar post." });
+  }
+};
+
+export const unarchivePost = async (req, res) => {
+  const { id } = req.params;
+  const { colaborador_cpf } = req.body;
+
+  if (!colaborador_cpf) {
+    return res.status(400).json({ error: "CPF é obrigatório." });
+  }
+
+  try {
+    const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
+    
+    const [result] = await pool.query(
+      "UPDATE gym_checkins SET arquivado = 0 WHERE id = ? AND colaborador_cpf = ?",
+      [id, cleanCpf]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Post não encontrado." });
+    }
+
+    res.json({ message: "Post desarquivado com sucesso." });
+  } catch (err) {
+    console.error("[GYM UNARCHIVE POST]", err);
+    res.status(500).json({ error: "Erro ao desarquivar post." });
+  }
+};
+
+export const deleteComment = async (req, res) => {
+  const { id } = req.params;
+  const { colaborador_cpf } = req.body; 
+
+  if (!colaborador_cpf) {
+    return res.status(400).json({ error: "CPF é obrigatório." });
+  }
+
+  try {
+    const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
+
+    const [comments] = await pool.query(`
+      SELECT c.id, c.colaborador_id, p.colaborador_cpf as post_owner
+      FROM gym_comments c
+      JOIN gym_checkins p ON c.checkin_id = p.id
+      WHERE c.id = ?
+    `, [id]);
+
+    if (comments.length === 0) {
+      return res.status(404).json({ error: "Comentário não encontrado." });
+    }
+
+    const comment = comments[0];
+
+    if (comment.colaborador_id !== cleanCpf && comment.post_owner !== cleanCpf) {
+      return res.status(403).json({ error: "Você não tem permissão para apagar este comentário." });
+    }
+
+    await pool.query("DELETE FROM gym_comments WHERE parent_id = ?", [id]);
+    await pool.query("DELETE FROM gym_comments WHERE id = ?", [id]);
+
+    res.json({ success: true, message: "Comentário apagado com sucesso." });
+  } catch (err) {
+    console.error("[GYM DELETE COMMENT ERROR]", err);
+    res.status(500).json({ error: "Erro interno ao apagar comentário." });
   }
 };

@@ -31,6 +31,13 @@ export default function Search() {
       setFilteredUsers(mockUsers);
     } finally {
       setLoading(false);
+      
+      setTimeout(() => {
+        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+        if (savedPosition) {
+          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+        }
+      }, 50);
     }
   };
 
@@ -53,7 +60,7 @@ export default function Search() {
   };
 
   return (
-    <div className="w-full relative overflow-x-hidden min-h-screen pb-24 flex flex-col">
+    <div className="w-full relative overflow-x-hidden min-h-screen pb-24 flex flex-col animate-page-transition">
       <div className="px-5 pt-6 pb-4 border-b border-white/10 sticky top-0 bg-[#050505]/95 backdrop-blur-xl z-20">
         <div className="relative">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40">

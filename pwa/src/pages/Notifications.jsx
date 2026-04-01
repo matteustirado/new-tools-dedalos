@@ -1,23 +1,23 @@
 import React from 'react';
-import { MessageCircle, Wrench } from 'lucide-react';
+import { Bell, Hammer } from 'lucide-react';
 
-export default function Inbox() {
+export default function Notifications() {
   return (
     <div className="w-full relative overflow-x-hidden min-h-screen pb-24 bg-[#050505] flex flex-col">
       
       <main className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fade-in-up">
         <div className="w-32 h-32 bg-yellow-500/10 rounded-full flex items-center justify-center mb-8 border-4 border-yellow-500/20 relative shadow-[0_0_50px_rgba(250,204,21,0.1)]">
-          <MessageCircle size={64} className="text-yellow-500" strokeWidth={1.5} />
+          <Bell size={64} className="text-yellow-500" strokeWidth={1.5} />
           
           <div className="absolute -bottom-2 -right-2 bg-[#111] p-2.5 rounded-full border border-white/10 shadow-lg">
-            <Wrench size={24} className="text-white/60" />
+            <Hammer size={24} className="text-white/60" />
           </div>
         </div>
 
         <h2 className="text-2xl font-black text-white mb-3 tracking-tight">Em Construção 🚧</h2>
         
         <p className="text-white/60 leading-relaxed max-w-xs text-sm">
-          O correio elegante do Banana's Gym está sendo preparado! Em breve você poderá mandar mensagens diretas e convidar a galera para treinar. 🦍💬
+          A central de novidades está quase pronta! Em breve você será avisado aqui sobre novas curtidas, comentários e conquistas. 🔔🦍
         </p>
       </main>
       

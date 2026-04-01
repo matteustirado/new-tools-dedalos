@@ -4,7 +4,6 @@ import axios from 'axios';
 import { 
   Settings, 
   Grid3X3, 
-  Flame, 
   ClipboardList, 
   Utensils, 
   Medal, 
@@ -33,7 +32,8 @@ export default function Profile() {
     posicao: '-',
     bio: 'Focado nos treinos! 💪',
     instagram: null,
-    posts: []
+    posts: [],
+    archivedPosts: [] 
   });
 
   useEffect(() => {
@@ -63,10 +63,12 @@ export default function Profile() {
       const endpoint = `${API_URL}/api/gym/profile/${identifier}?type=${isUsername ? 'username' : 'cpf'}`;
       const res = await axios.get(endpoint);
 
+      const totalGeralDePosts = (res.data.posts?.length || 0) + (res.data.archivedPosts?.length || 0);
+
       setProfileData((prev) => ({
         ...prev,
         ...res.data,
-        totalPosts: res.data.totalCheckins || 0,
+        totalPosts: totalGeralDePosts,
         posicao: (res.data.posicao === 'Sem Rank' || !res.data.posicao) ? '-' : res.data.posicao,
       }));
     } catch (err) {
@@ -78,6 +80,13 @@ export default function Profile() {
       }
     } finally {
       setLoading(false);
+      
+      setTimeout(() => {
+        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+        if (savedPosition) {
+          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+        }
+      }, 50);
     }
   };
 
@@ -98,11 +107,11 @@ export default function Profile() {
   if (!user) return null;
 
   return (
-    <div className="w-full relative overflow-x-hidden min-h-screen pb-8 bg-[#050505]">
+    <div className="w-full relative overflow-x-hidden min-h-screen pb-8 bg-[#050505] animate-page-transition">
       <header className="px-5 pt-6 pb-6 border-b border-white/10">
         <div className="flex items-center justify-between mb-6">
           <div className="relative shrink-0">
-            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-black/80 overflow-hidden border-2 border-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.3)]">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-black/80 overflow-hidden">
               {profileData.foto_perfil ? (
                 <img 
                   src={`${API_URL}${profileData.foto_perfil}`} 
@@ -115,40 +124,42 @@ export default function Profile() {
                 </div>
               )}
             </div>
-
-            <div className="absolute -bottom-1 -right-1 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#050505]">
-              <Flame size={14} className="fill-black" />
-            </div>
           </div>
 
-          <div className="flex-1 flex justify-around items-center ml-2">
-            <div className="flex flex-col items-center">
-              <span className="h-7 flex items-center justify-center text-lg md:text-xl font-black text-white leading-none mb-1">
+          <div className="flex-1 grid grid-cols-3 gap-1 ml-4 md:ml-6">
+            <div className="flex flex-col items-center justify-center">
+              <span className="h-8 flex items-center justify-center text-lg md:text-xl font-black text-white leading-none">
                 {profileData.totalPosts}
               </span>
-              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold">Posts</span>
+              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold mt-1">
+                Posts
+              </span>
             </div>
 
             <div 
-              className="flex flex-col items-center cursor-pointer hover:scale-105 active:scale-95 transition-transform"
+              className="flex flex-col items-center justify-center cursor-pointer hover:scale-105 active:scale-95 transition-transform"
               onClick={() => navigate('/ranking')}
               title="Ver Ranking Completo"
             >
-              <span className="h-7 flex items-center justify-center text-lg md:text-xl font-black text-yellow-500 leading-none mb-1">
+              <span className="h-8 flex items-center justify-center text-lg md:text-xl font-black text-yellow-500 leading-none">
                 {profileData.posicao}
               </span>
-              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold">Posição</span>
+              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold mt-1">
+                Posição
+              </span>
             </div>
 
             <div 
-              className="flex flex-col items-center cursor-pointer hover:scale-105 active:scale-95 transition-transform" 
+              className="flex flex-col items-center justify-center cursor-pointer hover:scale-105 active:scale-95 transition-transform opacity-40 grayscale" 
               onClick={() => navigate('/emblemas')}
               title="Ver Quadro de Emblemas"
             >
-              <span className="h-7 flex items-center justify-center text-lg md:text-xl font-black text-white leading-none mb-1 opacity-40 grayscale">
-                <Medal size={20} strokeWidth={2.5} />
+              <span className="h-8 flex items-center justify-center">
+                <Medal size={22} strokeWidth={2.5} className="text-white" />
               </span>
-              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold opacity-40">Emblemas</span>
+              <span className="text-[9px] md:text-[10px] uppercase tracking-wider text-white/60 font-bold mt-1">
+                Emblemas
+              </span>
             </div>
           </div>
         </div>
@@ -196,7 +207,15 @@ export default function Profile() {
           <p className="text-sm font-bold text-white flex items-center gap-1">
             Instagram:
             {profileData.instagram ? (
-              <span className="text-blue-400 cursor-pointer hover:underline">{profileData.instagram}</span>
+              <a 
+                href={`https://instagram.com/${profileData.instagram.replace('@', '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 cursor-pointer hover:underline transition-colors"
+                title={`Acessar instagram de ${profileData.nome}`}
+              >
+                {profileData.instagram}
+              </a>
             ) : (
               <span className="text-white/30 font-normal">-</span>
             )}
@@ -261,8 +280,8 @@ export default function Profile() {
                 {profileData.posts.map((post) => (
                   <div
                     key={post.id}
-                    className="aspect-square bg-white/5 relative group cursor-pointer"
-                    onClick={() => toast.info("Abrir post específico em breve!")}
+                    className="aspect-[4/5] bg-white/5 relative group cursor-pointer"
+                    onClick={() => navigate(`/post/${post.id}`)}
                   >
                     <img
                       src={`${API_URL}${post.foto_treino_url}`}
@@ -292,11 +311,34 @@ export default function Profile() {
           )}
 
           {activeTab === 'archived' && isOwnProfile && (
-            <div className="flex flex-col items-center justify-center py-12 opacity-50 text-center px-6">
-              <EyeOff size={48} className="mb-4 text-white/30" />
-              <h3 className="text-lg font-bold text-yellow-500 mb-2">Itens Arquivados</h3>
-              <p className="text-sm">Em breve você poderá guardar posts que só você quer ver. 🚧</p>
-            </div>
+            loading ? (
+              <div className="p-4 text-center text-white/50 text-sm">Carregando arquivados...</div>
+            ) : profileData.archivedPosts?.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 opacity-50 text-center px-6">
+                <EyeOff size={48} className="mb-4 text-white/30" />
+                <h3 className="text-lg font-bold text-yellow-500 mb-2">Nenhum item arquivado</h3>
+                <p className="text-sm">Os posts que você arquivar aparecerão aqui, visíveis apenas para você.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-0.5 mt-0.5">
+                {profileData.archivedPosts?.map((post) => (
+                  <div
+                    key={post.id}
+                    className="aspect-[4/5] bg-[#0a0a0a] relative group cursor-pointer"
+                    onClick={() => navigate(`/post/${post.id}`)}
+                  >
+                    <img
+                      src={`${API_URL}${post.foto_treino_url}`}
+                      alt="Archived Post"
+                      className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80"
+                    />
+                    <div className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full border border-white/10">
+                       <EyeOff size={12} className="text-white/70" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </main>
       </section>
