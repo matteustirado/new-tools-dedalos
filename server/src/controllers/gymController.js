@@ -579,7 +579,8 @@ export const addManualUser = async (req, res) => {
 
 export const getUserProfile = async (req, res) => {
   const identifier = req.params.cpf;
-  const { type } = req.query;
+  const { type, page = 1, limit = 15 } = req.query;
+  const offset = (Number(page) - 1) * Number(limit);
 
   if (!identifier) {
     return res.status(400).json({ error: 'Identificador é obrigatório.' });
@@ -606,6 +607,30 @@ export const getUserProfile = async (req, res) => {
 
     const user = users[0];
     const userCpf = user.cpf;
+
+    if (Number(page) > 1) {
+      const [posts] = await pool.query(`
+        SELECT id, foto_treino_url, created_at, pontos 
+        FROM gym_checkins 
+        WHERE colaborador_cpf = ? 
+          AND (imagem_valida IS NULL OR imagem_valida = 1) 
+          AND (arquivado IS NULL OR arquivado = 0)
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `, [userCpf, Number(limit), Number(offset)]);
+
+      const [archivedPosts] = await pool.query(`
+        SELECT id, foto_treino_url, created_at, pontos, arquivado 
+        FROM gym_checkins 
+        WHERE colaborador_cpf = ? 
+          AND (imagem_valida IS NULL OR imagem_valida = 1) 
+          AND arquivado = 1
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+      `, [userCpf, Number(limit), Number(offset)]);
+
+      return res.json({ posts, archivedPosts });
+    }
 
     const [ranking] = await pool.query(`
       SELECT colaborador_cpf, COALESCE(SUM(pontos), 0) as total_pontos
@@ -640,20 +665,21 @@ export const getUserProfile = async (req, res) => {
       SELECT id, foto_treino_url, created_at, pontos 
       FROM gym_checkins 
       WHERE colaborador_cpf = ? 
-        AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND (imagem_valida IS NULL OR imagem_valida = 1) 
         AND (arquivado IS NULL OR arquivado = 0)
       ORDER BY created_at DESC
-      LIMIT 21
-    `, [userCpf]);
+      LIMIT ? OFFSET ?
+    `, [userCpf, Number(limit), Number(offset)]);
 
     const [archivedPosts] = await pool.query(`
       SELECT id, foto_treino_url, created_at, pontos, arquivado 
       FROM gym_checkins 
       WHERE colaborador_cpf = ? 
-        AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND (imagem_valida IS NULL OR imagem_valida = 1) 
         AND arquivado = 1
       ORDER BY created_at DESC
-    `, [userCpf]);
+      LIMIT ? OFFSET ?
+    `, [userCpf, Number(limit), Number(offset)]);
 
     res.json({
       nome: user.nome,

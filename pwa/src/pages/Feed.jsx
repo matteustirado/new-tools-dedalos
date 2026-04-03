@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -12,10 +12,19 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function Feed() {
   const navigate = useNavigate();
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
   
+  const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [likedPosts, setLikedPosts] = useState(new Set());
+  const [bananadPosts, setBananadPosts] = useState(new Set());
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [selectedPost, setSelectedPost] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+
   const [showSplash, setShowSplash] = useState(() => {
     const isJustLoggedIn = sessionStorage.getItem('just_logged_in') === 'true';
     if (isJustLoggedIn) {
@@ -23,18 +32,26 @@ export default function Feed() {
     }
     return isJustLoggedIn;
   });
-  
-  const [likedPosts, setLikedPosts] = useState(new Set());
-  const [bananadPosts, setBananadPosts] = useState(new Set());
-  
-  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
-  const [selectedPost, setSelectedPost] = useState(null);
-  const [openMenuId, setOpenMenuId] = useState(null);
 
   const [devMessage] = useState({
     titulo: "Bem-vindo ao Banana's Gym! 🦍🍌",
     texto: "Essa é a nossa versão Beta! Bora treinar e encher esse feed de conquistas. Fique de olho aqui para novidades e atualizações dos DEVs. Bom treino!"
   });
+
+  const observer = useRef();
+  
+  const lastPostElementRef = useCallback(node => {
+    if (loading || loadingMore) return;
+    if (observer.current) observer.current.disconnect();
+    
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore) {
+        setPage(prevPage => prevPage + 1);
+      }
+    });
+    
+    if (node) observer.current.observe(node);
+  }, [loading, loadingMore, hasMore]);
 
   useEffect(() => {
     if (showSplash) {
@@ -48,43 +65,63 @@ export default function Feed() {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gym_user');
-    
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
-
-    fetchFeed();
   }, []);
 
-  const fetchFeed = async () => {
+  useEffect(() => {
+    fetchFeed(page);
+  }, [page]);
+
+  const fetchFeed = async (pageNumber) => {
     try {
+      if (pageNumber === 1) setLoading(true);
+      else setLoadingMore(true);
+
       const storedUser = JSON.parse(localStorage.getItem('gym_user'));
       const userCpf = storedUser?.cpf || '';
       
-      const { data } = await axios.get(`${API_URL}/api/gym/feed?limit=20&cpf=${userCpf}`);
-      setPosts(data);
+      const { data } = await axios.get(`${API_URL}/api/gym/feed?limit=5&page=${pageNumber}&cpf=${userCpf}`);
 
-      const initialLikes = new Set();
-      const initialBananas = new Set();
-      
-      data.forEach(p => {
-        if (p.likedByMe) initialLikes.add(p.id);
-        if (p.bananadByMe) initialBananas.add(p.id);
+      if (data.length < 5) {
+        setHasMore(false);
+      }
+
+      setPosts(prevPosts => {
+        if (pageNumber === 1) return data;
+        
+        const existingIds = new Set(prevPosts.map(p => p.id));
+        const newUniquePosts = data.filter(p => !existingIds.has(p.id));
+        return [...prevPosts, ...newUniquePosts];
       });
-      
-      setLikedPosts(initialLikes);
-      setBananadPosts(initialBananas);
+
+      setLikedPosts(prev => {
+        const newLikes = new Set(prev);
+        data.forEach(p => { if (p.likedByMe) newLikes.add(p.id); });
+        return newLikes;
+      });
+
+      setBananadPosts(prev => {
+        const newBananas = new Set(prev);
+        data.forEach(p => { if (p.bananadByMe) newBananas.add(p.id); });
+        return newBananas;
+      });
+
     } catch (err) {
       toast.error('Erro ao carregar o feed.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       
-      setTimeout(() => {
-        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
-        if (savedPosition) {
-          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
-        }
-      }, 50);
+      if (pageNumber === 1) {
+        setTimeout(() => {
+          const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+          if (savedPosition) {
+            window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+          }
+        }, 50);
+      }
     }
   };
 
@@ -181,7 +218,7 @@ export default function Feed() {
       toast.success('Foto movida para seus Arquivados!');
     } catch (err) {
       toast.error('Erro ao arquivar a foto.');
-      fetchFeed();
+      setPage(1);
     }
   };
 
@@ -213,7 +250,7 @@ export default function Feed() {
 
       {showSplash ? (
         <LoadingScreen />
-      ) : loading ? (
+      ) : loading && page === 1 ? (
         <div className="flex justify-center items-center h-[50vh]">
           <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
@@ -227,7 +264,7 @@ export default function Feed() {
         </div>
       ) : (
         <div className="flex flex-col items-center w-full pb-8">
-          {posts.map((post) => {
+          {posts.map((post, index) => {
             const userName = post.colaborador_username || post.colaborador_nome.split(' ')[0].toLowerCase();
             const profileUrl = `/${userName}`;
             const isMyPost = user?.cpf === post.colaborador_cpf;
@@ -240,8 +277,14 @@ export default function Feed() {
               minute: '2-digit'
             });
 
+            const isLastPost = posts.length === index + 1;
+
             return (
-              <article key={post.id} className="w-full bg-transparent border-b border-white/10 mb-0 pb-6">
+              <article 
+                key={post.id} 
+                ref={isLastPost ? lastPostElementRef : null}
+                className="w-full bg-transparent border-b border-white/10 mb-0 pb-6"
+              >
                 <div className="flex items-center justify-between p-4">
                   <Link to={profileUrl} className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
                     <div className="w-10 h-10 rounded-full bg-white/10 overflow-hidden shrink-0">
@@ -386,6 +429,18 @@ export default function Feed() {
               </article>
             );
           })}
+
+          {loadingMore && (
+            <div className="py-6 flex justify-center w-full">
+              <div className="w-6 h-6 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+
+          {!hasMore && posts.length > 0 && (
+            <div className="py-8 text-center text-white/30 text-[10px] font-bold uppercase tracking-[0.2em]">
+              Você chegou ao fim do feed 🍌
+            </div>
+          )}
         </div>
       )}
 

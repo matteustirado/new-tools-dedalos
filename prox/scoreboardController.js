@@ -627,23 +627,3 @@ export const getScoreboardHistory = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-export const emitPrankSignal = async (req, res) => {
-  const { unidade, action } = req.body;
-  
-  if (!unidade || !action) {
-    return res.status(400).json({ error: 'Dados insuficientes.' });
-  }
-
-  try {
-    const io = getIO();
-    io.emit('prank_signal', { 
-      unidade: unidade.toUpperCase(), 
-      action 
-    });
-    
-    res.status(200).json({ message: 'Sinal transmitido para a recepção.' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};

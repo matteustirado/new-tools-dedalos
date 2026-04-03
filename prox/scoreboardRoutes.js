@@ -2,7 +2,6 @@ import express from 'express';
 import {
   castVote,
   deletePreset,
-  emitPrankSignal, // <--- Importação adicionada aqui
   executarMarcoZero,
   getActiveConfig,
   getCrowdCount,
@@ -35,7 +34,5 @@ router.get('/test-trigger/:unidade', testarTrigger);
 router.get('/votes/:unidade', getVotes);
 router.post('/vote', castVote);
 router.post('/reset-votes', resetVotes);
-
-router.post('/prank', emitPrankSignal);
 
 export default router;

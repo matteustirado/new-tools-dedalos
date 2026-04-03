@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -23,6 +23,10 @@ export default function Profile() {
   const [isOwnProfile, setIsOwnProfile] = useState(true);
   const [activeTab, setActiveTab] = useState('photos');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [hasMoreArchived, setHasMoreArchived] = useState(true);
 
   const [profileData, setProfileData] = useState({
     nome: 'Carregando...',
@@ -36,6 +40,25 @@ export default function Profile() {
     archivedPosts: [] 
   });
 
+  const observer = useRef();
+  
+  const lastElementRef = useCallback(node => {
+    if (loading || loadingMore) return;
+    if (observer.current) observer.current.disconnect();
+    
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        if (activeTab === 'photos' && hasMorePosts) {
+          setPage(prevPage => prevPage + 1);
+        } else if (activeTab === 'archived' && hasMoreArchived) {
+          setPage(prevPage => prevPage + 1);
+        }
+      }
+    });
+    
+    if (node) observer.current.observe(node);
+  }, [loading, loadingMore, hasMorePosts, hasMoreArchived, activeTab]);
+
   useEffect(() => {
     const storedUser = localStorage.getItem('gym_user');
 
@@ -47,46 +70,76 @@ export default function Profile() {
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
 
+    setPage(1);
+    setHasMorePosts(true);
+    setHasMoreArchived(true);
+
     if (username && username !== parsedUser.username) {
       setIsOwnProfile(false);
-      fetchUserProfile(username, true);
+      fetchUserProfile(username, true, 1);
     } else {
       setIsOwnProfile(true);
-      fetchUserProfile(parsedUser.cpf, false);
+      fetchUserProfile(parsedUser.cpf, false, 1);
     }
   }, [navigate, username]);
 
-  const fetchUserProfile = async (identifier, isUsername) => {
-    setLoading(true);
+  useEffect(() => {
+    if (page > 1 && user) {
+      const isUsername = username && username !== user.username;
+      const identifier = isUsername ? username : user.cpf;
+      fetchUserProfile(identifier, isUsername, page);
+    }
+  }, [page]);
+
+  const fetchUserProfile = async (identifier, isUsername, pageNum) => {
+    if (pageNum === 1) setLoading(true);
+    else setLoadingMore(true);
 
     try {
-      const endpoint = `${API_URL}/api/gym/profile/${identifier}?type=${isUsername ? 'username' : 'cpf'}`;
+      const limit = pageNum === 1 ? 15 : 9;
+      const endpoint = `${API_URL}/api/gym/profile/${identifier}?type=${isUsername ? 'username' : 'cpf'}&page=${pageNum}&limit=${limit}`;
       const res = await axios.get(endpoint);
 
-      const totalGeralDePosts = (res.data.posts?.length || 0) + (res.data.archivedPosts?.length || 0);
+      if (res.data.posts && res.data.posts.length < limit) setHasMorePosts(false);
+      if (res.data.archivedPosts && res.data.archivedPosts.length < limit) setHasMoreArchived(false);
 
-      setProfileData((prev) => ({
-        ...prev,
-        ...res.data,
-        totalPosts: totalGeralDePosts,
-        posicao: (res.data.posicao === 'Sem Rank' || !res.data.posicao) ? '-' : res.data.posicao,
-      }));
+      if (pageNum === 1) {
+        setProfileData({
+          ...res.data,
+          totalPosts: res.data.totalCheckins || 0,
+          posicao: (res.data.posicao === 'Sem Rank' || !res.data.posicao) ? '-' : res.data.posicao,
+        });
+      } else {
+        setProfileData(prev => {
+          const newPosts = res.data.posts ? [...prev.posts, ...res.data.posts] : prev.posts;
+          const newArchived = res.data.archivedPosts ? [...prev.archivedPosts, ...res.data.archivedPosts] : prev.archivedPosts;
+          
+          return {
+            ...prev,
+            posts: newPosts,
+            archivedPosts: newArchived
+          };
+        });
+      }
     } catch (err) {
-      console.warn("Erro ao buscar perfil.");
-      toast.error("Perfil não encontrado.");
-      
-      if (isUsername) {
-        navigate('/feed');
+      if (pageNum === 1) {
+        toast.error("Perfil não encontrado.");
+        if (isUsername) navigate('/feed');
+      } else {
+        toast.error("Erro ao carregar mais fotos.");
       }
     } finally {
       setLoading(false);
+      setLoadingMore(false);
       
-      setTimeout(() => {
-        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
-        if (savedPosition) {
-          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
-        }
-      }, 50);
+      if (pageNum === 1) {
+        setTimeout(() => {
+          const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+          if (savedPosition) {
+            window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+          }
+        }, 50);
+      }
     }
   };
 
@@ -266,8 +319,10 @@ export default function Profile() {
 
         <main className="w-full">
           {activeTab === 'photos' && (
-            loading ? (
-              <div className="p-4 text-center text-white/50 text-sm">Carregando posts...</div>
+            loading && page === 1 ? (
+              <div className="flex justify-center items-center h-48">
+                <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
             ) : profileData.posts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 opacity-50">
                 <div className="w-16 h-16 mb-4 bg-white/5 rounded-full flex items-center justify-center">
@@ -276,21 +331,32 @@ export default function Profile() {
                 <p className="text-sm font-bold">Nenhum post registrado ainda.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-0.5 mt-0.5">
-                {profileData.posts.map((post) => (
-                  <div
-                    key={post.id}
-                    className="aspect-[4/5] bg-white/5 relative group cursor-pointer"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                  >
-                    <img
-                      src={`${API_URL}${post.foto_treino_url}`}
-                      alt="Post"
-                      className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                    />
+              <>
+                <div className="grid grid-cols-3 gap-0.5 mt-0.5">
+                  {profileData.posts.map((post, index) => {
+                    const isLast = profileData.posts.length === index + 1;
+                    return (
+                      <div
+                        key={post.id}
+                        ref={isLast ? lastElementRef : null}
+                        className="aspect-[4/5] bg-white/5 relative group cursor-pointer"
+                        onClick={() => navigate(`/post/${post.id}`)}
+                      >
+                        <img
+                          src={`${API_URL}${post.foto_treino_url}`}
+                          alt="Post"
+                          className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {loadingMore && (
+                  <div className="py-4 flex justify-center w-full">
+                    <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )
           )}
 
@@ -311,8 +377,10 @@ export default function Profile() {
           )}
 
           {activeTab === 'archived' && isOwnProfile && (
-            loading ? (
-              <div className="p-4 text-center text-white/50 text-sm">Carregando arquivados...</div>
+            loading && page === 1 ? (
+              <div className="flex justify-center items-center h-48">
+                <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+              </div>
             ) : profileData.archivedPosts?.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 opacity-50 text-center px-6">
                 <EyeOff size={48} className="mb-4 text-white/30" />
@@ -320,24 +388,35 @@ export default function Profile() {
                 <p className="text-sm">Os posts que você arquivar aparecerão aqui, visíveis apenas para você.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-0.5 mt-0.5">
-                {profileData.archivedPosts?.map((post) => (
-                  <div
-                    key={post.id}
-                    className="aspect-[4/5] bg-[#0a0a0a] relative group cursor-pointer"
-                    onClick={() => navigate(`/post/${post.id}`)}
-                  >
-                    <img
-                      src={`${API_URL}${post.foto_treino_url}`}
-                      alt="Archived Post"
-                      className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80"
-                    />
-                    <div className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full border border-white/10">
-                       <EyeOff size={12} className="text-white/70" />
-                    </div>
+              <>
+                <div className="grid grid-cols-3 gap-0.5 mt-0.5">
+                  {profileData.archivedPosts?.map((post, index) => {
+                    const isLast = profileData.archivedPosts.length === index + 1;
+                    return (
+                      <div
+                        key={post.id}
+                        ref={isLast ? lastElementRef : null}
+                        className="aspect-[4/5] bg-[#0a0a0a] relative group cursor-pointer"
+                        onClick={() => navigate(`/post/${post.id}`)}
+                      >
+                        <img
+                          src={`${API_URL}${post.foto_treino_url}`}
+                          alt="Archived Post"
+                          className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80"
+                        />
+                        <div className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full border border-white/10">
+                           <EyeOff size={12} className="text-white/70" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {loadingMore && (
+                  <div className="py-4 flex justify-center w-full">
+                    <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )
           )}
         </main>
