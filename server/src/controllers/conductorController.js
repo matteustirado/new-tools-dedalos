@@ -68,8 +68,16 @@ const buscarTracksDaPlaylist = async (playlistId) => {
     const [rows] = await pool.query('SELECT tracks_ids, overlay FROM playlists WHERE id = ?', [playlistId]);
 
     if (rows.length > 0) {
+      const trackIdsOriginal = safeJsonParse(rows[0].tracks_ids);
+      
+      const tracksEmbaralhadas = [...trackIdsOriginal];
+      for (let i = tracksEmbaralhadas.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [tracksEmbaralhadas[i], tracksEmbaralhadas[j]] = [tracksEmbaralhadas[j], tracksEmbaralhadas[i]];
+      }
+
       return {
-        trackIds: safeJsonParse(rows[0].tracks_ids),
+        trackIds: tracksEmbaralhadas,
         overlay: rows[0].overlay
       };
     }
