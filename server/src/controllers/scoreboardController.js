@@ -69,6 +69,16 @@ const extractRealBracelet = (clientObj) => {
   return null;
 };
 
+const safeJsonParse = (data) => {
+  if (!data) return [];
+  if (typeof data === 'object') return data;
+  try {
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
+};
+
 const fetchFromDedalos = async (unidade) => {
   const unidadeUpper = unidade.toUpperCase();
   const config = getApiConfig(unidadeUpper);
@@ -410,7 +420,7 @@ export const getActiveConfig = async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Não encontrada.' });
     
     const config = rows[0];
-    if (typeof config.opcoes === 'string') config.opcoes = JSON.parse(config.opcoes);
+    config.opcoes = safeJsonParse(config.opcoes);
     
     res.status(200).json(config);
   } catch (err) {
@@ -578,11 +588,7 @@ export const getPresets = async (req, res) => {
     );
     
     const presetsFormatados = rows.map(preset => {
-      try {
-        preset.opcoes = JSON.parse(preset.opcoes);
-      } catch(e) {
-        preset.opcoes = [];
-      }
+      preset.opcoes = safeJsonParse(preset.opcoes);
       return preset;
     });
 

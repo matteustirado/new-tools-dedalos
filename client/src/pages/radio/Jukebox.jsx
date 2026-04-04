@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { toast } from 'react-toastify';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const INACTIVITY_TIMEOUT_MS = 20000;
@@ -38,7 +39,7 @@ const getLogicalDayIndex = () => {
   const hour = now.getHours();
   let day = now.getDay();
   if (hour < 6) {
-    day = day === 0 ? 6 : day - 1; 
+    day = day === 0 ? 6 : day - 1;
   }
   return day;
 };
@@ -137,11 +138,11 @@ export default function Jukebox() {
     setWantsNotification(false);
     setPhoneNumber('');
     setPhoneSubmitted(false);
-    
+
     if (checkIsOffHours()) {
       setIsUnlocked(false);
     }
-    
+
     if (searchInputRef.current) searchInputRef.current.blur();
   };
 
@@ -160,13 +161,14 @@ export default function Jukebox() {
       if (newLogicalDay !== currentDayIndex) {
         setCurrentDayIndex(newLogicalDay);
       }
-      
+
       const currentOffHours = checkIsOffHours();
       if (currentOffHours !== isOffHours) {
         setIsOffHours(currentOffHours);
-        if (currentOffHours) setIsUnlocked(false); 
+        if (currentOffHours) setIsUnlocked(false);
       }
     }, 60000);
+    
     return () => clearInterval(dayInterval);
   }, [currentDayIndex, isOffHours]);
 
@@ -178,6 +180,7 @@ export default function Jukebox() {
     };
     document.addEventListener('mousedown', handleClickOrFocusOutside);
     document.addEventListener('focusin', handleClickOrFocusOutside);
+    
     return () => {
       document.removeEventListener('mousedown', handleClickOrFocusOutside);
       document.removeEventListener('focusin', handleClickOrFocusOutside);
@@ -187,8 +190,10 @@ export default function Jukebox() {
   useEffect(() => {
     const events = ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'];
     const handleActivity = () => resetInactivityTimer();
+    
     events.forEach(event => window.addEventListener(event, handleActivity));
     resetInactivityTimer();
+    
     return () => {
       events.forEach(event => window.removeEventListener(event, handleActivity));
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
@@ -215,10 +220,11 @@ export default function Jukebox() {
     newSocket.on('maestro:filaAtualizada', (novaFila) => setFila(novaFila || []));
     newSocket.on('acervo:atualizado', () => fetchTracks());
 
-    newSocket.on('jukebox:pedidoAceito', () => {
+    newSocket.on('jukebox:pedidoAceito', ({ posicao }) => {
       setIsValidating(false);
+      setRefusalReason(`Música enviada para a posição ${posicao} da fila! \nLembre-se: Você tem até 5 pedidos por ciclo de 30 minutos.`);
       setRequestStatus('SUCCESS_REQUEST');
-      setTimeout(() => resetForm(), 5000);
+      setTimeout(() => resetForm(), 6000);
     });
 
     newSocket.on('jukebox:sugestaoAceita', (data) => {
@@ -229,7 +235,7 @@ export default function Jukebox() {
 
     newSocket.on('jukebox:telefoneAtualizadoSucesso', () => {
       setPhoneSubmitted(true);
-      setTimeout(() => resetForm(), 4000); 
+      setTimeout(() => resetForm(), 4000);
     });
 
     newSocket.on('jukebox:pedidoRecusado', ({ motivo }) => {
@@ -239,11 +245,11 @@ export default function Jukebox() {
       setTimeout(() => resetForm(), 6000);
     });
 
-    newSocket.on('jukebox:erroPedido', ({ message }) => {
+    newSocket.on('jukebox:erroPedido', ({ message, isRateLimit }) => {
       setIsValidating(false);
       setRefusalReason(message || 'Erro desconhecido.');
-      setRequestStatus('ERROR_REFUSED');
-      setTimeout(() => resetForm(), 6000);
+      setRequestStatus(isRateLimit ? 'RATE_LIMIT' : 'ERROR_REFUSED');
+      setTimeout(() => resetForm(), 8000);
     });
 
     return () => newSocket.disconnect();
@@ -251,6 +257,7 @@ export default function Jukebox() {
 
   const availableTracks = useMemo(() => {
     let filtered = tracks;
+    
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
       filtered = tracks.filter(track =>
@@ -258,13 +265,14 @@ export default function Jukebox() {
         (track.artista && track.artista.toLowerCase().includes(lowerTerm))
       );
     }
+    
     return filtered.sort((a, b) => {
       const aAvailable = Array.isArray(a.dias_semana) && a.dias_semana.includes(currentDayIndex) && !isOffHours;
       const bAvailable = Array.isArray(b.dias_semana) && b.dias_semana.includes(currentDayIndex) && !isOffHours;
       if (aAvailable && !bAvailable) return -1;
       if (!aAvailable && bAvailable) return 1;
       return 0;
-    }); 
+    });
   }, [tracks, searchTerm, currentDayIndex, isOffHours]);
 
   const topArtistasPlaylist = useMemo(() => {
@@ -272,7 +280,11 @@ export default function Jukebox() {
     let playlistTrackIds = playlistDoDia.tracks_ids;
 
     if (typeof playlistTrackIds === 'string') {
-      try { playlistTrackIds = JSON.parse(playlistTrackIds); } catch (e) { playlistTrackIds = []; }
+      try {
+        playlistTrackIds = JSON.parse(playlistTrackIds);
+      } catch (e) {
+        playlistTrackIds = [];
+      }
     }
 
     if (!Array.isArray(playlistTrackIds) || playlistTrackIds.length === 0) return [];
@@ -345,7 +357,7 @@ export default function Jukebox() {
         telefone: phoneNumber
       });
     } else {
-      toast.warning("Preencha o WhatsApp corretamente.");
+      if (toast && toast.warning) toast.warning("Preencha o WhatsApp corretamente.");
     }
   };
 
@@ -355,113 +367,6 @@ export default function Jukebox() {
       ? playlistDoDia.imagem
       : `${API_URL}${playlistDoDia.imagem}`;
   }, [playlistDoDia]);
-
-  if (requestStatus !== 'IDLE') {
-    let icon = '';
-    let colorClass = '';
-    let title = '';
-    let message = '';
-    let buttonText = 'Voltar';
-
-    switch (requestStatus) {
-      case 'SUCCESS_REQUEST':
-        icon = 'check_circle';
-        colorClass = 'text-green-500';
-        title = 'Pedido Confirmado!';
-        message = `Sua música foi adicionada à fila da unidade ${unitLabel}.`;
-        break;
-      case 'SUCCESS_SUGGESTION':
-        icon = 'lightbulb';
-        colorClass = 'text-yellow-400';
-        title = 'Sugestão Enviada!';
-        message = 'Obrigado! Sua sugestão foi enviada para nossos DJs.';
-        break;
-      case 'ERROR_REFUSED':
-        icon = 'cancel';
-        colorClass = 'text-red-500';
-        title = 'Pedido Não Aceito';
-        message = refusalReason || 'Não foi possível adicionar esta música no momento.';
-        buttonText = 'Tentar Outra';
-        break;
-      default:
-        break;
-    }
-
-    return (
-      <div className="h-screen w-screen bg-gradient-warm flex flex-col items-center justify-center p-8 text-center animate-fade-in select-none">
-        <div className="w-28 h-28 rounded-full flex items-center justify-center mb-4 shadow-2xl bg-white/10 backdrop-blur-lg border border-white/10">
-          <span className={`material-symbols-outlined text-6xl ${colorClass} drop-shadow-lg`}>{icon}</span>
-        </div>
-        <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">
-          {title}
-        </h1>
-        
-        <p className="text-lg text-white/80 max-w-2xl leading-relaxed">
-          {phoneSubmitted ? "Seu telefone foi salvo com sucesso!" : message}
-        </p>
-
-        {requestStatus === 'SUCCESS_SUGGESTION' && !phoneSubmitted && (
-          <div className="mt-8 flex flex-col items-center w-full max-w-md">
-            {!wantsNotification ? (
-              <div className="flex flex-col gap-3 w-full">
-                <button
-                  onClick={() => setWantsNotification(true)}
-                  className="w-full bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl transition-all font-black uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:scale-[1.02]"
-                >
-                  <span className="material-symbols-outlined align-middle mr-2 text-xl">notifications_active</span>
-                  Avise-me quando for adicionada
-                </button>
-                <button
-                  onClick={resetForm}
-                  className="w-full bg-white/5 text-white/50 px-8 py-3 rounded-xl hover:bg-white/10 hover:text-white transition-colors font-bold uppercase tracking-wider text-xs border border-white/10"
-                >
-                  Não, obrigado (Voltar)
-                </button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4 w-full animate-fade-in liquid-glass p-6 rounded-2xl border border-white/10">
-                <label className="text-left text-xs font-bold text-white/60 uppercase tracking-widest ml-1">
-                  Seu WhatsApp
-                </label>
-                <input 
-                  type="tel"
-                  className="w-full bg-black/40 border border-white/20 rounded-xl py-3 px-4 text-xl text-white placeholder:text-white/30 focus:outline-none focus:border-green-500 transition-colors text-center font-mono tracking-widest"
-                  placeholder="(11) 99999-9999"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(maskPhone(e.target.value))}
-                  autoFocus
-                />
-                <div className="flex gap-3 mt-2">
-                  <button
-                    onClick={() => setWantsNotification(false)}
-                    className="flex-1 bg-white/5 text-white/50 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors font-bold uppercase text-xs"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleSavePhone}
-                    disabled={phoneNumber.length < 14}
-                    className="flex-[2] bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-500 transition-colors font-black uppercase tracking-wider text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Salvar Número
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {requestStatus !== 'SUCCESS_SUGGESTION' && (
-          <button
-            onClick={resetForm}
-            className="mt-6 bg-white/10 text-white px-8 py-2 rounded-xl hover:bg-white/20 transition-colors font-bold uppercase tracking-wider text-sm border border-white/10"
-          >
-            {buttonText}
-          </button>
-        )}
-      </div>
-    );
-  }
 
   if (isOffHours && !isUnlocked) {
     return (
@@ -497,8 +402,131 @@ export default function Jukebox() {
     );
   }
 
+  const renderFeedbackModal = () => {
+    if (requestStatus === 'IDLE') return null;
+
+    let icon = '';
+    let colorClass = '';
+    let title = '';
+    let message = '';
+    let buttonText = 'Voltar';
+
+    switch (requestStatus) {
+      case 'SUCCESS_REQUEST':
+        icon = 'check_circle';
+        colorClass = 'text-green-500 shadow-green-500/50';
+        title = 'Pedido Confirmado!';
+        message = refusalReason;
+        break;
+      case 'SUCCESS_SUGGESTION':
+        icon = 'lightbulb';
+        colorClass = 'text-yellow-400 shadow-yellow-400/50';
+        title = 'Sugestão Enviada!';
+        message = 'Obrigado! A sugestão foi enviada aos DJs e não consumiu seus pedidos.';
+        break;
+      case 'RATE_LIMIT':
+        icon = 'hourglass_empty';
+        colorClass = 'text-orange-500 shadow-orange-500/50';
+        title = 'Tempo de Espera';
+        message = refusalReason;
+        buttonText = 'Entendi';
+        break;
+      case 'ERROR_REFUSED':
+        icon = 'cancel';
+        colorClass = 'text-red-500 shadow-red-500/50';
+        title = 'Pedido Não Aceito';
+        message = refusalReason || 'Não foi possível adicionar esta música no momento.';
+        buttonText = 'Tentar Outra';
+        break;
+      default:
+        break;
+    }
+
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="liquid-glass border border-white/20 p-10 rounded-[2.5rem] flex flex-col items-center text-center max-w-lg mx-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transform scale-100 transition-all">
+          
+          <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg bg-black/30 border border-white/10 ${colorClass.split(' ')[1]}`}>
+            <span className={`material-symbols-outlined text-5xl ${colorClass.split(' ')[0]} drop-shadow-md`}>{icon}</span>
+          </div>
+          
+          <h1 className="text-3xl font-black text-white mb-3 tracking-wide drop-shadow-sm">
+            {title}
+          </h1>
+          
+          <p className="text-lg text-white/90 leading-relaxed font-medium whitespace-pre-line">
+            {phoneSubmitted ? "Telefone salvo com sucesso!" : message}
+          </p>
+
+          {requestStatus === 'SUCCESS_SUGGESTION' && !phoneSubmitted && (
+            <div className="mt-8 flex flex-col items-center w-full">
+              {!wantsNotification ? (
+                <div className="flex flex-col gap-3 w-full">
+                  <button
+                    onClick={() => setWantsNotification(true)}
+                    className="w-full bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-2xl transition-all font-black uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:scale-[1.02]"
+                  >
+                    <span className="material-symbols-outlined align-middle mr-2 text-xl">notifications_active</span>
+                    Avise-me por WhatsApp
+                  </button>
+                  <button
+                    onClick={resetForm}
+                    className="w-full bg-white/5 text-white/50 px-8 py-3 rounded-2xl hover:bg-white/10 hover:text-white transition-colors font-bold uppercase tracking-wider text-xs border border-white/10"
+                  >
+                    Não, obrigado
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 w-full animate-fade-in bg-black/30 p-5 rounded-2xl border border-white/10">
+                  <label className="text-left text-xs font-bold text-white/60 uppercase tracking-widest ml-1">
+                    Seu WhatsApp
+                  </label>
+                  <input 
+                    type="tel"
+                    className="w-full bg-black/50 border border-white/20 rounded-xl py-3 px-4 text-xl text-white placeholder:text-white/30 focus:outline-none focus:border-green-500 transition-colors text-center font-mono tracking-widest"
+                    placeholder="(11) 99999-9999"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(maskPhone(e.target.value))}
+                    autoFocus
+                  />
+                  <div className="flex gap-3 mt-2">
+                    <button
+                      onClick={() => setWantsNotification(false)}
+                      className="flex-1 bg-white/5 text-white/50 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors font-bold uppercase text-xs border border-transparent"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSavePhone}
+                      disabled={phoneNumber.length < 14}
+                      className="flex-[2] bg-green-600 text-white px-4 py-3 rounded-xl hover:bg-green-500 transition-colors font-black uppercase tracking-wider text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {requestStatus !== 'SUCCESS_SUGGESTION' && (
+            <button
+              onClick={resetForm}
+              className="mt-8 bg-white/10 text-white px-10 py-3 rounded-2xl hover:bg-white/20 transition-all font-bold uppercase tracking-widest text-sm border border-white/20 hover:scale-105 active:scale-95"
+            >
+              {buttonText}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="h-screen w-screen bg-gradient-warm p-8 flex flex-col overflow-hidden select-none text-white animate-fade-in">
+    <div className="h-screen w-screen bg-gradient-warm p-8 flex flex-col overflow-hidden select-none text-white animate-fade-in relative">
+      
+      {renderFeedbackModal()}
+
       <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
         <div className="col-span-5 flex flex-col gap-6 h-full min-h-0">
           <div className="liquid-glass p-4 rounded-3xl relative overflow-hidden group flex-shrink-0">
