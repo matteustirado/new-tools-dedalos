@@ -9,6 +9,26 @@ const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 const ALL_DAYS_CODE = -1
 const DURATION_WARNING_SECONDS = 24 * 3600
 
+const organizeDuplicatesAtTop = (tracksList) => {
+  const counts = {};
+  tracksList.forEach(t => counts[t.id] = (counts[t.id] || 0) + 1);
+
+  const duplicates = [];
+  const uniques = [];
+
+  tracksList.forEach(t => {
+    if (counts[t.id] > 1) {
+      duplicates.push(t);
+    } else {
+      uniques.push(t);
+    }
+  });
+
+  duplicates.sort((a, b) => a.id - b.id);
+
+  return [...duplicates, ...uniques];
+};
+
 export default function PlaylistCreator() {
   const navigate = useNavigate()
   const { playlistId } = useParams()
@@ -65,7 +85,7 @@ export default function PlaylistCreator() {
             .map(id => processedTracks.find(track => track.id === Number(id)))
             .filter(Boolean)
           
-          setPlaylistTracks(tracksForPlaylist)
+          setPlaylistTracks(organizeDuplicatesAtTop(tracksForPlaylist))
         } else {
           setNewPlaylist({ name: '', description: '', cover: null, coverFile: null, overlay: null, overlayFile: null })
           setOriginalCover(null)
@@ -110,14 +130,15 @@ export default function PlaylistCreator() {
   }
 
   const addTrack = (track) => {
-    const recentTracks = playlistTracks.slice(-5)
-    const isRecentDuplicate = recentTracks.some(t => t.id === track.id)
-    
-    if (isRecentDuplicate) {
-      toast.info(`"${track.titulo}" foi adicionada recentemente.`)
+    const isDuplicate = playlistTracks.some(t => t.id === track.id);
+    const newTracks = [...playlistTracks, track];
+
+    if (isDuplicate) {
+      toast.warn(`Música duplicada! As cópias de "${track.titulo}" foram movidas para o topo.`);
+      setPlaylistTracks(organizeDuplicatesAtTop(newTracks));
+    } else {
+      setPlaylistTracks(newTracks);
     }
-    
-    setPlaylistTracks([...playlistTracks, track])
   }
 
   const removeTrack = (indexToRemove) => {
@@ -277,16 +298,11 @@ export default function PlaylistCreator() {
     setPlaylistTracks([])
   }
 
-  const checkProximity = (index) => {
-    if (playlistTracks.length < 2) return false
-    const currentId = playlistTracks[index].id
-    const startIndex = Math.max(0, index - 5)
-    
-    for (let i = startIndex; i < index; i++) {
-      if (playlistTracks[i].id === currentId) return true
-    }
-    return false
-  }
+  const trackCounts = useMemo(() => {
+    const counts = {};
+    playlistTracks.forEach(t => counts[t.id] = (counts[t.id] || 0) + 1);
+    return counts;
+  }, [playlistTracks]);
 
   const filteredAcervo = useMemo(() => {
     const lowerSearchTerm = searchTerm.toLowerCase()
@@ -516,14 +532,27 @@ export default function PlaylistCreator() {
                   </div>
 
                   <div className="flex justify-between items-center mb-4">
-                    <button
-                      onClick={handleShuffle}
-                      className="h-8 px-3 rounded font-semibold text-xs bg-white/5 hover:bg-primary/20 text-text-muted hover:text-primary transition-all border border-white/10 flex items-center gap-2"
-                      title="Embaralhar Músicas"
-                    >
-                      <span className="material-symbols-outlined text-base">shuffle</span>
-                      SHUFFLE
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleShuffle}
+                        className="h-8 px-3 rounded font-semibold text-xs bg-white/5 hover:bg-primary/20 text-text-muted hover:text-primary transition-all border border-white/10 flex items-center gap-2"
+                        title="Embaralhar Músicas"
+                      >
+                        <span className="material-symbols-outlined text-base">shuffle</span>
+                        SHUFFLE
+                      </button>
+
+                      {Object.values(trackCounts).some(c => c > 1) && (
+                        <button
+                          onClick={() => setPlaylistTracks(organizeDuplicatesAtTop(playlistTracks))}
+                          className="h-8 px-3 rounded font-semibold text-xs bg-red-500/20 hover:bg-red-500/40 text-red-400 hover:text-red-300 transition-all border border-red-500/30 flex items-center gap-2"
+                          title="Forçar agrupamento de músicas duplicadas no topo"
+                        >
+                          <span className="material-symbols-outlined text-base">vertical_align_top</span>
+                          AGRUPAR DUPLICADAS
+                        </button>
+                      )}
+                    </div>
 
                     {playlistTracks.length > 0 && (
                       <button
@@ -566,7 +595,7 @@ export default function PlaylistCreator() {
 
                     {filteredPlaylistTracks.map((track, index) => {
                       const originalIndex = track._origIndex
-                      const isClose = checkProximity(originalIndex)
+                      const isDuplicate = trackCounts[track.id] > 1;
 
                       return (
                         <div
@@ -580,8 +609,8 @@ export default function PlaylistCreator() {
                                 ${!playlistFilter ? 'cursor-move' : ''}
                              `}
                         >
-                          {isClose && (
-                            <span className="material-symbols-outlined text-yellow-400 text-base absolute -left-1 -top-1" title="Música tocada nas últimas 5 faixas">warning</span>
+                          {isDuplicate && (
+                            <span className="material-symbols-outlined text-red-500 text-base absolute -left-2 -top-2 drop-shadow-md bg-black/60 rounded-full" title="Atenção: Música duplicada na playlist!">error</span>
                           )}
 
                           {!playlistFilter ? (
@@ -605,7 +634,7 @@ export default function PlaylistCreator() {
                           </span>
 
                           <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold text-sm truncate">{track.titulo}</p>
+                            <p className={`font-semibold text-sm truncate ${isDuplicate ? 'text-red-100' : 'text-white'}`}>{track.titulo}</p>
                             <p className="text-text-muted text-xs truncate">{track.artista}</p>
                           </div>
 
