@@ -484,7 +484,37 @@ export const iniciarMaestro = async () => {
       }
     });
 
-    socket.on('dj:vetarPedido', async (itemId) => {});
+    socket.on('dj:vetarPedido', async (itemId) => {
+      if (!itemId) return;
+
+      if (typeof itemId === 'string' && itemId.startsWith('pedido_')) {
+        const pedidoId = itemId.replace('pedido_', '');
+        const index = estadoRadio.filaDePedidos.findIndex(p => String(p.id) === String(pedidoId));
+        
+        if (index !== -1) {
+          estadoRadio.filaDePedidos.splice(index, 1);
+          if (!String(pedidoId).startsWith('dj_')) {
+            atualizarStatusPedido(pedidoId, 'VETADO');
+          }
+        }
+      } else if (typeof itemId === 'string' && itemId.startsWith('auto_')) {
+        const parts = itemId.split('_');
+        const trackId = Number(parts[1]);
+
+        const comIndex = estadoRadio.filaComercialManual.findIndex(id => Number(id) === trackId);
+        if (comIndex !== -1) {
+          estadoRadio.filaComercialManual.splice(comIndex, 1);
+        } else {
+          const plIndex = estadoRadio.playlistAtiva.findIndex(id => Number(id) === trackId);
+          if (plIndex !== -1) {
+            estadoRadio.playlistAtiva.splice(plIndex, 1);
+          }
+        }
+      }
+
+      const fila = await comporFilaVisual();
+      getIO().emit('maestro:filaAtualizada', fila);
+    });
 
     socket.on('dj:adicionarPedido', (trackId) => {
       const pedido = {
