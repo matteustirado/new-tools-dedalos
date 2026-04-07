@@ -1,0 +1,37 @@
+{
+  "name": "dedalos-guardian",
+  "version": "1.0.0",
+  "description": "Dedalos Bar - Sistema de Recepção e Segurança",
+  "author": "Matteus Tirado <matteus@dedalos.com.br>",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.dedalos.guardian",
+    "productName": "Dedalos Bar",
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dedalos Bar"
+    }
+  },
+  "dependencies": {
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3"
+  }
+}

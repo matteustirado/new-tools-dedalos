@@ -31,6 +31,8 @@ export default function Sidebar({
     ],
     maintenance: [
       { id: 'home', label: 'Home', icon: 'home', path: activeUnit === 'bh' ? '/bh' : '/' },
+      { type: 'label', label: 'ACESSO' },
+      { id: 'blocked-list', label: 'Bloqueados', icon: 'block', path: `/tools/blocked/${activeUnit}` },
       { type: 'label', label: 'QUINTA PREMIADA' },
       { id: 'thursday', label: 'Sorteador', icon: 'stars', path: `/tools/thursday/${activeUnit}` },
       { type: 'label', label: 'TABELA DE PREÇOS' },
@@ -98,7 +100,6 @@ export default function Sidebar({
   };
 
   const currentMenu = menus[group] || menus[group === 'people' ? 'identification' : 'radio'] || menus.radio;
-  
   const theme = themeColors[group] || themeColors.radio;
 
   const getGroupSubtitle = () => {

@@ -24,6 +24,7 @@ import priceRoutes from './src/routes/pricesRoutes.js'
 import peopleRoutes from './src/routes/peopleRoutes.js'
 import badgeRoutes from './src/routes/badgeRoutes.js'
 import gymRoutes from './src/routes/gymRoutes.js'
+import blockedRoutes from './src/routes/blockedRoutes.js'
 
 dotenv.config()
 
@@ -109,6 +110,7 @@ app.use('/api/prices', priceRoutes)
 app.use('/api/people', peopleRoutes)
 app.use('/api/badges', badgeRoutes)
 app.use('/api/gym', gymRoutes)
+app.use('/api/blocked', blockedRoutes)
 
 app.post('/api/scoreboard/upload', upload.single('scoreboardImage'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' })

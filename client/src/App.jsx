@@ -24,13 +24,14 @@ import RequestHistory from './pages/radio/RequestHistory';
 import Schedule from './pages/radio/Schedule';
 import WatchVideo from './pages/radio/WatchVideo';
 
+import BlockedList from './pages/tools/BlockedList';
 import GoldenThursday from './pages/tools/GoldenThursday';
 import PricesDisplay from './pages/tools/PricesDisplay';
 import PricesEdit from './pages/tools/PricesEdit';
 import ScoreboardDisplay from './pages/tools/ScoreboardDisplay';
 import ScoreboardEdit from './pages/tools/ScoreboardEdit';
 import ScoreboardGame from './pages/tools/ScoreboardGame';
-import ScoreboardPrank from './pages/tools/ScoreboardPrank'; // <-- Import do novo game
+import ScoreboardPrank from './pages/tools/ScoreboardPrank';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -79,13 +80,13 @@ function App() {
           <Route path="/radio/jukebox" element={<Jukebox />} />
           <Route path="/radio/jukebox/:unidade" element={<Jukebox />} />
 
+          <Route path="/tools/blocked/:unidade" element={<BlockedList />} />
           <Route path="/tools/thursday" element={<GoldenThursday />} />
           <Route path="/tools/thursday/:unidade" element={<GoldenThursday />} />
           <Route path="/tools/scoreboard/maintenance/:unidade" element={<ScoreboardEdit />} />
           <Route path="/tools/scoreboard/display/:unidade" element={<ScoreboardDisplay />} />
           <Route path="/tools/scoreboard/game/:unidade" element={<ScoreboardGame />} />
           <Route path="/tools/scoreboard/prank/:unidade" element={<ScoreboardPrank />} />
-          
           <Route path="/tools/prices/maintenance/:unidade" element={<PricesEdit />} />
           <Route path="/tools/prices/display/:unidade" element={<PricesDisplay />} />
 

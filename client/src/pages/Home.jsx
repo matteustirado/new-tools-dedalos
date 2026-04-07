@@ -29,6 +29,7 @@ export default function Home({ unit = 'sp' }) {
   ];
 
   const maintenanceTools = [
+    { id: 'blocked-list', name: 'Bloqueados', icon: 'block', path: `/tools/blocked/${unit}` },
     { id: 'quinta-premiada', name: 'Quinta Premiada', icon: 'stars', path: `/tools/thursday/${unit}` },
     { id: 'tabela-precos', name: 'Tabela de Preços', icon: 'price_change', path: `/tools/prices/maintenance/${unit}` },
     { id: 'placar-dedalos', name: 'Placar Dedalos', icon: 'scoreboard', path: `/tools/scoreboard/maintenance/${unit}` }

@@ -1,5 +1,24 @@
 {
   "dependencies": {
     "framer-motion": "^12.38.0"
-  }
+  },
+  "name": "new-tools-dedalos",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matteustirado/new-tools-dedalos.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/matteustirado/new-tools-dedalos/issues"
+  },
+  "homepage": "https://github.com/matteustirado/new-tools-dedalos#readme"
 }
