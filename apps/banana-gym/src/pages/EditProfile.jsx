@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ChevronLeft, Camera, LogOut, AlertOctagon, Save, X, Lock, Eye, EyeOff } from 'lucide-react';
+import { ChevronLeft, Camera, LogOut, AlertOctagon, Save, X, Lock, Eye, EyeOff, Activity } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -14,10 +14,10 @@ export default function EditProfile() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [showStravaDisconnectModal, setShowStravaDisconnectModal] = useState(false);
+  const [showStravaRedirectModal, setShowStravaRedirectModal] = useState(false); 
   const [confirmCpf, setConfirmCpf] = useState('');
-  
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  
   const [showSenhaAtual, setShowSenhaAtual] = useState(false);
   const [showNovaSenha, setShowNovaSenha] = useState(false);
   const [showConfirmarSenha, setShowConfirmarSenha] = useState(false);
@@ -38,6 +38,7 @@ export default function EditProfile() {
   const [fotoFile, setFotoFile] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
   const [removerFoto, setRemoverFoto] = useState(false);
+  const [hasStrava, setHasStrava] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('gym_user');
@@ -49,6 +50,7 @@ export default function EditProfile() {
     
     const parsedUser = JSON.parse(storedUser);
     setUser(parsedUser);
+    setHasStrava(!!parsedUser.has_strava); 
 
     const tempData = sessionStorage.getItem('temp_profile_data');
     const tempPreview = sessionStorage.getItem('temp_profile_preview');
@@ -102,9 +104,15 @@ export default function EditProfile() {
         contato_emergencia: data.contato_emergencia || '',
       }));
 
-      if (data.foto_perfil) {
-        setUser(prev => prev ? { ...prev, foto_perfil: data.foto_perfil } : prev);
+      setHasStrava(!!data.has_strava);
+
+      if (user) {
+         const updatedUser = { ...user, has_strava: !!data.has_strava };
+         if (data.foto_perfil) updatedUser.foto_perfil = data.foto_perfil;
+         localStorage.setItem('gym_user', JSON.stringify(updatedUser));
+         setUser(updatedUser);
       }
+
     } catch (err) {
       toast.error('Erro ao carregar seus dados.');
     }
@@ -151,6 +159,45 @@ export default function EditProfile() {
       };
       
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleStravaToggle = async () => {
+    if (hasStrava) {
+      setShowStravaDisconnectModal(true);
+    } else {
+      setShowStravaRedirectModal(true); 
+    }
+  };
+
+  const confirmStravaRedirect = async () => {
+    sessionStorage.setItem('temp_profile_data', JSON.stringify(formData));
+    if (fotoPreview) {
+      sessionStorage.setItem('temp_profile_preview', fotoPreview);
+    }
+
+    try {
+      const res = await axios.get(`${API_URL}/api/gym/strava/auth-url`);
+      window.location.href = res.data.url;
+    } catch (err) {
+      toast.error('Não foi possível iniciar a conexão com o Strava.');
+      setShowStravaRedirectModal(false);
+    }
+  };
+
+  const confirmDisconnectStrava = async () => {
+    try {
+      await axios.post(`${API_URL}/api/gym/strava/disconnect`, { cpf: user.cpf });
+      setHasStrava(false);
+      setShowStravaDisconnectModal(false);
+      
+      const updatedUser = { ...user, has_strava: false };
+      localStorage.setItem('gym_user', JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      
+      toast.success('Conta do Strava desconectada!');
+    } catch (err) {
+      toast.error('Erro ao desconectar do Strava.');
     }
   };
 
@@ -267,7 +314,6 @@ export default function EditProfile() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col relative overflow-x-hidden pb-10">
-      
       <header className="flex items-center justify-between p-4 border-b border-white/5 bg-[#050505]/95 backdrop-blur-xl sticky top-0 z-20">
         <button onClick={() => navigate(-1)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
           <ChevronLeft size={24} />
@@ -279,7 +325,6 @@ export default function EditProfile() {
       </header>
 
       <div className="max-w-md mx-auto w-full p-5 space-y-8 animate-fade-in-up">
-        
         <div className="flex flex-col items-center">
           <div 
             onClick={handlePhotoClick}
@@ -346,6 +391,36 @@ export default function EditProfile() {
         </section>
 
         <section className="space-y-4">
+          <h2 className="text-[11px] font-black text-white/40 uppercase tracking-[0.2em] border-b border-white/5 pb-2">
+            Aplicativos Conectados
+          </h2>
+          
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between transition-all hover:bg-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#FC4C02]/10 flex items-center justify-center">
+                <Activity size={20} className="text-[#FC4C02]" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold text-white">Strava</span>
+                <span className="text-[10px] font-medium text-white/50">
+                  {hasStrava ? 'Registrando corridas (+0.5 pt)' : 'Conecte para ganhar pontos'}
+                </span>
+              </div>
+            </div>
+
+            <button 
+              type="button"
+              onClick={handleStravaToggle}
+              className={`w-12 h-7 rounded-full p-1 transition-colors duration-300 ease-in-out relative ${hasStrava ? 'bg-emerald-500' : 'bg-white/20'}`}
+            >
+              <div 
+                className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ease-in-out ${hasStrava ? 'translate-x-5' : 'translate-x-0'}`} 
+              />
+            </button>
+          </div>
+        </section>
+
+        <section className="space-y-4">
           <h2 className="text-[11px] font-black text-white/40 uppercase tracking-[0.2em] border-b border-white/5 pb-2 flex justify-between items-end">
             <span className="flex items-center gap-1.5"><Lock size={12} /> Dados Pessoais</span>
             <span className="text-[9px] text-white/30 tracking-normal normal-case">Somente a empresa vê</span>
@@ -382,7 +457,6 @@ export default function EditProfile() {
             </button>
           ) : (
             <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 space-y-4 animate-fade-in">
-              
               <div>
                 <label className="text-xs font-bold text-white/70 ml-1">Senha Atual <span className="text-red-500">*</span></label>
                 <div className="relative mt-1">
@@ -460,7 +534,6 @@ export default function EditProfile() {
         </section>
 
         <section className="pt-8 space-y-4">
-          
           <button 
             onClick={handleSave}
             disabled={loading}
@@ -488,7 +561,6 @@ export default function EditProfile() {
             <AlertOctagon size={20} /> Desativar Conta
           </button>
         </section>
-
       </div>
 
       {showDeactivateModal && (
@@ -520,6 +592,49 @@ export default function EditProfile() {
         </div>
       )}
 
+      {showStravaDisconnectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-sm p-6 relative">
+            <button onClick={() => setShowStravaDisconnectModal(false)} className="absolute top-4 right-4 text-white/40 hover:text-white"><X size={24} /></button>
+            <div className="w-12 h-12 bg-[#FC4C02]/10 rounded-full flex items-center justify-center text-[#FC4C02] mb-4 border border-[#FC4C02]/20">
+              <Activity size={24} />
+            </div>
+            <h2 className="text-xl font-black text-white mb-2">Desconectar Strava?</h2>
+            <p className="text-sm text-white/60 mb-6">
+              O Banana's Gym não conseguirá mais ler suas corridas e você não ganhará pontos automáticos por correr.
+            </p>
+            
+            <button 
+              onClick={confirmDisconnectStrava} 
+              className="w-full bg-[#FC4C02] text-white font-black py-3.5 rounded-xl hover:bg-[#E34402] transition-colors shadow-lg shadow-[#FC4C02]/20"
+            >
+              Desconectar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showStravaRedirectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-[#111] border border-white/10 rounded-3xl w-full max-w-sm p-6 relative">
+            <button onClick={() => setShowStravaRedirectModal(false)} className="absolute top-4 right-4 text-white/40 hover:text-white"><X size={24} /></button>
+            <div className="w-12 h-12 bg-[#FC4C02]/10 rounded-full flex items-center justify-center text-[#FC4C02] mb-4 border border-[#FC4C02]/20">
+              <Activity size={24} />
+            </div>
+            <h2 className="text-xl font-black text-white mb-2">Conectar Strava</h2>
+            <p className="text-sm text-white/60 mb-6">
+              Você será redirecionado para o site oficial do Strava para autorizar o Banana's Gym. Salvaremos seus dados preenchidos aqui para quando você voltar!
+            </p>
+            
+            <button 
+              onClick={confirmStravaRedirect} 
+              className="w-full bg-[#FC4C02] text-white font-black py-3.5 rounded-xl hover:bg-[#E34402] transition-colors shadow-lg shadow-[#FC4C02]/20"
+            >
+              Ir para o Strava
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

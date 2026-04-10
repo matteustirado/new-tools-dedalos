@@ -9,9 +9,11 @@ import {
   Medal, 
   Share2, 
   EyeOff, 
-  MessageCircle 
+  MessageCircle,
+  Activity
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import polyline from '@mapbox/polyline';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -154,6 +156,20 @@ export default function Profile() {
     } else {
       navigator.clipboard.writeText(url);
       toast.success('Link do perfil copiado para a área de transferência!');
+    }
+  };
+
+  const getStaticMapUrl = (encodedPolyline) => {
+    if (!encodedPolyline) return null;
+    try {
+        const decoded = polyline.decode(encodedPolyline);
+        const simplified = decoded.filter((_, i) => i % 10 === 0);
+        let pathStr = "color:0xFC4C02ff|weight:5"; 
+        simplified.forEach(point => { pathStr += `|${point[0]},${point[1]}`; });
+        const midPoint = decoded[Math.floor(decoded.length / 2)];
+        return `https://open.mapquestapi.com/staticmap/v5/map?key=G0y0v5A4PGAgD6b8QY13Oq5t23zR06p0&type=dark&zoom=13&size=300,300&center=${midPoint[0]},${midPoint[1]}&shape=${pathStr}`;
+    } catch(e) { 
+        return null; 
     }
   };
 
@@ -335,18 +351,31 @@ export default function Profile() {
                 <div className="grid grid-cols-3 gap-0.5 mt-0.5">
                   {profileData.posts.map((post, index) => {
                     const isLast = profileData.posts.length === index + 1;
+                    const isRunPost = post.activity_type === 'RUN'; 
+
                     return (
                       <div
                         key={post.id}
                         ref={isLast ? lastElementRef : null}
-                        className="aspect-[4/5] bg-white/5 relative group cursor-pointer"
+                        className="aspect-[4/5] bg-white/5 relative group cursor-pointer overflow-hidden"
                         onClick={() => navigate(`/post/${post.id}`)}
                       >
-                        <img
-                          src={`${API_URL}${post.foto_treino_url}`}
-                          alt="Post"
-                          className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                        />
+                        {isRunPost ? (
+                          <>
+                            {post.foto_treino_url ? (
+                              <img src={`${API_URL}${post.foto_treino_url}`} alt="Post Corrida" className="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
+                            ) : (
+                              post.run_polyline && (
+                                <img src={getStaticMapUrl(post.run_polyline)} className="w-full h-full object-cover bg-black opacity-80 group-hover:opacity-60 mix-blend-screen transition-opacity" alt="Mapa" />
+                              )
+                            )}
+                            <div className="absolute top-1.5 right-1.5 bg-[#111]/80 backdrop-blur p-1 rounded-md border border-[#FC4C02]/30 shadow-md">
+                              <Activity size={12} className="text-[#FC4C02]" />
+                            </div>
+                          </>
+                        ) : (
+                          <img src={`${API_URL}${post.foto_treino_url}`} alt="Post" className="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
+                        )}
                       </div>
                     );
                   })}
@@ -392,19 +421,32 @@ export default function Profile() {
                 <div className="grid grid-cols-3 gap-0.5 mt-0.5">
                   {profileData.archivedPosts?.map((post, index) => {
                     const isLast = profileData.archivedPosts.length === index + 1;
+                    const isRunPost = post.activity_type === 'RUN'; 
+
                     return (
                       <div
                         key={post.id}
                         ref={isLast ? lastElementRef : null}
-                        className="aspect-[4/5] bg-[#0a0a0a] relative group cursor-pointer"
+                        className="aspect-[4/5] bg-[#0a0a0a] relative group cursor-pointer overflow-hidden"
                         onClick={() => navigate(`/post/${post.id}`)}
                       >
-                        <img
-                          src={`${API_URL}${post.foto_treino_url}`}
-                          alt="Archived Post"
-                          className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80"
-                        />
-                        <div className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full border border-white/10">
+                        {isRunPost ? (
+                          <>
+                            {post.foto_treino_url ? (
+                              <img src={`${API_URL}${post.foto_treino_url}`} alt="Archived" className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80" />
+                            ) : (
+                              post.run_polyline && (
+                                <img src={getStaticMapUrl(post.run_polyline)} className="w-full h-full object-cover bg-black grayscale opacity-60 transition-all group-hover:opacity-80 mix-blend-screen" alt="Mapa" />
+                              )
+                            )}
+                            <div className="absolute top-1.5 right-1.5 bg-[#111]/80 backdrop-blur p-1 rounded-md border border-[#FC4C02]/30 shadow-md">
+                              <Activity size={12} className="text-[#FC4C02] opacity-60" />
+                            </div>
+                          </>
+                        ) : (
+                          <img src={`${API_URL}${post.foto_treino_url}`} alt="Archived Post" className="w-full h-full object-cover grayscale opacity-60 transition-all group-hover:opacity-80" />
+                        )}
+                        <div className="absolute bottom-2 right-2 bg-black/60 p-1.5 rounded-full border border-white/10">
                            <EyeOff size={12} className="text-white/70" />
                         </div>
                       </div>

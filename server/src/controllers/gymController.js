@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { getIO } from '../socket.js';
 import bcrypt from 'bcrypt';
+import axios from 'axios';
 
 const calcularDistanciaMetros = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
@@ -37,9 +38,8 @@ export const syncEmployeesToGym = async (req, res) => {
       const [existing] = await pool.query("SELECT cpf FROM gym_users WHERE cpf = ?", [cpf]);
 
       if (existing.length === 0) {
-        const firstName = emp.name.split(' ')[0].toLowerCase();
         const last5Cpf = cpf.slice(-5);
-        const defaultPassword = `${firstName}${last5Cpf}`;
+        const defaultPassword = `atleta${last5Cpf}`;
         const username = generateUsername(emp.name, emp.rg, cpf);
         
         const salt = await bcrypt.genSalt(10);
@@ -48,11 +48,11 @@ export const syncEmployeesToGym = async (req, res) => {
         try {
           await pool.query(
             "INSERT INTO gym_users (cpf, nome, username, senha_hash, foto_perfil) VALUES (?, ?, ?, ?, ?)",
-            [cpf, emp.name, username, hashed, emp.photo || null]
+            [cpf, 'Atleta Anônimo', username, hashed, emp.photo || null]
           );
           addedCount++;
         } catch (insertErr) {
-          console.warn(`[GYM] Aviso ao inserir ${emp.name}:`, insertErr.message);
+          console.warn(`[GYM] Aviso ao inserir:`, insertErr.message);
         }
       }
     }
@@ -62,20 +62,287 @@ export const syncEmployeesToGym = async (req, res) => {
     }
   } catch (err) {
     console.error("[GYM] Erro na sincronização de usuários:", err);
+    if (res) res.status(500).json({ error: "Erro interno na sincronização." });
+  }
+};
+
+export const getStravaAuthUrl = (req, res) => {
+  const clientId = process.env.STRAVA_CLIENT_ID;
+  const redirectUri = process.env.STRAVA_REDIRECT_URI;
+
+  if (!clientId || !redirectUri) {
+    return res.status(500).json({ error: "Servidor não configurado para o Strava." });
+  }
+
+  const url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&approval_prompt=force&scope=activity:read_all`;
+  
+  res.json({ url });
+};
+
+export const handleStravaCallback = async (req, res) => {
+  const { code, cpf } = req.body;
+
+  if (!code || !cpf) {
+    return res.status(400).json({ error: "Código ou CPF ausentes." });
+  }
+
+  try {
+    const response = await axios.post('https://www.strava.com/oauth/token', {
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      code: code,
+      grant_type: 'authorization_code'
+    });
+
+    const { access_token, refresh_token, expires_at } = response.data;
+    const cleanCpf = String(cpf).replace(/\D/g, '');
+
+    await pool.query(
+      `UPDATE gym_users 
+       SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ? 
+       WHERE cpf = ?`,
+      [access_token, refresh_token, expires_at, cleanCpf]
+    );
+
+    res.json({ success: true, message: "Strava conectado com sucesso!" });
+  } catch (error) {
+    console.error("[STRAVA OAUTH ERROR]", error.response?.data || error.message);
+    res.status(500).json({ error: "Falha ao conectar com o Strava." });
+  }
+};
+
+export const disconnectStrava = async (req, res) => {
+  const { cpf } = req.body;
+
+  if (!cpf) return res.status(400).json({ error: "CPF obrigatório." });
+
+  try {
+    const cleanCpf = String(cpf).replace(/\D/g, '');
+    await pool.query(
+      `UPDATE gym_users 
+       SET strava_access_token = NULL, strava_refresh_token = NULL, strava_expires_at = NULL 
+       WHERE cpf = ?`,
+      [cleanCpf]
+    );
+    res.json({ success: true, message: "Strava desconectado." });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao desconectar." });
+  }
+};
+
+const getValidStravaToken = async (cpf) => {
+  const [users] = await pool.query(
+    "SELECT strava_access_token, strava_refresh_token, strava_expires_at FROM gym_users WHERE cpf = ?",
+    [cpf]
+  );
+
+  if (users.length === 0 || !users[0].strava_access_token) return null;
+
+  const user = users[0];
+  const now = Math.floor(Date.now() / 1000);
+
+  if (user.strava_expires_at > now) {
+    return user.strava_access_token;
+  }
+
+  try {
+    const response = await axios.post('https://www.strava.com/oauth/token', {
+      client_id: process.env.STRAVA_CLIENT_ID,
+      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      refresh_token: user.strava_refresh_token,
+      grant_type: 'refresh_token'
+    });
+
+    const { access_token, refresh_token, expires_at } = response.data;
+
+    await pool.query(
+      `UPDATE gym_users SET strava_access_token = ?, strava_refresh_token = ?, strava_expires_at = ? WHERE cpf = ?`,
+      [access_token, refresh_token, expires_at, cpf]
+    );
+
+    return access_token;
+  } catch (err) {
+    console.error("[STRAVA REFRESH ERROR]", err.response?.data || err.message);
+    return null;
+  }
+};
+
+export const fetchAndSaveStravaRun = async (req, res) => {
+  const { cpf } = req.body;
+  const cleanCpf = String(cpf).replace(/\D/g, '');
+
+  try {
+    const token = await getValidStravaToken(cleanCpf);
     
-    if (res) {
-      res.status(500).json({ error: "Erro interno na sincronização." });
+    if (!token) {
+      return res.status(401).json({ error: "Strava não conectado ou autorização expirada." });
     }
+
+    const stravaRes = await axios.get('https://www.strava.com/api/v3/athlete/activities?per_page=1', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (stravaRes.data.length === 0) {
+      return res.status(404).json({ error: "Nenhuma atividade encontrada no seu Strava." });
+    }
+
+    const activity = stravaRes.data[0];
+
+    const distanceKm = activity.distance / 1000;
+    const isRun = activity.type === 'Run';
+    const isToday = new Date(activity.start_date_local).toDateString() === new Date().toDateString();
+    
+    const activityEndTime = new Date(activity.start_date_local).getTime() + (activity.elapsed_time * 1000);
+    const minutesSinceEnd = (Date.now() - activityEndTime) / (1000 * 60);
+
+    if (!isRun) return res.status(400).json({ error: "A última atividade não é uma corrida." });
+    if (!isToday) return res.status(400).json({ error: "A última corrida não foi feita hoje." });
+    if (distanceKm < 5.0) return res.status(400).json({ error: `Corrida muito curta: ${distanceKm.toFixed(2)}km. Mínimo de 5km exigido.` });
+    if (minutesSinceEnd > 60) return res.status(400).json({ error: "O tempo limite de 1 hora para registrar essa corrida já passou." });
+
+    const [existing] = await pool.query("SELECT id FROM gym_checkins WHERE strava_activity_id = ?", [String(activity.id)]);
+    if (existing.length > 0) {
+        return res.status(400).json({ error: "Você já postou essa corrida hoje!" });
+    }
+
+    res.json({ 
+        message: "Corrida encontrada! Gerando card...",
+        run: activity 
+    });
+
+  } catch (err) {
+    console.error("[STRAVA FETCH ERROR]", err.response?.data || err.message);
+    res.status(500).json({ error: "Erro interno ao validar corrida." });
+  }
+};
+
+export const searchUsersForDuo = async (req, res) => {
+  const { q } = req.query;
+
+  if (!q || q.length < 2) {
+    return res.json([]);
+  }
+
+  try {
+    const searchTerm = `%${q}%`;
+    const [users] = await pool.query(
+      `SELECT cpf, nome, username, foto_perfil 
+       FROM gym_users 
+       WHERE (nome LIKE ? OR username LIKE ?) AND is_blocked = 0 
+       LIMIT 10`, 
+      [searchTerm, searchTerm]
+    );
+
+    res.json(users);
+  } catch (err) {
+    console.error("[GYM SEARCH USERS]", err);
+    res.status(500).json({ error: "Erro ao buscar usuários." });
+  }
+};
+
+export const approveDuoPost = async (req, res) => {
+  const { post_id, amigo_cpf } = req.body;
+
+  try {
+    const cleanCpf = String(amigo_cpf).replace(/\D/g, '');
+
+    const [post] = await pool.query(
+      "SELECT * FROM gym_checkins WHERE id = ? AND tagged_cpf = ? AND duo_status = 'PENDING'",
+      [post_id, cleanCpf]
+    );
+
+    if (post.length === 0) {
+      return res.status(404).json({ error: "Post não encontrado ou já processado." });
+    }
+
+    await pool.query(
+      "UPDATE gym_checkins SET duo_status = 'APPROVED', pontos = 2 WHERE id = ?",
+      [post_id]
+    );
+
+    const [result] = await pool.query(
+      `INSERT INTO gym_checkins 
+       (colaborador_cpf, unidade, academia_digitada, foto_treino_url, mensagem, pontos, is_checkin_valid, activity_type, tagged_cpf, duo_status) 
+       VALUES (?, ?, ?, ?, ?, 2, 1, 'PHOTO', ?, 'APPROVED')`,
+      [cleanCpf, post[0].unidade, post[0].academia_digitada, post[0].foto_treino_url, "Treino em dupla!", post[0].colaborador_cpf]
+    );
+
+    const io = getIO();
+    if (io) {
+      io.emit('gym:ranking_updated');
+    }
+
+    res.json({ success: true, message: "Treino aprovado! Vocês ganharam +2 pontos! 🍌🍌" });
+  } catch (err) {
+    console.error("[GYM DUO APPROVE ERROR]", err);
+    res.status(500).json({ error: "Erro interno ao aprovar treino." });
+  }
+};
+
+export const rejectDuoPost = async (req, res) => {
+  const { post_id, amigo_cpf } = req.body;
+
+  try {
+    const cleanCpf = String(amigo_cpf).replace(/\D/g, '');
+
+    const [post] = await pool.query(
+      "SELECT * FROM gym_checkins WHERE id = ? AND tagged_cpf = ? AND duo_status = 'PENDING'",
+      [post_id, cleanCpf]
+    );
+
+    if (post.length === 0) {
+      return res.status(404).json({ error: "Post não encontrado ou já processado." });
+    }
+
+    await pool.query(
+      "UPDATE gym_checkins SET duo_status = 'REJECTED' WHERE id = ?",
+      [post_id]
+    );
+
+    res.json({ success: true, message: "Convite recusado." });
+  } catch (err) {
+    console.error("[GYM DUO REJECT ERROR]", err);
+    res.status(500).json({ error: "Erro interno ao recusar treino." });
+  }
+};
+
+export const getPendingDuos = async (req, res) => {
+  const { cpf } = req.params;
+  const cleanCpf = String(cpf).replace(/\D/g, '');
+
+  try {
+    const [pending] = await pool.query(
+      `SELECT c.id as post_id, c.foto_treino_url, c.created_at, 
+              u.nome as amigo_nome, u.foto_perfil as amigo_foto
+       FROM gym_checkins c
+       JOIN gym_users u ON c.colaborador_cpf = u.cpf
+       WHERE c.tagged_cpf = ? AND c.duo_status = 'PENDING'`,
+      [cleanCpf]
+    );
+
+    res.json(pending);
+  } catch (err) {
+    console.error("[GYM PENDING DUOS]", err);
+    res.status(500).json({ error: "Erro ao buscar convites pendentes." });
   }
 };
 
 export const postCheckin = async (req, res) => {
-  const { colaborador_cpf, academia_digitada, mensagem, latitude, longitude } = req.body;
+  const { 
+    colaborador_cpf, academia_digitada, mensagem, latitude, longitude, is_real_time,
+    is_run, strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline,
+    tagged_cpf
+  } = req.body;
+  
   const pontos = parseFloat(req.body.pontos) || 1;
   const foto_treino_url = req.file ? `/uploads/${req.file.filename}` : null;
 
-  if (!colaborador_cpf || !foto_treino_url) {
-    return res.status(400).json({ error: "Colaborador e Foto são obrigatórios." });
+  if (!colaborador_cpf) {
+    return res.status(400).json({ error: "Colaborador é obrigatório." });
+  }
+
+  if (is_run !== 'true' && !foto_treino_url) {
+      return res.status(400).json({ error: "A Foto é obrigatória." });
   }
 
   const lat = parseFloat(latitude);
@@ -96,10 +363,8 @@ export const postCheckin = async (req, res) => {
 
     if (!isNaN(lat) && !isNaN(lng)) {
       const [locations] = await connection.query("SELECT * FROM gym_locations");
-
       for (const loc of locations) {
         const dist = calcularDistanciaMetros(lat, lng, loc.latitude, loc.longitude);
-
         if (dist <= loc.raio_metros) {
           gym_location_id = loc.id;
           break;
@@ -107,29 +372,131 @@ export const postCheckin = async (req, res) => {
       }
     }
 
-    const [result] = await connection.query(
-      `INSERT INTO gym_checkins (colaborador_cpf, unidade, academia_digitada, gym_location_id, foto_treino_url, mensagem, latitude, longitude, pontos) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [colaborador_cpf, 'SP', academia_digitada || 'Não informada', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontos]
+    let is_checkin_valid = 0;
+    const [validPostsToday] = await connection.query(
+      "SELECT id FROM gym_checkins WHERE colaborador_cpf = ? AND DATE(created_at) = CURRENT_DATE() AND is_checkin_valid = 1",
+      [colaborador_cpf]
     );
+    
+    if ((is_real_time === 'true' || is_real_time === true || is_run === 'true') && validPostsToday.length === 0) {
+      is_checkin_valid = 1;
+    }
+
+    const duoStatus = tagged_cpf ? 'PENDING' : null;
+    let result;
+
+    if (is_run === 'true') {
+        [result] = await connection.query(
+          `INSERT INTO gym_checkins 
+           (colaborador_cpf, unidade, academia_digitada, gym_location_id, foto_treino_url, mensagem, latitude, longitude, pontos, is_checkin_valid, activity_type, strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline, tagged_cpf, duo_status) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUN', ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            colaborador_cpf, 'SP', academia_digitada || 'Corrida Outdoor', gym_location_id, foto_treino_url, mensagem || '', 
+            lat || null, lng || null, pontos, is_checkin_valid, 
+            strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline,
+            tagged_cpf || null, duoStatus
+          ]
+        );
+    } else {
+        [result] = await connection.query(
+          `INSERT INTO gym_checkins 
+           (colaborador_cpf, unidade, academia_digitada, gym_location_id, foto_treino_url, mensagem, latitude, longitude, pontos, is_checkin_valid, activity_type, tagged_cpf, duo_status) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PHOTO', ?, ?)`,
+          [colaborador_cpf, 'SP', academia_digitada || 'Não informada', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontos, is_checkin_valid, tagged_cpf || null, duoStatus]
+        );
+    }
 
     await connection.commit();
 
     const io = getIO();
-
     if (io) {
       io.emit('gym:new_post', {
         id: result.insertId,
         colaborador_cpf,
         unidade: 'SP'
       });
+      if (is_checkin_valid === 1) {
+        io.emit('gym:ranking_updated');
+      }
     }
 
     res.status(201).json({ message: "Check-in publicado com sucesso!", checkin_id: result.insertId });
   } catch (err) {
     await connection.rollback();
+    if (err.code === 'ER_DUP_ENTRY') {
+       return res.status(400).json({ error: "Esta corrida já foi registrada no sistema!" });
+    }
     console.error("[GYM] Erro ao salvar check-in:", err);
     res.status(500).json({ error: "Erro interno ao processar o check-in." });
+  } finally {
+    connection.release();
+  }
+};
+
+export const getTodayActivity = async (req, res) => {
+  const { cpf } = req.params;
+  
+  try {
+    const cleanCpf = String(cpf).replace(/\D/g, '');
+    const [posts] = await pool.query(
+      `SELECT id, foto_treino_url, pontos, is_checkin_valid, created_at, activity_type, run_distance_km
+       FROM gym_checkins
+       WHERE colaborador_cpf = ? AND DATE(created_at) = CURRENT_DATE()
+       ORDER BY created_at ASC`,
+      [cleanCpf]
+    );
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// 👈 Lógica de Alternância (Toggle) do Check-in
+export const selectCheckin = async (req, res) => {
+  const { colaborador_cpf, post_id } = req.body;
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
+
+    const [currentPost] = await connection.query(
+      "SELECT is_checkin_valid FROM gym_checkins WHERE id = ? AND colaborador_cpf = ?",
+      [post_id, cleanCpf]
+    );
+
+    const isAlreadyChecked = currentPost.length > 0 && currentPost[0].is_checkin_valid === 1;
+
+    await connection.query(
+      `UPDATE gym_checkins SET is_checkin_valid = 0 
+       WHERE colaborador_cpf = ? AND DATE(created_at) = CURRENT_DATE()`,
+      [cleanCpf]
+    );
+
+    if (!isAlreadyChecked) {
+      await connection.query(
+        `UPDATE gym_checkins SET is_checkin_valid = 1 
+         WHERE id = ? AND colaborador_cpf = ? AND DATE(created_at) = CURRENT_DATE()`,
+        [post_id, cleanCpf]
+      );
+    }
+
+    await connection.commit();
+
+    const io = getIO();
+    if (io) {
+      io.emit('gym:ranking_updated');
+    }
+
+    res.json({ 
+      success: true, 
+      message: isAlreadyChecked ? "Check-in desmarcado." : "Check-in do dia atualizado!",
+      isNowChecked: !isAlreadyChecked
+    });
+  } catch (err) {
+    await connection.rollback();
+    console.error("[GYM SELECT CHECKIN]", err);
+    res.status(500).json({ error: "Erro ao alterar o check-in do dia." });
   } finally {
     connection.release();
   }
@@ -144,8 +511,10 @@ export const getFeed = async (req, res) => {
     const query = `
       SELECT 
         c.id, c.colaborador_cpf, c.academia_digitada as unidade, c.foto_treino_url, c.mensagem, c.created_at, c.pontos,
-        c.imagem_valida, c.localizacao_valida,
+        c.imagem_valida, c.localizacao_valida, c.is_checkin_valid, c.activity_type, c.run_distance_km, c.run_duration_seconds, c.run_polyline,
+        c.tagged_cpf, c.duo_status,
         u.nome AS colaborador_nome, u.username AS colaborador_username, u.foto_perfil AS colaborador_foto,
+        t.nome AS tagged_nome, t.username AS tagged_username, t.foto_perfil AS tagged_foto,
         l.nome AS academia_nome,
         (SELECT COUNT(*) FROM gym_likes WHERE checkin_id = c.id) AS likes_count,
         (SELECT COUNT(*) FROM gym_bananas WHERE checkin_id = c.id) AS bananas_count,
@@ -154,16 +523,20 @@ export const getFeed = async (req, res) => {
         ${cleanCpf ? `, EXISTS(SELECT 1 FROM gym_bananas WHERE checkin_id = c.id AND colaborador_cpf = ?) AS bananadByMe` : ''}
       FROM gym_checkins c
       LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
+      LEFT JOIN gym_users t ON c.tagged_cpf = t.cpf
       LEFT JOIN gym_locations l ON c.gym_location_id = l.id
-      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1) AND (c.arquivado IS NULL OR c.arquivado = 0)
+      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1) 
+        AND (c.arquivado IS NULL OR c.arquivado = 0)
+        AND (
+          c.foto_treino_url IS NULL 
+          OR c.id = (SELECT MIN(id) FROM gym_checkins c2 WHERE c2.foto_treino_url = c.foto_treino_url)
+        )
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?
     `;
 
     let params = [];
-    if (cleanCpf) {
-      params.push(cleanCpf, cleanCpf);
-    }
+    if (cleanCpf) params.push(cleanCpf, cleanCpf);
     params.push(Number(limit), Number(offset));
 
     const [feed] = await pool.query(query, params);
@@ -250,6 +623,37 @@ export const toggleBanana = async (req, res) => {
   }
 };
 
+export const getPostInteractions = async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.query; 
+
+  try {
+    let query = '';
+    
+    if (type === 'likes') {
+      query = `
+        SELECT u.cpf, u.nome, u.username, u.foto_perfil 
+        FROM gym_likes l
+        JOIN gym_users u ON l.colaborador_id = u.cpf
+        WHERE l.checkin_id = ?
+      `;
+    } else {
+      query = `
+        SELECT u.cpf, u.nome, u.username, u.foto_perfil 
+        FROM gym_bananas b
+        JOIN gym_users u ON b.colaborador_cpf = u.cpf
+        WHERE b.checkin_id = ?
+      `;
+    }
+
+    const [users] = await pool.query(query, [id]);
+    res.json(users);
+  } catch (err) {
+    console.error("[GYM INTERACTIONS ERROR]", err);
+    res.status(500).json({ error: "Erro ao buscar interações." });
+  }
+};
+
 export const postComment = async (req, res) => {
   const { checkin_id, colaborador_cpf, texto, parent_id } = req.body;
 
@@ -283,7 +687,7 @@ export const getRankings = async (req, res) => {
              COUNT(*) as total_checkins, COALESCE(SUM(c.pontos), 0) as total_pontos
       FROM gym_checkins c
       LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
-      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1)
+      WHERE (c.imagem_valida IS NULL OR c.imagem_valida = 1) AND c.is_checkin_valid = 1
     `;
 
     const [topAnual] = await pool.query(`
@@ -312,7 +716,7 @@ export const getRankings = async (req, res) => {
       FROM gym_checkins c
       LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
       WHERE MONTH(c.created_at) = MONTH(CURRENT_DATE) AND YEAR(c.created_at) = YEAR(CURRENT_DATE) 
-        AND (c.imagem_valida IS NULL OR c.imagem_valida = 1)
+        AND (c.imagem_valida IS NULL OR c.imagem_valida = 1) AND c.is_checkin_valid = 1
       GROUP BY c.colaborador_cpf, u.nome, u.username, u.foto_perfil
       ORDER BY total_pontos DESC
     `);
@@ -331,7 +735,7 @@ export const getPendingModeration = async (req, res) => {
              c.foto_treino_url, c.latitude, c.longitude, c.imagem_valida, c.localizacao_valida, c.created_at 
       FROM gym_checkins c
       INNER JOIN gym_users u ON c.colaborador_cpf = u.cpf
-      WHERE c.imagem_valida IS NULL OR c.localizacao_valida IS NULL
+      WHERE (c.imagem_valida IS NULL OR c.localizacao_valida IS NULL) AND c.is_checkin_valid = 1 AND c.activity_type = 'PHOTO'
       ORDER BY c.created_at ASC
     `);
 
@@ -408,7 +812,11 @@ export const addGymLocation = async (req, res) => {
 
 export const getGymUsers = async (req, res) => {
   try {
-    const [users] = await pool.query("SELECT cpf, nome, username, foto_perfil, is_blocked, must_change_password, created_at FROM gym_users ORDER BY nome ASC");
+    const [users] = await pool.query(
+      `SELECT cpf, nome, username, foto_perfil, is_blocked, must_change_password, created_at, 
+      (strava_access_token IS NOT NULL) as has_strava 
+      FROM gym_users ORDER BY nome ASC`
+    );
 
     res.json(users);
   } catch (err) {
@@ -488,7 +896,8 @@ export const loginGymUser = async (req, res) => {
         nome: user.nome,
         username: user.username,
         foto_perfil: user.foto_perfil,
-        must_change_password: user.must_change_password
+        must_change_password: user.must_change_password,
+        has_strava: !!user.strava_access_token
       }
     });
   } catch (err) {
@@ -556,15 +965,15 @@ export const addManualUser = async (req, res) => {
 
     const firstName = nome.split(' ')[0].toLowerCase();
     const last5Cpf = cleanCpf.slice(-5);
-    const defaultPassword = `${firstName}${last5Cpf}`;
+    const defaultPassword = `atleta${last5Cpf}`;
     const username = generateUsername(nome, null, cleanCpf);
     
     const salt = await bcrypt.genSalt(10);
     const hashed = await bcrypt.hash(defaultPassword, salt);
 
     await pool.query(
-      "INSERT INTO gym_users (cpf, nome, username, senha_hash, must_change_password) VALUES (?, ?, ?, ?, 1)",
-      [cleanCpf, nome, username, hashed]
+      "INSERT INTO gym_users (cpf, nome, username, senha_hash, must_change_password) VALUES (?, 'Atleta Anônimo', ?, ?, 1)",
+      [cleanCpf, username, hashed]
     );
 
     res.status(201).json({
@@ -591,11 +1000,11 @@ export const getUserProfile = async (req, res) => {
     let queryParams = [];
 
     if (type === 'username') {
-      userQuery = "SELECT cpf, nome, username, foto_perfil, bio, instagram, telefone, departamento, contato_emergencia FROM gym_users WHERE username = ?";
+      userQuery = "SELECT cpf, nome, username, foto_perfil, bio, instagram, telefone, departamento, contato_emergencia, (strava_access_token IS NOT NULL) as has_strava FROM gym_users WHERE username = ?";
       queryParams = [identifier];
     } else {
       const cleanCpf = String(identifier).replace(/\D/g, '');
-      userQuery = "SELECT cpf, nome, username, foto_perfil, bio, instagram, telefone, departamento, contato_emergencia FROM gym_users WHERE cpf = ?";
+      userQuery = "SELECT cpf, nome, username, foto_perfil, bio, instagram, telefone, departamento, contato_emergencia, (strava_access_token IS NOT NULL) as has_strava FROM gym_users WHERE cpf = ?";
       queryParams = [cleanCpf];
     }
 
@@ -610,17 +1019,21 @@ export const getUserProfile = async (req, res) => {
 
     if (Number(page) > 1) {
       const [posts] = await pool.query(`
-        SELECT id, foto_treino_url, created_at, pontos 
+        SELECT id, foto_treino_url, created_at, pontos, activity_type, run_distance_km, run_duration_seconds, run_polyline 
         FROM gym_checkins 
         WHERE colaborador_cpf = ? 
           AND (imagem_valida IS NULL OR imagem_valida = 1) 
           AND (arquivado IS NULL OR arquivado = 0)
+          AND (
+            foto_treino_url IS NULL 
+            OR id = (SELECT MIN(id) FROM gym_checkins c2 WHERE c2.foto_treino_url = gym_checkins.foto_treino_url)
+          )
         ORDER BY created_at DESC
         LIMIT ? OFFSET ?
       `, [userCpf, Number(limit), Number(offset)]);
 
       const [archivedPosts] = await pool.query(`
-        SELECT id, foto_treino_url, created_at, pontos, arquivado 
+        SELECT id, foto_treino_url, created_at, pontos, arquivado, activity_type, run_distance_km, run_polyline 
         FROM gym_checkins 
         WHERE colaborador_cpf = ? 
           AND (imagem_valida IS NULL OR imagem_valida = 1) 
@@ -637,7 +1050,7 @@ export const getUserProfile = async (req, res) => {
       FROM gym_checkins
       WHERE MONTH(created_at) = MONTH(CURRENT_DATE) 
         AND YEAR(created_at) = YEAR(CURRENT_DATE)
-        AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND (imagem_valida IS NULL OR imagem_valida = 1) AND is_checkin_valid = 1
       GROUP BY colaborador_cpf
       ORDER BY total_pontos DESC
     `);
@@ -662,17 +1075,21 @@ export const getUserProfile = async (req, res) => {
     else if (totalCheckins >= 4) classificacao = 'Bronze';
 
     const [posts] = await pool.query(`
-      SELECT id, foto_treino_url, created_at, pontos 
+      SELECT id, foto_treino_url, created_at, pontos, activity_type, run_distance_km, run_duration_seconds, run_polyline 
       FROM gym_checkins 
       WHERE colaborador_cpf = ? 
         AND (imagem_valida IS NULL OR imagem_valida = 1) 
         AND (arquivado IS NULL OR arquivado = 0)
+        AND (
+          foto_treino_url IS NULL 
+          OR id = (SELECT MIN(id) FROM gym_checkins c2 WHERE c2.foto_treino_url = gym_checkins.foto_treino_url)
+        )
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
     `, [userCpf, Number(limit), Number(offset)]);
 
     const [archivedPosts] = await pool.query(`
-      SELECT id, foto_treino_url, created_at, pontos, arquivado 
+      SELECT id, foto_treino_url, created_at, pontos, arquivado, activity_type, run_distance_km, run_polyline 
       FROM gym_checkins 
       WHERE colaborador_cpf = ? 
         AND (imagem_valida IS NULL OR imagem_valida = 1) 
@@ -688,6 +1105,7 @@ export const getUserProfile = async (req, res) => {
       telefone: user.telefone || '', 
       departamento: user.departamento || '',
       contato_emergencia: user.contato_emergencia || '',
+      has_strava: !!user.has_strava,
       totalCheckins,
       posicao: posicaoStr,
       classificacao,
@@ -714,7 +1132,7 @@ export const getCommunity = async (req, res) => {
       FROM gym_checkins
       WHERE MONTH(created_at) = MONTH(CURRENT_DATE) 
         AND YEAR(created_at) = YEAR(CURRENT_DATE)
-        AND (imagem_valida IS NULL OR imagem_valida = 1)
+        AND (imagem_valida IS NULL OR imagem_valida = 1) AND is_checkin_valid = 1
       GROUP BY colaborador_cpf
       ORDER BY total_pontos DESC
     `);
@@ -841,12 +1259,16 @@ export const getPostById = async (req, res) => {
     const postQuery = `
       SELECT 
         c.id, c.colaborador_cpf, c.arquivado, c.academia_digitada as unidade, c.foto_treino_url, c.mensagem, c.created_at, c.pontos,
+        c.activity_type, c.run_distance_km, c.run_duration_seconds, c.run_timestamp, c.strava_activity_id, c.run_polyline,
+        c.tagged_cpf, c.duo_status,
         u.nome AS colaborador_nome, u.username AS colaborador_username, u.foto_perfil AS colaborador_foto,
+        t.nome AS tagged_nome, t.username AS tagged_username, t.foto_perfil AS tagged_foto,
         (SELECT COUNT(*) FROM gym_likes WHERE checkin_id = c.id) AS likes_count,
         (SELECT COUNT(*) FROM gym_comments WHERE checkin_id = c.id) AS comments_count,
         (SELECT COUNT(*) FROM gym_bananas WHERE checkin_id = c.id) AS bananas_count
       FROM gym_checkins c
       LEFT JOIN gym_users u ON c.colaborador_cpf = u.cpf
+      LEFT JOIN gym_users t ON c.tagged_cpf = t.cpf
       WHERE c.id = ? AND (c.imagem_valida IS NULL OR c.imagem_valida = 1)
     `;
     const [posts] = await pool.query(postQuery, [id]);

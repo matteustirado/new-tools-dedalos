@@ -18,6 +18,7 @@ import Inbox from './pages/Inbox';
 import Notifications from './pages/Notifications';
 import PostDetail from './pages/PostDetail';
 import ImageCropper from './pages/ImageCropper';
+import StravaCallback from './pages/StravaCallback';
 
 function ScrollManager() {
   const location = useLocation();
@@ -71,6 +72,7 @@ function App() {
         <Route path="/camera" element={<CameraCapture />} />
         <Route path="/edit-profile" element={<EditProfile />} />
         <Route path="/crop" element={<ImageCropper />} />
+        <Route path="/strava-callback" element={<StravaCallback />} />
 
         <Route element={<MainLayout />}>
           <Route path="/feed" element={<Feed />} />
