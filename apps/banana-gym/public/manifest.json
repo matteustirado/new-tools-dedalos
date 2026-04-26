@@ -1,0 +1,24 @@
+{
+  "name": "Banana's Gym",
+  "short_name": "Banana's Gym",
+  "description": "App de treinos da equipe Dédalos.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    {
+      "src": "/BananaIcon-App.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/BananaIcon-App.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

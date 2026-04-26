@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/src/assets/image/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate" />
+    <title>Dedalos Tools</title>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+            console.log('[Limpeza] Service Worker corrompido destruído.');
+          }
+        });
+      }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.jsx"></script>
+</body>
+</html>
