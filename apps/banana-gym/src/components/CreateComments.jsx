@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { X, Send, CornerDownRight, Crown, Loader2, MessageCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import api from '../services/api';
+import { getSocket } from '../socket';
 
 export default function CreateComments({ isOpen, onClose, post, currentUser, onCommentAdded, onCommentDeleted }) {
   const [comments, setComments] = useState([]);
@@ -16,6 +17,23 @@ export default function CreateComments({ isOpen, onClose, post, currentUser, onC
   
   const inputRef = useRef(null);
   const timeouts = useRef([]);
+
+  const [startY, setStartY] = useState(null);
+  const [currentY, setCurrentY] = useState(0);
+
+  const fetchComments = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const identifier = post.post_slug || post.id; 
+      const res = await api.get(`/api/gym/post/${identifier}`);
+      setComments(res.data.comments || []);
+    } catch (err) {
+      console.error(err);
+      if (!silent) toast.error('Erro ao carregar comentários.');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [post]);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,28 +57,33 @@ export default function CreateComments({ isOpen, onClose, post, currentUser, onC
   }, [isOpen]);
 
   useEffect(() => {
-    const fetchComments = async () => {
-      setLoading(true);
-      try {
-        const identifier = post.post_slug || post.id; 
-        const res = await api.get(`/api/gym/post/${identifier}`);
-        setComments(res.data.comments || []);
-      } catch (err) {
-        console.error(err);
-        toast.error('Erro ao carregar comentários.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     if (isOpen && post) {
       fetchComments();
+      setCurrentY(0);
     } else {
       setComments([]);
       setReplyingTo(null);
       setNewComment('');
     }
-  }, [isOpen, post]);
+  }, [isOpen, post, fetchComments]);
+
+  useEffect(() => {
+    if (!isOpen || !post) return;
+    
+    const socket = getSocket();
+
+    const handleNewComment = (data) => {
+      if (data.checkin_id === post.id && data.colaborador_cpf !== currentUser?.cpf) {
+        fetchComments(true);
+      }
+    };
+
+    socket.on('gym:new_comment', handleNewComment);
+
+    return () => {
+      socket.off('gym:new_comment', handleNewComment);
+    };
+  }, [isOpen, post, currentUser, fetchComments]);
 
   const handleClose = () => {
     setTranslateY('translate-y-full');
@@ -137,6 +160,28 @@ export default function CreateComments({ isOpen, onClose, post, currentUser, onC
     }
   };
 
+  const handleTouchStart = (e) => {
+    setStartY(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!startY) return;
+    const y = e.touches[0].clientY;
+    const diff = y - startY;
+    
+    if (diff > 0) {
+      setCurrentY(diff);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (currentY > 80) {
+      handleClose();
+    }
+    setStartY(null);
+    setCurrentY(0);
+  };
+
   if (!isOpen || !post) return null;
 
   const parentComments = comments.filter(c => !c.parent_id);
@@ -161,13 +206,22 @@ export default function CreateComments({ isOpen, onClose, post, currentUser, onC
     >
       <div 
         className={`bg-[#111] rounded-t-3xl w-full max-w-md mx-auto flex flex-col h-[75vh] border-t border-white/10 transition-transform duration-300 ease-out ${translateY}`}
+        style={{ transform: `translateY(calc(${translateY === 'translate-y-0' ? '0px' : '100%'} + ${currentY}px))` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center p-6 border-b border-white/5 shrink-0">
-          <h3 className="text-lg font-black text-white">Comentários</h3>
-          <button onClick={handleClose} className="p-2 text-white/40 hover:text-white bg-white/5 rounded-full transition-colors">
-            <X size={20} />
-          </button>
+        <div 
+          className="flex flex-col items-center pt-4 pb-4 border-b border-white/10 shrink-0 cursor-grab active:cursor-grabbing px-6"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />
+          <div className="flex justify-between items-center w-full">
+            <h3 className="text-lg font-black text-white">Comentários</h3>
+            <button onClick={handleClose} className="p-2 text-white/40 hover:text-white bg-white/5 rounded-full transition-colors">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">

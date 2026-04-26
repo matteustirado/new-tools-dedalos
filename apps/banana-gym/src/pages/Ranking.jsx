@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search as SearchIcon, User } from 'lucide-react';
 
 import api from '../services/api';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -71,11 +72,12 @@ const TopCircle = ({ user, position }) => {
 
 export default function Ranking() {
   const [ranking, setRanking] = useState([]);
-  const [filteredRanking, setFilteredRanking] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const fetchRanking = useCallback(async () => {
+  const fetchRanking = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+
     try {
       const res = await api.get('/api/gym/rankings');
 
@@ -90,9 +92,8 @@ export default function Ranking() {
         .map((u, index) => ({ ...u, rankPos: index + 1 }));
 
       setRanking(rankingReal);
-      setFilteredRanking(rankingReal);
     } catch (err) {
-      console.error("Erro ao carregar ranking", err);
+      console.error(err);
       
       const mock = [
         { colaborador_id: '1', nome: 'Carlos Silva', username: 'carlos', foto_perfil: null, pontos: 45 },
@@ -103,16 +104,17 @@ export default function Ranking() {
       ].map((u, i) => ({ ...u, rankPos: i + 1 }));
 
       setRanking(mock);
-      setFilteredRanking(mock);
     } finally {
       setLoading(false);
       
-      setTimeout(() => {
-        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
-        if (savedPosition) {
-          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
-        }
-      }, 50);
+      if (!silent) {
+        setTimeout(() => {
+          const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+          if (savedPosition) {
+            window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+          }
+        }, 50);
+      }
     }
   }, []);
 
@@ -120,22 +122,26 @@ export default function Ranking() {
     fetchRanking();
   }, [fetchRanking]);
 
-  const handleSearch = (text) => {
-    setSearchTerm(text);
-    
-    if (text.trim() === '') {
-      setFilteredRanking(ranking);
-      return;
-    }
+  useEffect(() => {
+    const socket = getSocket();
 
-    const lowerText = text.toLowerCase();
-    const filtered = ranking.filter(u =>
-      u.nome.toLowerCase().includes(lowerText) ||
-      (u.username && u.username.toLowerCase().includes(lowerText))
-    );
-    
-    setFilteredRanking(filtered);
-  };
+    const handleRankingUpdate = () => {
+      fetchRanking(true);
+    };
+
+    socket.on('gym:ranking_updated', handleRankingUpdate);
+
+    return () => {
+      socket.off('gym:ranking_updated', handleRankingUpdate);
+    };
+  }, [fetchRanking]);
+
+  const filteredRanking = ranking.filter(u => {
+    if (!searchTerm) return true;
+    const lowerText = searchTerm.toLowerCase();
+    return u.nome.toLowerCase().includes(lowerText) || 
+           (u.username && u.username.toLowerCase().includes(lowerText));
+  });
 
   const first = ranking[0] || null;
   const second = ranking[1] || null;
@@ -158,7 +164,7 @@ export default function Ranking() {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar no Top 30..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-white placeholder:text-white/40 focus:outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/50 transition-all font-medium text-sm"
           />

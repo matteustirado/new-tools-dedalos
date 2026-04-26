@@ -3,40 +3,41 @@ import { Link } from 'react-router-dom';
 import { Search as SearchIcon, Users, UserX, Loader2 } from 'lucide-react';
 
 import api from '../services/api';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function Search() {
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const fetchCommunity = useCallback(async () => {
+  const fetchCommunity = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+
     try {
       const res = await api.get('/api/gym/community');
       setUsers(res.data);
-      setFilteredUsers(res.data);
     } catch (err) {
       console.error(err);
       
       const mockUsers = [
-        { cpf: '1', nome: 'Matteus Tirado', username: 'matteus', foto_perfil: null, posicao: '1º' },
-        { cpf: '2', nome: 'Carlos Silva', username: 'carlos.silva', foto_perfil: null, posicao: '4º' },
-        { cpf: '3', nome: 'Ana Souza', username: 'anasouza', foto_perfil: null, posicao: '-' },
-        { cpf: '4', nome: 'Bruno Costa', username: 'brunoc', foto_perfil: null, posicao: '12º' },
+        { cpf: '1', nome: 'Matteus Tirado', username: 'matteus', foto_perfil: null },
+        { cpf: '2', nome: 'Carlos Silva', username: 'carlos.silva', foto_perfil: null },
+        { cpf: '3', nome: 'Ana Souza', username: 'anasouza', foto_perfil: null },
+        { cpf: '4', nome: 'Bruno Costa', username: 'brunoc', foto_perfil: null },
       ];
       setUsers(mockUsers);
-      setFilteredUsers(mockUsers);
     } finally {
-      setLoading(false);
-      
-      setTimeout(() => {
-        const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
-        if (savedPosition) {
-          window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
-        }
-      }, 50);
+      if (!silent) {
+        setLoading(false);
+        setTimeout(() => {
+          const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
+          if (savedPosition) {
+            window.scrollTo({ top: parseInt(savedPosition, 10), behavior: 'instant' });
+          }
+        }, 50);
+      }
     }
   }, []);
 
@@ -44,23 +45,28 @@ export default function Search() {
     fetchCommunity();
   }, [fetchCommunity]);
 
-  const handleSearch = (text) => {
-    setSearchTerm(text);
+  useEffect(() => {
+    const socket = getSocket();
 
-    if (text.trim() === '') {
-      setFilteredUsers(users);
-      return;
-    }
+    const handleUpdate = () => {
+      fetchCommunity(true);
+    };
 
-    const lowerText = text.toLowerCase();
-    
-    const filtered = users.filter((u) =>
-      u.nome.toLowerCase().includes(lowerText) ||
-      (u.username && u.username.toLowerCase().includes(lowerText))
-    );
+    socket.on('gym:profile_updated', handleUpdate);
+    socket.on('gym:new_user', handleUpdate);
 
-    setFilteredUsers(filtered);
-  };
+    return () => {
+      socket.off('gym:profile_updated', handleUpdate);
+      socket.off('gym:new_user', handleUpdate);
+    };
+  }, [fetchCommunity]);
+
+  const filteredUsers = users.filter((u) => {
+    if (!searchTerm) return true;
+    const lowerText = searchTerm.toLowerCase();
+    return u.nome.toLowerCase().includes(lowerText) ||
+           (u.username && u.username.toLowerCase().includes(lowerText));
+  });
 
   return (
     <div className="w-full relative overflow-x-hidden min-h-screen pb-24 flex flex-col animate-page-transition bg-[#050505]">
@@ -73,7 +79,7 @@ export default function Search() {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar usuários..."
             className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white placeholder:text-white/40 focus:outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500/50 transition-all font-medium"
           />
@@ -132,12 +138,6 @@ export default function Search() {
                       <span className="text-[13px] font-medium text-white/80 truncate max-w-[150px] md:max-w-xs group-hover:text-white transition-colors">
                         {u.nome}
                       </span>
-
-                      <div className="px-2 py-0.5 rounded bg-white/10 border border-white/5 flex items-center justify-center">
-                        <span className="text-[10px] font-black text-white/60 tracking-wider">
-                          {u.posicao}
-                        </span>
-                      </div>
                     </div>
                   </div>
                 </Link>

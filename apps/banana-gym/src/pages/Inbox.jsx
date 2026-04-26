@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import { getSocket } from '../socket';
 
 const INVITE_DICTIONARY = {
   'park': 'Passeio no parque',
@@ -101,6 +102,25 @@ export default function Inbox() {
       fetchNotifications(user.cpf, page);
     }
   }, [user, page, fetchNotifications]);
+
+  useEffect(() => {
+    if (!user?.cpf) return;
+    
+    const socket = getSocket();
+    
+    const handleNewNotification = (data) => {
+      if (data.receiverCpf === user.cpf) {
+        setPage(1); 
+        fetchNotifications(user.cpf, 1);
+      }
+    };
+
+    socket.on('gym:new_notification', handleNewNotification);
+    
+    return () => {
+      socket.off('gym:new_notification', handleNewNotification);
+    };
+  }, [user, fetchNotifications]);
 
   const handleSelectCheckin = async (postId) => {
     const isCurrentlyChecked = todayPosts.find(p => p.id === postId)?.is_checkin_valid === 1;

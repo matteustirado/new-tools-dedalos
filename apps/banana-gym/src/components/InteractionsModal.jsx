@@ -3,13 +3,24 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { X, Heart, Loader2 } from 'lucide-react';
 import BananasIcon from './BananasIcon';
+import api from '../services/api';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function InteractionsModal({ isOpen, onClose, data }) {
   const navigate = useNavigate();
   const [translateY, setTranslateY] = useState('translate-y-full');
+  const [localUsers, setLocalUsers] = useState([]);
   const timeouts = useRef([]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLocalUsers(data.users || []);
+    }, 0);
+    
+    return () => clearTimeout(timer);
+  }, [data.users]);
 
   useEffect(() => {
     if (isOpen) {
@@ -25,6 +36,38 @@ export default function InteractionsModal({ isOpen, onClose, data }) {
       timeouts.current = [];
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !data.postId || !data.type) return;
+
+    const socket = getSocket();
+
+    const fetchInteractionsSilently = async () => {
+      try {
+        const res = await api.get(`/api/gym/post/${data.postId}/interactions?type=${data.type}`);
+        setLocalUsers(res.data);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    const handleInteraction = (eventData) => {
+      if (eventData.checkin_id === data.postId) {
+        fetchInteractionsSilently();
+      }
+    };
+
+    if (data.type === 'likes') {
+      socket.on('gym:new_like', handleInteraction);
+    } else if (data.type === 'bananas') {
+      socket.on('gym:new_banana', handleInteraction);
+    }
+
+    return () => {
+      socket.off('gym:new_like', handleInteraction);
+      socket.off('gym:new_banana', handleInteraction);
+    };
+  }, [isOpen, data.postId, data.type]);
 
   const handleClose = () => {
     setTranslateY('translate-y-full');
@@ -60,10 +103,10 @@ export default function InteractionsModal({ isOpen, onClose, data }) {
         <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
           {data.loading ? (
             <div className="flex justify-center py-6"><Loader2 className="animate-spin text-yellow-500" /></div>
-          ) : data.users?.length === 0 ? (
+          ) : localUsers?.length === 0 ? (
             <div className="text-center py-6 text-white/50 text-sm font-bold">Ninguém interagiu ainda. 😢</div>
           ) : (
-            data.users?.map(u => (
+            localUsers?.map(u => (
               <button 
                 key={u.cpf}
                 onClick={() => { handleClose(); setTimeout(() => navigate(`/${u.username}`), 300); }} 

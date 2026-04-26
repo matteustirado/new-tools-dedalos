@@ -17,6 +17,7 @@ import polyline from '@mapbox/polyline';
 import api from '../services/api';
 import InviteMenu from '../components/InviteMenu';
 import ShareProfile from '../components/ShareProfile';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -42,6 +43,7 @@ export default function Profile() {
   const [isBioExpanded, setIsBioExpanded] = useState(false);
 
   const [profileData, setProfileData] = useState({
+    cpf: null,
     nome: 'Carregando...',
     username: '',
     foto_perfil: null,
@@ -73,9 +75,11 @@ export default function Profile() {
     if (node) observer.current.observe(node);
   }, [loading, loadingMore, hasMorePosts, hasMoreArchived, activeTab]);
 
-  const fetchUserProfile = useCallback(async (identifier, isUsername, pageNum) => {
-    if (pageNum === 1) setLoading(true);
-    else setLoadingMore(true);
+  const fetchUserProfile = useCallback(async (identifier, isUsername, pageNum, silent = false) => {
+    if (!silent) {
+      if (pageNum === 1) setLoading(true);
+      else setLoadingMore(true);
+    }
 
     try {
       const limit = pageNum === 1 ? 15 : 9;
@@ -86,11 +90,12 @@ export default function Profile() {
       if (res.data.archivedPosts && res.data.archivedPosts.length < limit) setHasMoreArchived(false);
 
       if (pageNum === 1) {
-        setProfileData({
+        setProfileData(prev => ({
+          ...prev,
           ...res.data,
           totalPosts: res.data.totalCheckins || 0,
           posicao: (res.data.posicao === 'Sem Rank' || !res.data.posicao) ? '-' : res.data.posicao,
-        });
+        }));
       } else {
         setProfileData(prev => {
           const newPosts = res.data.posts ? [...prev.posts, ...res.data.posts] : prev.posts;
@@ -105,7 +110,7 @@ export default function Profile() {
       }
     } catch (err) {
       console.error(err);
-      if (pageNum === 1) {
+      if (pageNum === 1 && !silent) {
         toast.error("Perfil não encontrado.");
         if (isUsername) navigate('/feed');
       }
@@ -113,7 +118,7 @@ export default function Profile() {
       setLoading(false);
       setLoadingMore(false);
       
-      if (pageNum === 1) {
+      if (pageNum === 1 && !silent) {
         setTimeout(() => {
           const savedPosition = sessionStorage.getItem(`scroll_pos_${window.location.pathname}`);
           if (savedPosition) {
@@ -151,6 +156,26 @@ export default function Profile() {
       fetchUserProfile(identifier, isUsername, page);
     }
   }, [page, user, username, fetchUserProfile]);
+
+  useEffect(() => {
+    if (!profileData.cpf) return;
+    
+    const socket = getSocket();
+
+    const handleUpdate = (data) => {
+      if (data.colaborador_cpf === profileData.cpf || data.cpf === profileData.cpf) {
+        fetchUserProfile(profileData.cpf, false, 1, true);
+      }
+    };
+
+    socket.on('gym:new_post', handleUpdate);
+    socket.on('gym:profile_updated', handleUpdate);
+
+    return () => {
+      socket.off('gym:new_post', handleUpdate);
+      socket.off('gym:profile_updated', handleUpdate);
+    };
+  }, [profileData.cpf, fetchUserProfile]);
 
   const getStaticMapUrl = (encodedPolyline) => {
     if (!encodedPolyline) return null;

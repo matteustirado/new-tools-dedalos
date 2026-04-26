@@ -10,6 +10,7 @@ import CreateComments from '../components/CreateComments';
 import SharePost from '../components/SharePost'; 
 import DuoProfileModal from '../components/DuoProfileModal';
 import InteractionsModal from '../components/InteractionsModal';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -58,6 +59,60 @@ export default function PostDetail() {
     }
     fetchPostDetails(currentUser.cpf);
   }, [currentUser, fetchPostDetails, navigate]);
+
+  useEffect(() => {
+    if (!currentUser?.cpf || !post) return;
+
+    const socket = getSocket();
+
+    const handleNewLike = (data) => {
+      if (data.colaborador_cpf === currentUser.cpf) return;
+      if (post.id !== data.checkin_id) return;
+      
+      setPost(prev => ({
+        ...prev,
+        likes_count: data.action === 'liked' ? (prev.likes_count || 0) + 1 : Math.max(0, (prev.likes_count || 0) - 1)
+      }));
+    };
+
+    const handleNewBanana = (data) => {
+      if (data.colaborador_cpf === currentUser.cpf) return;
+      if (post.id !== data.checkin_id) return;
+      
+      setPost(prev => ({
+        ...prev,
+        bananas_count: data.action === 'bananad' ? (prev.bananas_count || 0) + 1 : Math.max(0, (prev.bananas_count || 0) - 1)
+      }));
+    };
+
+    const handleNewComment = (data) => {
+      if (data.colaborador_cpf === currentUser.cpf) return;
+      if (post.id !== data.checkin_id) return;
+      
+      setPost(prev => ({
+        ...prev,
+        comments_count: data.isDelete ? Math.max(0, (prev.comments_count || 0) - 1) : (prev.comments_count || 0) + 1
+      }));
+    };
+
+    const handlePostUpdate = (data) => {
+       if (post.id === data.id) {
+          fetchPostDetails(currentUser.cpf);
+       }
+    };
+
+    socket.on('gym:new_like', handleNewLike);
+    socket.on('gym:new_banana', handleNewBanana);
+    socket.on('gym:new_comment', handleNewComment);
+    socket.on('gym:new_post', handlePostUpdate);
+
+    return () => {
+      socket.off('gym:new_like', handleNewLike);
+      socket.off('gym:new_banana', handleNewBanana);
+      socket.off('gym:new_comment', handleNewComment);
+      socket.off('gym:new_post', handlePostUpdate);
+    };
+  }, [currentUser, post, fetchPostDetails]);
 
   useEffect(() => {
     function handleClickOutside(event) {

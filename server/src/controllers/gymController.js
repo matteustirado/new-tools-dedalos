@@ -596,6 +596,8 @@ export const approveDuoPost = async (req, res) => {
     if (io) {
       io.emit('gym:ranking_updated');
       io.emit('gym:new_notification', { receiverCpf: postOwnerCpf });
+      io.emit('gym:new_post', { colaborador_cpf: cleanCpf });
+      io.emit('gym:new_post', { colaborador_cpf: postOwnerCpf });
     }
     
     res.json({ success: true, message: isSocial ? "Foto aprovada! 🔥" : "Treino aprovado! Vocês ganharam +2 pontos! 🍌🍌" });
@@ -1000,6 +1002,7 @@ export const selectCheckin = async (req, res) => {
     const io = getIO();
     if (io) {
       io.emit('gym:ranking_updated');
+      io.emit('gym:profile_updated', { cpf: cleanCpf });
     }
 
     res.json({ success: true, message: isAlreadyChecked ? "Check-in desmarcado." : "Check-in do dia atualizado!", isNowChecked: !isAlreadyChecked });
@@ -1169,6 +1172,11 @@ export const toggleBanana = async (req, res) => {
       }
     }
     
+    const io = getIO();
+    if (io) {
+      io.emit('gym:new_banana', { checkin_id, action, colaborador_cpf });
+    }
+    
     res.json({ success: true, action });
   } catch (err) {
     console.error(err);
@@ -1248,7 +1256,7 @@ export const postComment = async (req, res) => {
     
     const io = getIO();
     if (io) {
-      io.emit('gym:new_comment', { checkin_id, comment_id: result.insertId, parent_id: parent_id || null });
+      io.emit('gym:new_comment', { checkin_id, comment_id: result.insertId, parent_id: parent_id || null, colaborador_cpf });
     }
     
     res.status(201).json({ success: true, comment_id: result.insertId });
@@ -1587,6 +1595,7 @@ export const getUserProfile = async (req, res) => {
     const [archivedPosts] = await pool.query(archivedQuery, [userCpf, Number(limit), Number(offset)]);
 
     res.json({ 
+      cpf: userCpf,
       nome: user.nome, 
       username: user.username, 
       email: user.email || '',
@@ -1679,6 +1688,12 @@ export const editUserProfile = async (req, res) => {
     queryParams.push(cleanCpf);
 
     await pool.query(updateQuery, queryParams);
+
+    const io = getIO();
+    if (io) {
+      io.emit('gym:profile_updated', { cpf: cleanCpf });
+    }
+
     res.json({ message: "Perfil atualizado com sucesso!", nova_foto_url: novaFotoUrl });
   } catch (err) {
     console.error(err);
@@ -1776,6 +1791,12 @@ export const updatePost = async (req, res) => {
       return res.status(404).json({ error: "Post não encontrado ou você não tem permissão para editá-lo." });
     }
 
+    const io = getIO();
+    if (io) {
+      io.emit('gym:new_post', { id: parseInt(id), colaborador_cpf: cleanCpf });
+      io.emit('gym:profile_updated', { cpf: cleanCpf });
+    }
+
     res.json({ message: "Post atualizado com sucesso." });
   } catch (err) {
     console.error(err);
@@ -1796,6 +1817,12 @@ export const archivePost = async (req, res) => {
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Post não encontrado ou você não tem permissão para arquivá-lo." });
+    }
+
+    const io = getIO();
+    if (io) {
+      io.emit('gym:new_post', { id: parseInt(id), colaborador_cpf: cleanCpf });
+      io.emit('gym:profile_updated', { cpf: cleanCpf });
     }
 
     res.json({ message: "Post arquivado com sucesso." });
@@ -1820,6 +1847,12 @@ export const unarchivePost = async (req, res) => {
       return res.status(404).json({ error: "Post não encontrado." });
     }
 
+    const io = getIO();
+    if (io) {
+      io.emit('gym:new_post', { id: parseInt(id), colaborador_cpf: cleanCpf });
+      io.emit('gym:profile_updated', { cpf: cleanCpf });
+    }
+
     res.json({ message: "Post desarquivado com sucesso." });
   } catch (err) {
     console.error(err);
@@ -1834,7 +1867,7 @@ export const deleteComment = async (req, res) => {
   try {
     const cleanCpf = String(colaborador_cpf).replace(/\D/g, '');
     const [comments] = await pool.query(
-      "SELECT c.id, c.colaborador_id, p.colaborador_cpf as post_owner FROM gym_comments c JOIN gym_checkins p ON c.checkin_id = p.id WHERE c.id = ?", 
+      "SELECT c.id, c.checkin_id, c.colaborador_id, p.colaborador_cpf as post_owner FROM gym_comments c JOIN gym_checkins p ON c.checkin_id = p.id WHERE c.id = ?", 
       [id]
     );
 
@@ -1850,6 +1883,11 @@ export const deleteComment = async (req, res) => {
 
     await pool.query("DELETE FROM gym_comments WHERE parent_id = ?", [id]);
     await pool.query("DELETE FROM gym_comments WHERE id = ?", [id]);
+
+    const io = getIO();
+    if (io) {
+      io.emit('gym:new_comment', { checkin_id: comment.checkin_id, isDelete: true, comment_id: id, colaborador_cpf: cleanCpf });
+    }
 
     res.json({ success: true, message: "Comentário apagado com sucesso." });
   } catch (err) {

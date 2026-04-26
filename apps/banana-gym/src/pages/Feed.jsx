@@ -11,6 +11,7 @@ import SharePost from '../components/SharePost';
 import DuoProfileModal from '../components/DuoProfileModal';
 import InteractionsModal from '../components/InteractionsModal';
 import { subscribeToPushNotifications } from '../utils/push';
+import { getSocket } from '../socket';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -138,6 +139,71 @@ export default function Feed() {
   useEffect(() => {
     fetchFeed(page);
   }, [page, fetchFeed]);
+
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handleNewPost = () => {
+      if (window.scrollY < 150) {
+        setPage(1);
+        fetchFeed(1);
+      }
+    };
+
+    const handleNewLike = (data) => {
+      if (user && data.colaborador_cpf === user.cpf) return;
+      
+      setPosts(currentPosts => currentPosts.map(p => {
+        if (p.id === data.checkin_id) {
+          return {
+            ...p,
+            likes_count: data.action === 'liked' ? (p.likes_count || 0) + 1 : Math.max(0, (p.likes_count || 0) - 1)
+          };
+        }
+        return p;
+      }));
+    };
+
+    const handleNewBanana = (data) => {
+      if (user && data.colaborador_cpf === user.cpf) return;
+      
+      setPosts(currentPosts => currentPosts.map(p => {
+        if (p.id === data.checkin_id) {
+          return {
+            ...p,
+            bananas_count: data.action === 'bananad' ? (p.bananas_count || 0) + 1 : Math.max(0, (p.bananas_count || 0) - 1)
+          };
+        }
+        return p;
+      }));
+    };
+
+    const handleNewComment = (data) => {
+      if (user && data.colaborador_cpf === user.cpf) return;
+      
+      setPosts(currentPosts => currentPosts.map(p => {
+        if (p.id === data.checkin_id && !data.isDelete) {
+          return { ...p, comments_count: (p.comments_count || 0) + 1 };
+        }
+        if (p.id === data.checkin_id && data.isDelete) {
+          return { ...p, comments_count: Math.max(0, (p.comments_count || 0) - 1) };
+        }
+        return p;
+      }));
+    };
+
+    socket.on('gym:new_post', handleNewPost);
+    socket.on('gym:new_like', handleNewLike);
+    socket.on('gym:new_banana', handleNewBanana);
+    socket.on('gym:new_comment', handleNewComment);
+
+    return () => {
+      socket.off('gym:new_post', handleNewPost);
+      socket.off('gym:new_like', handleNewLike);
+      socket.off('gym:new_banana', handleNewBanana);
+      socket.off('gym:new_comment', handleNewComment);
+    };
+  }, [user, fetchFeed]);
 
   useEffect(() => {
     const checkNotificationPermission = () => {
