@@ -108,6 +108,18 @@ export const registerUser = async (req, res) => {
 
   try {
     const cleanCpf = String(cpf).replace(/\D/g, '');
+
+    // 🛡️ BLOCKLIST: Verifica no banco de dados se o username contém palavras proibidas ou reservadas
+    const [reservedWords] = await pool.query(
+      "SELECT word FROM gym_reserved_usernames WHERE LOWER(?) LIKE CONCAT('%', LOWER(word), '%')",
+      [username.toLowerCase()]
+    );
+
+    if (reservedWords.length > 0) {
+      return res.status(400).json({ 
+        error: "Este nome de usuário é reservado, inválido ou contém termos não permitidos. Escolha outro." 
+      });
+    }
     
     const [existing] = await pool.query(
       "SELECT cpf, username, email FROM gym_users WHERE cpf = ? OR username = ? OR (email = ? AND email IS NOT NULL)", 
@@ -519,6 +531,7 @@ export const searchUsersForDuo = async (req, res) => {
       WHERE (nome LIKE ? OR username LIKE ?) 
         AND is_blocked = 0 
         AND must_change_password = 0 
+        AND cpf != '73297415827' /* 👻 Oculta a conta do Google AdSense da Busca */
       LIMIT 10
     `;
     const [users] = await pool.query(query, [searchTerm, searchTerm]);
@@ -546,7 +559,16 @@ export const approveDuoPost = async (req, res) => {
 
     const isSocial = post[0].activity_type && post[0].activity_type.startsWith('SOCIAL');
     const pontosRecebidos = isSocial ? 0 : 2;
-    const isCheckinValid = isSocial ? 0 : 1;
+
+    const [validPostsToday] = await pool.query(
+      "SELECT id FROM gym_checkins WHERE colaborador_cpf = ? AND DATE(created_at) = CURRENT_DATE() AND is_checkin_valid = 1", 
+      [cleanCpf]
+    );
+
+    let isCheckinValid = 0;
+    if (!isSocial && validPostsToday.length === 0) {
+      isCheckinValid = 1;
+    }
 
     await pool.query(
       "UPDATE gym_checkins SET duo_status = 'APPROVED', pontos = ? WHERE id = ?", 
@@ -1664,6 +1686,19 @@ export const editUserProfile = async (req, res) => {
     const user = users[0];
 
     if (username && username !== user.username) {
+
+      // 🛡️ BLOCKLIST: Verifica no banco de dados se o novo username contém palavras proibidas ou reservadas
+      const [reservedWords] = await pool.query(
+        "SELECT word FROM gym_reserved_usernames WHERE LOWER(?) LIKE CONCAT('%', LOWER(word), '%')",
+        [username.toLowerCase()]
+      );
+
+      if (reservedWords.length > 0) {
+        return res.status(400).json({ 
+          error: "O novo nome de usuário é reservado ou contém termos não permitidos. Escolha outro." 
+        });
+      }
+
       const [existingUsername] = await pool.query("SELECT cpf FROM gym_users WHERE username = ?", [username]);
       if (existingUsername.length > 0) {
         return res.status(400).json({ error: "Este username já está em uso por outro atleta." });
