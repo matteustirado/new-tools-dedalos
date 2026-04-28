@@ -15,6 +15,7 @@ export default function StravaCallback() {
     const processCallback = async () => {
       const queryParams = new URLSearchParams(location.search);
       const code = queryParams.get('code');
+      const state = queryParams.get('state');
       const error = queryParams.get('error');
 
       if (error) {
@@ -23,7 +24,7 @@ export default function StravaCallback() {
         return;
       }
 
-      if (!code) {
+      if (!code || !state) {
         navigate('/edit-profile');
         return;
       }
@@ -44,7 +45,8 @@ export default function StravaCallback() {
 
       try {
         await api.post('/api/gym/strava/callback', { 
-          code, 
+          code,
+          state,
           cpf: user.cpf 
         });
 

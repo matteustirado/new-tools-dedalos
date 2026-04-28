@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createServer } from 'http'
-
 import dotenv from 'dotenv'
 import express from 'express'
 import cors from 'cors'
@@ -11,11 +10,14 @@ import multer from 'multer'
 import { Server } from 'socket.io'
 import webpush from 'web-push'
 import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import crypto from 'crypto'
 
 import pool from './src/config/db.js'
 import { initIO } from './src/socket.js'
 import { iniciarMaestro } from './src/controllers/conductorController.js'
 import { initCronJobs } from './src/cron/gymCron.js' 
+import hmacMiddleware from './src/middlewares/hmacMiddleware.js'
 
 import trackRoutes from './src/routes/trackRoutes.js'
 import playlistRoutes from './src/routes/playlistRoutes.js'
@@ -43,7 +45,7 @@ if (vapidPublicKey && vapidPrivateKey) {
     console.error('[WebPush] Erro ao configurar chaves VAPID:', error)
   }
 } else {
-  console.warn('⚠️ [WebPush] Chaves VAPID não encontradas nas variáveis de ambiente. Notificações Push estarão desativadas.')
+  console.warn('⚠️ [WebPush] Chaves VAPID não encontradas nas variáveis de ambiente.')
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -79,7 +81,7 @@ const corsOptions = {
     callback(new Error('Not allowed by CORS'))
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-App-Timestamp', 'X-App-Signature'],
   credentials: true
 }
 
@@ -117,12 +119,28 @@ const storage = multer.diskStorage({
     return cb(null, overlayDir)
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`
-    cb(null, `file-${uniqueSuffix}${path.extname(file.originalname)}`)
+    const secureSuffix = crypto.randomBytes(16).toString('hex')
+    cb(null, `file-${Date.now()}-${secureSuffix}${path.extname(file.originalname)}`)
   }
 })
 
 const upload = multer({ storage })
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 500,
+  message: { error: "Muitas requisições deste IP, por favor, tente novamente após 15 minutos." },
+  standardHeaders: true, 
+  legacyHeaders: false,
+})
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 10,
+  message: { error: "Muitas tentativas de login. Sua conta foi bloqueada temporariamente por 15 minutos por segurança." },
+  standardHeaders: true, 
+  legacyHeaders: false,
+})
 
 app.use(helmet())
 app.use(helmet.frameguard({ action: 'deny' }))
@@ -131,8 +149,14 @@ app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }))
 app.use(cors(corsOptions))
 
 app.use(morgan('dev'))
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+app.use(express.json({ limit: '5mb' }))
+app.use(express.urlencoded({ extended: true, limit: '5mb' }))
+
+app.use(generalLimiter)
+app.use(hmacMiddleware)
+
+app.use('/api/gym/login', authLimiter)
+app.use('/api/gym/2fa/verify', authLimiter)
 
 app.use((req, res, next) => {
   req.io = io
@@ -189,11 +213,14 @@ app.get('/', async (req, res) => {
     const [rows] = await pool.query('SELECT NOW() AS now')
     return res.json({ message: 'Backend funcionando!', time: rows[0].now })
   } catch (err) {
-    return res.status(500).json({ error: err.message })
+    console.error(err)
+    return res.status(500).json({ error: 'Erro interno no servidor.' })
   }
 })
 
 io.on('connection', (socket) => {
+  socket.lastJukeboxRequest = 0
+
   socket.on('jukebox:enviarSugestao', (data) => {
     import('./src/controllers/jukeboxController.js')
       .then(ctrl => ctrl.handleReceberSugestao(socket, data))
@@ -201,6 +228,16 @@ io.on('connection', (socket) => {
   })
 
   socket.on('jukebox:adicionarPedido', (data) => {
+    const now = Date.now()
+    if (now - socket.lastJukeboxRequest < 3000) {
+      return console.warn(`[Socket] Bloqueio Spam: Socket ${socket.id} na Jukebox.`)
+    }
+    socket.lastJukeboxRequest = now
+
+    if (data && typeof data.musica === 'string' && data.musica.length > 200) {
+      return console.warn(`[Socket] Bloqueio Payload: Texto muito longo.`)
+    }
+
     import('./src/controllers/jukeboxController.js')
       .then(ctrl => ctrl.handleAdicionarPedido(socket, data))
       .catch(err => console.error(err))
@@ -212,7 +249,11 @@ io.on('connection', (socket) => {
       .catch(err => console.error(err))
   })
 
-  socket.on('system:forceReload', () => {
+  socket.on('system:forceReload', (data) => {
+    if (!data || data.secret !== process.env.JWT_SECRET) {
+      return console.warn(`[Socket] Tentativa não autorizada de forceReload bloqueada.`)
+    }
+
     console.log('[System] Comando manual de atualização global recebido. Recarregando as telas ativas...')
     io.emit('system:executeReload')
   })

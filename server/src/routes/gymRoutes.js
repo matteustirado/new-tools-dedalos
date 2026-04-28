@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import sharp from 'sharp';
+import crypto from 'crypto';
 
 import {
   addGymLocation,
@@ -90,9 +91,20 @@ const upload = multer({
 const compressImage = async (req, res, next) => {
   if (!req.file) return next();
 
+  const minFileSize = 20 * 1024; 
+  if (req.file.size < minFileSize) {
+      return res.status(400).json({ error: "A imagem enviada é muito pequena (menos de 20KB). Imagens forjadas não são permitidas." });
+  }
+
   try {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = `gym-${uniqueSuffix}.webp`;
+    const metadata = await sharp(req.file.buffer).metadata();
+    
+    if (!metadata.width || !metadata.height || metadata.width < 400 || metadata.height < 400) {
+        return res.status(400).json({ error: "As dimensões da imagem são muito pequenas. A resolução mínima aceita é 400x400 pixels." });
+    }
+
+    const secureSuffix = crypto.randomBytes(16).toString('hex');
+    const filename = `gym-${Date.now()}-${secureSuffix}.webp`;
     
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     const filepath = path.join(uploadDir, filename);
@@ -115,8 +127,8 @@ const compressImage = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Falha ao processar e otimizar a imagem." });
+    console.error('[Sharp Error]', error);
+    return res.status(500).json({ error: "Falha ao processar a imagem. Certifique-se de que o arquivo é uma imagem válida." });
   }
 };
 

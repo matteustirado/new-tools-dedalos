@@ -20,6 +20,11 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  .grecaptcha-badge {
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
 }
 
 @layer components {

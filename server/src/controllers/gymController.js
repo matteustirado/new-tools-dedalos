@@ -7,6 +7,8 @@ import qrcode from 'qrcode';
 import jwt from 'jsonwebtoken';
 import { sendPushNotification, formatEventName } from './notificationController.js';
 
+const used2FATokens = new Set();
+
 const calcularDistanciaMetros = (lat1, lon1, lat2, lon2) => {
   const R = 6371e3;
   const p1 = (lat1 * Math.PI) / 180;
@@ -109,7 +111,6 @@ export const registerUser = async (req, res) => {
   try {
     const cleanCpf = String(cpf).replace(/\D/g, '');
 
-    // 🛡️ BLOCKLIST: Verifica no banco de dados se o username contém palavras proibidas ou reservadas
     const [reservedWords] = await pool.query(
       "SELECT word FROM gym_reserved_usernames WHERE LOWER(?) LIKE CONCAT('%', LOWER(word), '%')",
       [username.toLowerCase()]
@@ -233,6 +234,12 @@ export const verify2FAReset = async (req, res) => {
   const { cpf, token } = req.body;
   try {
     const cleanCpf = String(cpf).replace(/\D/g, '');
+    const tokenKey = `${cleanCpf}-${token}`;
+
+    if (used2FATokens.has(tokenKey)) {
+      return res.status(401).json({ error: "Este código 2FA já foi utilizado. Aguarde um novo código no seu aplicativo." });
+    }
+
     const [users] = await pool.query("SELECT * FROM gym_users WHERE cpf = ?", [cleanCpf]);
     if (users.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
     
@@ -245,6 +252,9 @@ export const verify2FAReset = async (req, res) => {
     });
 
     if (!isValid) return res.status(401).json({ error: "Código 2FA inválido." });
+
+    used2FATokens.add(tokenKey);
+    setTimeout(() => used2FATokens.delete(tokenKey), 60000); 
 
     await pool.query("UPDATE gym_users SET must_change_password = 1, reset_requested = 0 WHERE cpf = ?", [cleanCpf]);
 
@@ -318,6 +328,12 @@ export const verifyAndEnable2FA = async (req, res) => {
   const cpf = req.user.cpf;
   try {
     const cleanCpf = String(cpf).replace(/\D/g, '');
+    const tokenKey = `${cleanCpf}-${token}`;
+
+    if (used2FATokens.has(tokenKey)) {
+      return res.status(401).json({ error: "Este código 2FA já foi utilizado. Aguarde um novo código no seu aplicativo." });
+    }
+
     const [users] = await pool.query("SELECT two_factor_secret FROM gym_users WHERE cpf = ?", [cleanCpf]);
     if (users.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
 
@@ -330,6 +346,9 @@ export const verifyAndEnable2FA = async (req, res) => {
     });
     
     if (!isValid) return res.status(401).json({ error: "Código inválido." });
+
+    used2FATokens.add(tokenKey);
+    setTimeout(() => used2FATokens.delete(tokenKey), 60000); 
     
     await pool.query("UPDATE gym_users SET two_factor_enabled = 1 WHERE cpf = ?", [cleanCpf]);
     res.json({ success: true });
@@ -379,21 +398,37 @@ export const changeUserPassword = async (req, res) => {
 export const getStravaAuthUrl = (req, res) => {
   const clientId = process.env.STRAVA_CLIENT_ID;
   const redirectUri = process.env.STRAVA_REDIRECT_URI;
+  const cpf = req.user.cpf;
   
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: "Servidor não configurado para o Strava." });
   }
   
-  const url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&approval_prompt=force&scope=activity:read_all`;
+  const stateToken = jwt.sign(
+    { csrf_cpf: cpf }, 
+    process.env.JWT_SECRET, 
+    { expiresIn: '15m' }
+  );
+  
+  const url = `https://www.strava.com/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&approval_prompt=force&scope=activity:read_all&state=${stateToken}`;
   res.json({ url });
 };
 
 export const handleStravaCallback = async (req, res) => {
-  const { code } = req.body;
+  const { code, state } = req.body;
   const cpf = req.user.cpf;
 
-  if (!code) {
-    return res.status(400).json({ error: "Código ausente." });
+  if (!code || !state) {
+    return res.status(400).json({ error: "Parâmetros de autorização ausentes ou ataque CSRF bloqueado." });
+  }
+
+  try {
+    const decodedState = jwt.verify(state, process.env.JWT_SECRET);
+    if (decodedState.csrf_cpf !== cpf) {
+      return res.status(403).json({ error: "Ataque CSRF detectado. Origem da requisição de conexão inválida." });
+    }
+  } catch (err) {
+    return res.status(403).json({ error: "Estado de segurança do Strava expirado ou adulterado." });
   }
 
   try {
@@ -492,14 +527,17 @@ export const fetchAndSaveStravaRun = async (req, res) => {
     const activity = stravaRes.data[0];
     const distanceKm = activity.distance / 1000;
     const isRun = activity.type === 'Run';
-    const isToday = new Date(activity.start_date_local).toDateString() === new Date().toDateString();
-    const activityEndTime = new Date(activity.start_date_local).getTime() + (activity.elapsed_time * 1000);
-    const minutesSinceEnd = (Date.now() - activityEndTime) / (1000 * 60);
+    const activityStartTimeUTC = new Date(activity.start_date).getTime();
+    const activityEndTimeUTC = activityStartTimeUTC + (activity.elapsed_time * 1000);
+    const nowUTC = Date.now();
+    const isToday = new Date(activityStartTimeUTC).toDateString() === new Date(nowUTC).toDateString();
+    const minutesSinceEnd = (nowUTC - activityEndTimeUTC) / (1000 * 60);
 
     if (!isRun) return res.status(400).json({ error: "A última atividade não é uma corrida." });
     if (!isToday) return res.status(400).json({ error: "A última corrida não foi feita hoje." });
-    if (distanceKm < 5.0) return res.status(400).json({ error: `Corrida muito curta: ${distanceKm.toFixed(2)}km. Mínimo de 5km exigido.` });
+    if (minutesSinceEnd < -2) return res.status(400).json({ error: "Viagem no tempo detectada! Esta corrida tem um horário de término no futuro." });
     if (minutesSinceEnd > 60) return res.status(400).json({ error: "O tempo limite de 1 hora para registrar essa corrida já passou." });
+    if (distanceKm < 5.0) return res.status(400).json({ error: `Corrida muito curta: ${distanceKm.toFixed(2)}km. Mínimo de 5km exigido.` });
 
     const [existing] = await pool.query(
       "SELECT id FROM gym_checkins WHERE strava_activity_id = ?", 
@@ -519,19 +557,26 @@ export const fetchAndSaveStravaRun = async (req, res) => {
 
 export const searchUsersForDuo = async (req, res) => {
   const { q } = req.query;
-  if (!q || q.length < 2) {
+
+  if (!q || typeof q !== 'string' || q.length < 2 || q.length > 50) {
+    return res.json([]);
+  }
+
+  const sanitizedQ = q.replace(/[%_]/g, '');
+
+  if (sanitizedQ.length < 2) {
     return res.json([]);
   }
 
   try {
-    const searchTerm = `%${q}%`;
+    const searchTerm = `%${sanitizedQ}%`;
     const query = `
       SELECT cpf, nome, username, foto_perfil 
       FROM gym_users 
       WHERE (nome LIKE ? OR username LIKE ?) 
         AND is_blocked = 0 
         AND must_change_password = 0 
-        AND cpf != '73297415827' /* 👻 Oculta a conta do Google AdSense da Busca */
+        AND cpf != '73297415827'
       LIMIT 10
     `;
     const [users] = await pool.query(query, [searchTerm, searchTerm]);
@@ -846,11 +891,38 @@ export const postCheckin = async (req, res) => {
     academia_digitada, mensagem, latitude, longitude, 
     is_real_time, is_run, strava_activity_id, run_distance_km, 
     run_duration_seconds, run_timestamp, run_polyline, tagged_cpf, 
-    activity_type, social_invite_id 
+    activity_type, social_invite_id, recaptcha_token 
   } = req.body;
   const colaborador_cpf = req.user.cpf;
 
-  const pontos = parseFloat(req.body.pontos) || 0; 
+  if (!recaptcha_token) {
+    return res.status(403).json({ error: "Falha de segurança. Acesso bloqueado." });
+  }
+
+  try {
+    const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${recaptcha_token}`;
+    const recaptchaRes = await axios.post(verifyUrl);
+
+    if (!recaptchaRes.data.success || recaptchaRes.data.score < 0.5) {
+      return res.status(403).json({ error: "Tráfego suspeito detectado. Ação bloqueada pelo sistema de segurança." });
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Erro interno ao validar o sistema de segurança." });
+  }
+
+  let pontosCalculados = 2;
+  
+  if (is_run === 'true') {
+    pontosCalculados = 3;
+    const distance = parseFloat(run_distance_km) || 0;
+    if (distance > 100) {
+        return res.status(400).json({ error: "Distância inválida." });
+    }
+  } else if (activity_type && activity_type.startsWith('SOCIAL')) {
+    pontosCalculados = 0;
+  }
+
   const foto_treino_url = req.file ? `/uploads/${req.file.filename}` : null;
 
   if (is_run !== 'true' && !foto_treino_url) {
@@ -873,9 +945,21 @@ export const postCheckin = async (req, res) => {
   }
 
   let connection;
-  
+  let hasLock = false;
+  const lockName = `lock_checkin_${colaborador_cpf}`;
+
   try {
     connection = await pool.getConnection();
+
+    const [lockResult] = await connection.query("SELECT GET_LOCK(?, 5) AS acquired", [lockName]);
+
+    if (lockResult[0].acquired !== 1) {
+       connection.release();
+       return res.status(429).json({ error: "O seu post já está sendo processado. Aguarde um momento!" });
+    }
+
+    hasLock = true;
+
     await connection.beginTransaction();
 
     const [user] = await connection.query("SELECT is_blocked FROM gym_users WHERE cpf = ?", [colaborador_cpf]);
@@ -910,14 +994,14 @@ export const postCheckin = async (req, res) => {
         (post_slug, colaborador_cpf, unidade, academia_digitada, gym_location_id, foto_treino_url, mensagem, latitude, longitude, pontos, is_checkin_valid, activity_type, strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline, tagged_cpf, duo_status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
-      [result] = await connection.query(insertRunQuery, [post_slug, colaborador_cpf, 'SP', academia_digitada || 'Corrida Outdoor', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontos, is_checkin_valid, finalActivityType, strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline, tagged_cpf || null, duoStatus]);
+      [result] = await connection.query(insertRunQuery, [post_slug, colaborador_cpf, 'SP', academia_digitada || 'Corrida Outdoor', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontosCalculados, is_checkin_valid, finalActivityType, strava_activity_id, run_distance_km, run_duration_seconds, run_timestamp, run_polyline, tagged_cpf || null, duoStatus]);
     } else {
       const insertPhotoQuery = `
         INSERT INTO gym_checkins 
         (post_slug, colaborador_cpf, unidade, academia_digitada, gym_location_id, foto_treino_url, mensagem, latitude, longitude, pontos, is_checkin_valid, activity_type, tagged_cpf, duo_status) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
-      [result] = await connection.query(insertPhotoQuery, [post_slug, colaborador_cpf, 'SP', academia_digitada || 'Não informada', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontos, is_checkin_valid, finalActivityType, tagged_cpf || null, duoStatus]);
+      [result] = await connection.query(insertPhotoQuery, [post_slug, colaborador_cpf, 'SP', academia_digitada || 'Não informada', gym_location_id, foto_treino_url, mensagem || '', lat || null, lng || null, pontosCalculados, is_checkin_valid, finalActivityType, tagged_cpf || null, duoStatus]);
     }
 
     if (social_invite_id) {
@@ -963,6 +1047,9 @@ export const postCheckin = async (req, res) => {
     }
     res.status(500).json({ error: "Erro interno ao processar o check-in." });
   } finally {
+    if (hasLock && connection) {
+        await connection.query("SELECT RELEASE_LOCK(?)", [lockName]);
+    }
     if (connection) connection.release();
   }
 };
@@ -983,7 +1070,7 @@ export const getTodayActivity = async (req, res) => {
     res.json(posts);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar atividades." });
   }
 };
 
@@ -1082,7 +1169,7 @@ export const getFeed = async (req, res) => {
     res.json(formattedFeed);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar feed." });
   }
 };
 
@@ -1142,7 +1229,7 @@ export const toggleLike = async (req, res) => {
     res.json({ success: true, action });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao processar curtida." });
   }
 };
 
@@ -1284,7 +1371,10 @@ export const postComment = async (req, res) => {
     res.status(201).json({ success: true, comment_id: result.insertId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    if (err.code === 'ER_NO_REFERENCED_ROW_2') {
+        return res.status(404).json({ error: "A publicação que você tentou comentar não existe ou foi apagada." });
+    }
+    res.status(500).json({ error: "Erro interno ao processar comentário." });
   }
 };
 
@@ -1338,7 +1428,7 @@ export const getRankings = async (req, res) => {
     res.json({ topAnual, topMensalSP, topMensalBH, rankingGeral });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar rankings." });
   }
 };
 
@@ -1358,7 +1448,7 @@ export const getPendingModeration = async (req, res) => {
     res.json(pending);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar moderação." });
   }
 };
 
@@ -1395,7 +1485,7 @@ export const moderateCheckin = async (req, res) => {
     res.json({ message: "Check-in moderado com sucesso." });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao moderar check-in." });
   }
 };
 
@@ -1405,7 +1495,7 @@ export const getGymLocations = async (req, res) => {
     res.json(locations);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar localizações." });
   }
 };
 
@@ -1419,7 +1509,7 @@ export const addGymLocation = async (req, res) => {
     res.status(201).json({ message: "Localização cadastrada!", location_id: result.insertId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao adicionar localização." });
   }
 };
 
@@ -1434,7 +1524,7 @@ export const getGymUsers = async (req, res) => {
     res.json(users);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao buscar usuários." });
   }
 };
 
@@ -1446,7 +1536,7 @@ export const toggleBlockUser = async (req, res) => {
     res.json({ message: `Status de bloqueio alterado.` });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao alterar bloqueio." });
   }
 };
 
@@ -1471,7 +1561,7 @@ export const resetPassword = async (req, res) => {
     res.json({ message: "Senha redefinida com sucesso.", defaultPassword });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Erro interno ao redefinir senha." });
   }
 };
 
@@ -1559,6 +1649,8 @@ export const getUserProfile = async (req, res) => {
 
     const user = users[0];
     const userCpf = user.cpf;
+    const requestCpf = String(req.user.cpf).replace(/\D/g, '');
+    const isOwner = requestCpf === userCpf;
 
     const postsQuery = `
       SELECT id, post_slug, foto_treino_url, created_at, pontos, activity_type, 
@@ -1617,20 +1709,20 @@ export const getUserProfile = async (req, res) => {
     const [archivedPosts] = await pool.query(archivedQuery, [userCpf, Number(limit), Number(offset)]);
 
     res.json({ 
-      cpf: userCpf,
+      cpf: isOwner ? userCpf : '',
       nome: user.nome, 
       username: user.username, 
-      email: user.email || '',
+      email: isOwner ? (user.email || '') : '',
       foto_perfil: user.foto_perfil, 
-      telefone: user.telefone || '', 
+      telefone: isOwner ? (user.telefone || '') : '', 
       departamento: user.departamento || '', 
-      contato_emergencia: user.contato_emergencia || '', 
+      contato_emergencia: isOwner ? (user.contato_emergencia || '') : '', 
       has_strava: !!user.has_strava, 
       two_factor_enabled: !!user.two_factor_enabled,
       totalCheckins, 
       posicao: posicaoStr, 
       classificacao, 
-      bio: user.bio || 'Focado nos treinos! 💪', 
+      bio: user.bio || '', 
       instagram: user.instagram || null, 
       posts, 
       archivedPosts 
@@ -1687,7 +1779,6 @@ export const editUserProfile = async (req, res) => {
 
     if (username && username !== user.username) {
 
-      // 🛡️ BLOCKLIST: Verifica no banco de dados se o novo username contém palavras proibidas ou reservadas
       const [reservedWords] = await pool.query(
         "SELECT word FROM gym_reserved_usernames WHERE LOWER(?) LIKE CONCAT('%', LOWER(word), '%')",
         [username.toLowerCase()]

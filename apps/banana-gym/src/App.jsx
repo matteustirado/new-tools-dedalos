@@ -1,6 +1,7 @@
 import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
+import { GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
 import 'react-toastify/dist/ReactToastify.css';
 
 import { PostProvider } from './contexts/PostContext';
@@ -66,47 +67,49 @@ function App() {
   }, []);
 
   return (
-    <PostProvider>
-      <BrowserRouter>
-        <ScrollManager />
-        
-        <ToastContainer
-          position="top-center"
-          autoClose={3000}
-          hideProgressBar
-          closeOnClick
-          theme="dark"
-          toastClassName="mx-4 mt-4 bg-[#111]/90 text-white font-bold border border-white/10 rounded-2xl shadow-2xl backdrop-blur-md"
-        />
+    <GoogleReCaptchaProvider reCaptchaKey={import.meta.env.VITE_RECAPTCHA_SITE_KEY}>
+      <PostProvider>
+        <BrowserRouter>
+          <ScrollManager />
+          
+          <ToastContainer
+            position="top-center"
+            autoClose={3000}
+            hideProgressBar
+            closeOnClick
+            theme="dark"
+            toastClassName="mx-4 mt-4 bg-[#111]/90 text-white font-bold border border-white/10 rounded-2xl shadow-2xl backdrop-blur-md"
+          />
 
-        <Suspense fallback={<div className="min-h-screen bg-[#050505]" />}>
-          <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/change-password" element={<ChangePassword />} />
-            <Route path="/edit-post" element={<EditPost />} />
-            <Route path="/camera" element={<CameraCapture />} />
-            <Route path="/edit-profile" element={<EditProfile />} />
-            <Route path="/crop" element={<ImageCropper />} />
-            <Route path="/strava-callback" element={<StravaCallback />} />
-            
-            <Route path="/notifications" element={<Notifications />} />
+          <Suspense fallback={<div className="min-h-screen bg-[#050505]" />}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/change-password" element={<ChangePassword />} />
+              <Route path="/edit-post" element={<EditPost />} />
+              <Route path="/camera" element={<CameraCapture />} />
+              <Route path="/edit-profile" element={<EditProfile />} />
+              <Route path="/crop" element={<ImageCropper />} />
+              <Route path="/strava-callback" element={<StravaCallback />} />
+              
+              <Route path="/notifications" element={<Notifications />} />
 
-            <Route element={<MainLayout />}>
-              <Route path="/feed" element={<Feed />} />
-              <Route path="/post/:id" element={<PostDetail />} />
-              <Route path="/:username/post/:id" element={<PostDetail />} />
-              <Route path="/inbox" element={<Inbox />} />
-              <Route path="/ranking" element={<Ranking />} />
-              <Route path="/search" element={<Search />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/emblemas" element={<Badges />} />
-              <Route path="/:username" element={<Profile />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </PostProvider>
+              <Route element={<MainLayout />}>
+                <Route path="/feed" element={<Feed />} />
+                <Route path="/post/:id" element={<PostDetail />} />
+                <Route path="/:username/post/:id" element={<PostDetail />} />
+                <Route path="/inbox" element={<Inbox />} />
+                <Route path="/ranking" element={<Ranking />} />
+                <Route path="/search" element={<Search />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/emblemas" element={<Badges />} />
+                <Route path="/:username" element={<Profile />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </PostProvider>
+    </GoogleReCaptchaProvider>
   );
 }
 

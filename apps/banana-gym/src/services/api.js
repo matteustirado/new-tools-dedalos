@@ -1,6 +1,8 @@
 import axios from 'axios';
+import CryptoJS from 'crypto-js';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const HMAC_SECRET = import.meta.env.VITE_APP_SIGNATURE_SECRET;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -9,23 +11,29 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('gym_token');
+    const timestamp = Date.now().toString();
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     
+    if (HMAC_SECRET) {
+      const message = `${config.url}:${timestamp}`;
+      const signature = CryptoJS.HmacSHA256(message, HMAC_SECRET).toString(CryptoJS.enc.Hex);
+      
+      config.headers['X-App-Timestamp'] = timestamp;
+      config.headers['X-App-Signature'] = signature;
+    }
+    
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      // Ignora as rotas de autenticação para evitar loop de redirecionamento
       if (!error.config.url.includes('/login') && !error.config.url.includes('/verify-2fa-reset')) {
         localStorage.removeItem('gym_token');
         localStorage.removeItem('gym_user');

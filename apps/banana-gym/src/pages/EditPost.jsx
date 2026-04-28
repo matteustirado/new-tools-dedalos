@@ -9,6 +9,7 @@ import { toast } from 'react-toastify';
 import { MapContainer, TileLayer, Polyline as LeafletPolyline } from 'react-leaflet';
 import polyline from '@mapbox/polyline';
 import 'leaflet/dist/leaflet.css';
+import { useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
 import api from '../services/api';
 import { usePost } from '../contexts/PostContext';
@@ -33,6 +34,7 @@ export default function EditPost() {
   const runFileInputRef = useRef(null);
   
   const { uploadPost } = usePost();
+  const { executeRecaptcha } = useGoogleReCaptcha();
 
   const [user, setUser] = useState(null);
   const [mensagem, setMensagem] = useState('');
@@ -134,7 +136,7 @@ export default function EditPost() {
           const filteredResults = res.data.filter(u => u.cpf !== user?.cpf);
           setSearchResults(filteredResults);
         } catch (err) {
-          console.error("Erro ao buscar usuários", err);
+          console.error(err);
         } finally {
           setIsSearching(false);
         }
@@ -255,12 +257,28 @@ export default function EditPost() {
 
     setLoading(true);
 
+    let recaptchaToken = '';
+    if (executeRecaptcha) {
+      try {
+        recaptchaToken = await executeRecaptcha('checkin_post');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (!recaptchaToken) {
+      toast.error('Não foi possível validar a segurança da sua conexão. Tente novamente.');
+      setLoading(false);
+      return;
+    }
+
     if (isEditing) {
       try {
         await api.put(`/api/gym/post/${existingPost.id}/edit`, {
           colaborador_cpf: user.cpf, 
           mensagem, 
-          academia_digitada: academiaNome
+          academia_digitada: academiaNome,
+          recaptcha_token: recaptchaToken
         });
         
         const wasArchived = existingPost.arquivado === 1;
@@ -284,6 +302,7 @@ export default function EditPost() {
         formData.append('colaborador_cpf', user.cpf);
         formData.append('mensagem', mensagem);
         formData.append('academia_digitada', academiaNome);
+        formData.append('recaptcha_token', recaptchaToken);
         
         if (taggedUser) {
           formData.append('tagged_cpf', taggedUser.cpf || socialInvite?.amigo_username); 
@@ -637,6 +656,17 @@ export default function EditPost() {
         >
           {loading ? <Loader2 size={20} className="animate-spin text-black" /> : <>{isEditing ? <Save size={20} /> : <Send size={20} />}{isEditing ? 'SALVAR ALTERAÇÕES' : 'PUBLICAR CHECK-IN'}</>}
         </button>
+
+        <div className="flex items-center justify-center gap-2 mt-4 text-[10px] text-gray-500 max-w-md mx-auto text-center px-4">
+          <svg className="w-3.5 h-3.5 shrink-0 text-emerald-500" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z" />
+          </svg>
+          <span>
+            Protegido por <strong>reCAPTCHA Enterprise</strong>. Aplicam-se a{' '}
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="underline hover:text-white transition-colors">Privacidade</a> e os{' '}
+            <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="underline hover:text-white transition-colors">Termos</a>.
+          </span>
+        </div>
       </div>
 
       {showPhotoChoiceModal && (
