@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    background-color: #050505;
+    color: #ffffff;
+    min-height: 100vh;
+    @apply antialiased transition-colors duration-300;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(6, 182, 212, 0.6);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  }
+
+  .grecaptcha-badge {
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+}
+
+@layer components {
+  .liquid-glass {
+    @apply bg-light-glass dark:bg-dark-glass border border-light-border dark:border-dark-border backdrop-blur-xl shadow-glass-light dark:shadow-glass-dark;
+  }
+}
+
+@layer utilities {
+  .animate-page-transition {
+    animation: pageTransition 0.25s ease-out forwards;
+  }
+
+  @keyframes pageTransition {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+}
