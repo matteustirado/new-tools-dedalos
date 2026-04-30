@@ -20,3 +20,19 @@ export default function authMiddleware(req, res, next) {
     return res.status(403).json({ error: "Sessão expirada ou token inválido." });
   }
 }
+
+export const requireRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(403).json({ error: "Acesso negado. Cargo não identificado." });
+    }
+    
+    const hasRole = allowedRoles.some(role => req.user.role.startsWith(role));
+    
+    if (!hasRole) {
+      return res.status(403).json({ error: "Acesso negado. Permissão insuficiente." });
+    }
+    
+    next();
+  };
+};
